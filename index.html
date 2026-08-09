@@ -314,7 +314,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <label>スティック感度 <span id="v_stk">1.0</span></label><input type="range" id="s_stk" min="5" max="20" value="10">
     <label>あそび <span id="v_dz">0.14</span></label><input type="range" id="s_dz" min="4" max="34" value="14">
     <label>ボタン大きさ <span id="v_bs">1.0</span></label><input type="range" id="s_bs" min="7" max="15" value="10">
-    <div class="row"><span>端まで倒すと走る</span><span class="tog on" id="t_edge">ON</span></div>
+    <div class="row"><span>走るボタンはホールド式</span><span class="tog" id="t_edge">OFF</span></div>
     <div class="row"><span>自動でカメラ追従</span><span class="tog on" id="t_cam">ON</span></div>
     <div class="row"><span>近づいたら自動作業</span><span class="tog on" id="t_auto">ON</span></div>
     <div class="row"><span>左右反転レイアウト</span><span class="tog" id="t_left">OFF</span></div>
@@ -1069,6 +1069,10 @@ try{
   sun.shadow.bias=-0.0015; sun.shadow.radius=2.5;
 }catch(e){}
 scene.add(sun); scene.add(sun.target);
+/* リムライト：太陽と逆側から淡い寒色を当てて、暗い背景でもキャラの輪郭が
+   くっきり見えるようにする（3Dモデルの見た目向上） */
+const rim=new THREE.DirectionalLight(0x8fb8ff,0.28);
+rim.position.set(-20,18,-26); scene.add(rim); scene.add(rim.target);
 /* 手元を照らす灯り */
 const lamp=new THREE.PointLight(0xffd9a0,0.95,30,2);
 lamp.position.set(0,6,0); scene.add(lamp);
@@ -2328,11 +2332,11 @@ const HAIR=[0x2b2118,0x4a2f22,0x6b4a2f,0x1f2a3a];
 function limb(mat,w,h,d,x,y,z){
   const grp=new THREE.Group(); grp.position.set(x,y,z);
   const r=Math.max(w,d)*0.5;
-  const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.86,r*0.96,h,10),mat);
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.86,r*0.96,h,14),mat);
   m.position.y=-h/2; m.castShadow=true; grp.add(m);
-  const j1=new THREE.Mesh(new THREE.SphereGeometry(r*0.94,10,8),mat);
+  const j1=new THREE.Mesh(new THREE.SphereGeometry(r*0.94,12,10),mat);
   j1.castShadow=true; grp.add(j1);
-  const j2=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,10,8),mat);
+  const j2=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,12,10),mat);
   j2.position.y=-h; j2.castShadow=true; grp.add(j2);
   return grp;
 }
@@ -2532,7 +2536,9 @@ function person(opt){
   const g=new THREE.Group();
   const S=opt.tall?1.14:1.0;
   const body=opt.body||'human';
-  const uni=LM(opt.uniform), hair=LM(opt.hair||0x2b2118), skin=LM(opt.skin||0xf0d3b4),
+  /* 服と肌は控えめなハイライトが乗るPhongに（Lambertのままだと真っ平らに見えるため） */
+  const uni=PM(opt.uniform,16,0x24221c), hair=LM(opt.hair||0x2b2118),
+        skin=PM(opt.skin||0xf0d3b4,22,0x3a2c22),
         acc=LM(opt.accent||0xe4e0d4), white=LM(0xf4f2ea), dark=LM(0x2c3038);
   const hipY=1.05*S, chest=1.62*S, headY=2.42*S;
   const floaty=(body==='float'||body==='bust');
@@ -2970,7 +2976,11 @@ const STU=[
  {name:'ネロ',short:'ネロ',uniform:0x2b2b33,hair:0x3f3a46,perk:'ghost',
   ptxt:'気配遮断｜ロッカーの中では息が漏れず心音も出ない',
   skill:'drone',sname:'偵察ドローン',cd:32,
-  stxt:'6秒 上空からマップを確認できる。その間 本体は無防備'}
+  stxt:'6秒 上空からマップを確認できる。その間 本体は無防備'},
+ {name:'白瀬 心春',short:'心春',uniform:0xf0c9d4,hair:0xc9a882,perk:'aed',
+  ptxt:'保健委員｜仲間の救助が少し速い',
+  skill:'revive',sname:'パルス蘇生',cd:8,uses:3,
+  stxt:'近くでダウンしている仲間を、順番待ちなしでその場に起こす（3回まで）。起こされた仲間はしばらく足が速くなる'}
 ];
 const WEAPONS=[
  {k:'',        n:'キャラ標準'},
@@ -3049,7 +3059,9 @@ const LOOK={
   wheel:{body:'triple',hairStyle:'wild',acc:'',weapon:'hammer',accent:0x6b5a3a,
          skin:0xb4a48c,hair:0x3a3228,eye:0xff3b2e},
   clown:{body:'human',hairStyle:'wild',acc:'clownface',weapon:'',accent:0xc94a52,
-         skin:0xf4f2ea,hair:0xd8622a,eye:0x22242a}
+         skin:0xf4f2ea,hair:0xd8622a,eye:0x22242a},
+  seitokai:{body:'human',tall:true,hairStyle:'long',acc:'armband',weapon:'axe',accent:0x4a3a5c,
+         hair:0xd8d0e0,skin:0xcac4d0,eye:0xc9a0ff}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -3073,6 +3085,7 @@ const SLOOK={
   medium:{hairStyle:'long',acc:'',weapon:'lantern',skin:0xe8dcd8,eye:0x9f7ae8},
   art  :{hairStyle:'bob',acc:'',weapon:'broom'},
   slug :{hairStyle:'short',acc:'band',weapon:'bat',male:true,pants:0x22304a},
+  aed  :{hairStyle:'twin',acc:'',weapon:'syringe'},
   bug  :{hairStyle:'twin',acc:'glasses',weapon:'flask'},
   foot2:{}
 };
@@ -3103,7 +3116,8 @@ const KINDS={
   wolf :{name:'月夜の狼男',    ability:'飛びかかり／追襲',    color:0x4a4038, cd:9},
   ripper:{name:'霧刃の紳士',   ability:'霧の刃／寒意',        color:0x232630, cd:20},
   wheel:{name:'軋車の三兄弟',  ability:'車輪形態／悲鳴',      color:0x5a4a3a, cd:6},
-  clown:{name:'三色道化',      ability:'色爆弾／分身',        color:0xa83a4a, cd:5}
+  clown:{name:'三色道化',      ability:'色爆弾／分身',        color:0xa83a4a, cd:5},
+  seitokai:{name:'風紀委員の亡霊',ability:'目付け／取り憑き突進',color:0x352a40, cd:9}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -3131,7 +3145,8 @@ const TCH=[
  {key:'ripper',desc:'霧の刃｜壁を貫通して飛ぶ刃（0.5ダメージ）。当てた足元に霧の軌跡が残り、踏むと自分が加速／寒意｜17秒何もしないと透明化して大幅加速（攻撃や板破壊で解除）。存在感MAXで透明化が早くなる'},
  {key:'wheel',desc:'車輪形態｜爆速で走り、轢いた生徒に「刺」を最大3本刺す。板は轢き壊す／人間形態に戻ると悲鳴が発動し、刺1本=0.5・2本=1.0・3本で即ダウン。仲間同士で刺を抜ける'},
  {key:'clown',desc:'色爆弾｜赤=スキル封印／黒=減速／白=課題が遅くなる。違う色を2つ以上重ねた相手への一撃は2倍。分身を置くと同時に2方向から爆弾が飛ぶ'},
- {key:'wolf',desc:'人間形態は48mまで生徒を感知。攻撃や板破壊で8秒の獣形態へ。飛びかかり（タップ7m／溜め14m・障害物を跳び越える）は0.5ダメージ＋獲物マーク、マーク中に追撃でもう0.5。20秒ごとに現れる痕跡を拾うと速度+10%。存在感MAXでマークが消えにくくなる'}
+ {key:'wolf',desc:'人間形態は48mまで生徒を感知。攻撃や板破壊で8秒の獣形態へ。飛びかかり（タップ7m／溜め14m・障害物を跳び越える）は0.5ダメージ＋獲物マーク、マーク中に追撃でもう0.5。20秒ごとに現れる痕跡を拾うと速度+10%。存在感MAXでマークが消えにくくなる'},
+ {key:'seitokai',desc:'目付け｜見えている生徒に印を付ける（12秒間有効）／取り憑き突進｜印を付けた生徒の隣へ距離を無視して瞬間移動する'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -3310,7 +3325,7 @@ const keys={}, input={mx:0,mz:0,run:false,act:false,actEdge:false,altEdge:false,
                       ab2Edge:false,stopEdge:false,aim:false,fireEdge:false,aimHold:false};
 let camYaw=0,pitch=0;
 let sens=1.1,stkSens=1.0,deadZone=0.14,btnScale=1.0;
-let invert=false,edgeRun=true,autoCam=true,autoAct=true,leftHand=false;
+let invert=false,holdRun=false,runToggle=false,autoCam=true,autoAct=true,leftHand=false;
 let lookIdle=9;
 
 addEventListener('keydown',function(e){
@@ -3339,7 +3354,7 @@ addEventListener('contextmenu',function(e){ e.preventDefault(); });
 const elStick=document.getElementById('stick'),elKnob=document.getElementById('knob');
 let stickPid=null,stickX=0,stickY=0,lookPid=null,lookX=0,lookY=0;
 let mouseHeld=false,mouseX=0,mouseY=0;
-let edgeTime=0,lastLookTap=0;
+let lastLookTap=0;
 const STICK_R=56;
 
 function isUI(t){ return !!(t&&t.closest&&(t.closest('.pe')||t.closest('#title')||t.closest('#result'))); }
@@ -3421,15 +3436,13 @@ addEventListener('pointermove',function(e){
     if(d>STICK_R){ dx*=STICK_R/d; dy*=STICK_R/d; d=STICK_R; }
     elKnob.style.left=(45+dx)+'px'; elKnob.style.top=(45+dy)+'px';
     const n=d/STICK_R;
-    if(n<deadZone){ input.mx=0; input.mz=0; edgeTime=0; elStick.classList.remove('run'); }
+    if(n<deadZone){ input.mx=0; input.mz=0; }
     else{
       const t=(n-deadZone)/(1-deadZone);
       const curved=Math.pow(t,1.35)*stkSens;
       const k=curved/d;
       input.mx=dx*k*STICK_R/STICK_R; input.mz=dy*k*STICK_R/STICK_R;
       input.mx=dx/d*curved; input.mz=dy/d*curved;
-      if(edgeRun&&n>0.93){ edgeTime+=0.016; if(edgeTime>0.14) elStick.classList.add('run'); }
-      else { edgeTime=0; elStick.classList.remove('run'); }
     }
   } else if(e.pointerId===lookPid){
     camYaw-=(e.clientX-lookX)*0.0055*sens;
@@ -3451,8 +3464,8 @@ addEventListener('pointermove',function(e){
 function endPtr(e){
   if(e.pointerType==='mouse'){ mouseHeld=false; input.aimHold=false; }
   if(e.pointerId===stickPid){
-    stickPid=null; input.mx=0; input.mz=0; edgeTime=0;
-    elStick.classList.remove('on'); elStick.classList.remove('run');
+    stickPid=null; input.mx=0; input.mz=0;
+    elStick.classList.remove('on');
   }
   if(e.pointerId===lookPid) lookPid=null;
 }
@@ -3473,7 +3486,12 @@ function bindBtn(el,onDown,onUp){
 const elAct=document.getElementById('act'),elAlt=document.getElementById('alt'),
       elRun=document.getElementById('run'),elAb=document.getElementById('skill2'),
       elAb2=document.getElementById('skill3'),elPad=document.getElementById('pad');
-bindBtn(elRun,function(){input.run=true;},function(){input.run=false;});
+/* 走るボタン：既定はタップでオン/オフのトグル（スティックを倒している間だけ実際に走る）。
+   設定「走るボタンはホールド式」がONの時は昔ながらの押しっぱなし方式に戻る */
+bindBtn(elRun,function(){
+  if(holdRun) input.run=true;
+  else { runToggle=!runToggle; elRun.classList.toggle('hot',runToggle); }
+},function(){ if(holdRun) input.run=false; });
 bindBtn(elAct,function(){input.act=true;input.actEdge=true;},function(){input.act=false;});
 bindBtn(elAlt,function(){input.altEdge=true;input.altHold=true;},function(){input.altHold=false;});
 bindBtn(elAb,function(){input.abEdge=true;input.abHold=true;},function(){input.abHold=false;});
@@ -3571,7 +3589,8 @@ function tog(id,fn){
   });
 }
 const mini=document.getElementById('mini');
-tog('t_edge',function(v,el){ edgeRun=v; el.textContent=v?'ON':'OFF'; });
+tog('t_edge',function(v,el){ holdRun=v; el.textContent=v?'ON':'OFF';
+  input.run=false; runToggle=false; elRun.classList.remove('hot'); });
 tog('t_cam', function(v,el){ autoCam=v; el.textContent=v?'ON':'OFF'; });
 tog('t_auto',function(v,el){ autoAct=v; el.textContent=v?'ON':'OFF'; });
 tog('t_left',function(v,el){ leftHand=v; el.textContent=v?'ON':'OFF';
@@ -3975,6 +3994,16 @@ function useStudentSkill(s){
     if(s.abUses>0) s.abUses--;
     s.abCd=6; beep(900,0.25,'sine',0.11);
     if(s===me) toast('救急キットで手当てした');
+  } else if(s.skill==='revive'){
+    const a=students.filter(function(x){ return x!==s&&x.state==='downed'&&
+      Math.hypot(x.x-s.x,x.z-s.z)<3.4; })[0];
+    if(!a){ if(s===me) toast('近くにダウンした仲間がいない'); return; }
+    if(!s.abUses||s.abUses<=0){ if(s===me) toast('救急セットを使い切った'); return; }
+    s.abUses--; s.abCd=s.abMax;
+    freeStudent(a); a.rush=6.0;
+    beep(900,0.3,'sine',0.12); vib([30,40,30]);
+    if(s===me) toast(a.name+'を蘇生した！（残り'+s.abUses+'）');
+    else toast(s.name+'が'+a.name+'を蘇生した');
   } else if(s.skill==='blink'){
     s.blinkN=3; s.blinkT=0.05; s.abCd=s.abMax;
     if(s===me) toast('転移：1秒ごとに7m前へ×3');
@@ -4216,7 +4245,7 @@ function studentAct(s,dt,manual){
   if(s.hide){ s.hide=null; s.mesh.visible=true; return 'out'; }
   const a=nearAlly(s);
   if(a){
-    s.rescueT+=dt*(s.perk==='heal'?1.3:1);
+    s.rescueT+=dt*(s.perk==='heal'?1.3:(s.perk==='aed'?1.15:1));
     if(s.rescueT>2.4){ freeStudent(a); s.rescueT=0; beep(700,0.2,'sine',0.09);
       if(manual) toast(a.name+'を助けた'); }
     return 'rescue';
@@ -4600,6 +4629,7 @@ const AB2={
   cat:'鳴き真似', monk:'投石', wheel:'戯言（刺を飛ばす）', clown:'色替え／分身',
   mask:'やり投げ', dream:'夢渡り', anima:'警備室ワープ', fallen:'無念の一閃',
   beet:'運命の旋律', chalk:'チョーク粉塵', kok:'狐憑き', vice:'監視の目',
+  seitokai:'取り憑き突進',
   model:'', pe:'', math:'', jan:'', teke:''
 };
 function useAbility2(){
@@ -4618,6 +4648,21 @@ function useAbility2(){
     m.position.set(t.x,1.8,t.z); m.rotation.y=t.yaw; scene.add(m);
     shots.push({m:m,x:t.x,z:t.z,dx:Math.sin(t.yaw),dz:Math.cos(t.yaw),t:0,spear:true});
     beep(320,0.2,'triangle',0.1); toast('やり投げ！');
+  } else if(k==='seitokai'){
+    if(t.ab2Cd>0) return;
+    const tg=students.filter(function(x){ return x.state==='free'&&!x.hide&&x.watched>0; })
+      .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+    if(!tg){ toast('目を付けた生徒がいない'); return; }
+    tg.watched=0;
+    const dx=tg.x-t.x,dz=tg.z-t.z,d=Math.hypot(dx,dz)||1;
+    t.x=tg.x-dx/d*2.2; t.z=tg.z-dz/d*2.2; t.yaw=Math.atan2(dx,dz); t.path=[];
+    unstick(t); t.ab2Cd=14;
+    const m2=new THREE.Mesh(new THREE.SphereGeometry(1.4,10,8),
+      new THREE.MeshBasicMaterial({color:0x8a5ac9,transparent:true,opacity:0.5}));
+    m2.position.set(t.x,1.4,t.z); scene.add(m2);
+    fxs.push({m:m2,t:0,life:0.45,kind:'dust'});
+    beep(160,0.4,'sawtooth',0.13); noise(t.x,t.z,10);
+    toast('取り憑き突進！');
   } else if(k==='dream'){
     if(t.ab2Cd>0) return;
     const sleepers=students.filter(function(x){ return x.sleep>0&&x.state==='free'; }).length;
@@ -4736,6 +4781,16 @@ function useAbility(){
   if(t.kindKey==='pe'){ /* 充填はホールドで */ return; }
   if(t.kindKey==='model'){
     fireShot(); t.abCd=KINDS.model.cd; toast('パーツを射出した'); return;
+  }
+  if(t.kindKey==='seitokai'){
+    const tg=students.filter(function(x){ return x.state==='free'&&!x.hide&&
+      Math.hypot(x.x-t.x,x.z-t.z)<30&&los(t.x,t.z,x.x,x.z); })
+      .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+    if(!tg){ toast('見える範囲に生徒がいない'); return; }
+    tg.watched=12.0; t.abCd=KINDS.seitokai.cd;
+    setAura(tg,'reveal',1.2);
+    toast(tg.name+'に目を付けた'); beep(220,0.3,'sine',0.1);
+    return;
   }
   if(t.kindKey==='beet'){
     t.abCd=KINDS.beet.cd; t.swing=1;
@@ -5217,6 +5272,10 @@ function aiTeacher(dt){
       else if(t.kindKey==='beet'&&d<24){ t.yaw=Math.atan2(tgt.x-t.x,tgt.z-t.z); useAbility(); }
       else if(t.kindKey==='chalk'){ if(d>10) useAbility(); else if(d<6) useAbility2(); }
       else if(t.kindKey==='kok'&&d<18&&Math.random()<0.5) useAbility2();
+      else if(t.kindKey==='seitokai'){
+        if(!tgt.watched&&d<30) useAbility();
+        else if(t.ab2Cd<=0&&students.some(function(x){return x.watched>0;})) useAbility2();
+      }
       else if(t.kindKey==='beet'&&t.ab2Cd<=0&&Math.random()<0.3) useAbility2();
       else if(t.kindKey==='teke'&&d<14) useAbility();
       else if(t.kindKey==='clock'&&d<13) useAbility();
@@ -5349,6 +5408,8 @@ function aiStudent(s,dt){
     else if(s.skill==='flash'&&td<7) { s.yaw=Math.atan2(teacher.x-s.x,teacher.z-s.z); useStudentSkill(s); }
     else if(s.skill==='selfheal'&&s.hurt&&td>26) useStudentSkill(s);
     else if(s.skill==='reveal'&&Math.random()<0.004) useStudentSkill(s);
+    else if(s.skill==='revive'&&students.some(function(x){ return x!==s&&x.state==='downed'&&
+      Math.hypot(x.x-s.x,x.z-s.z)<3.4; })) useStudentSkill(s);
   }
   if(td>=18) s.chased=0;
   if(td<16&&los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0){
@@ -5590,6 +5651,13 @@ function drawMini(){
       const p=tileOf(teacher.x,teacher.z); mg.fillRect(OX(p[0])-1,p[1]*sy-1,sx+2,sy+2);
     }
   }
+  /* 座らされている人はミニマップでも金色の輪で強調 */
+  students.forEach(function(s){
+    if(s.state!=='seated') return;
+    const p=tileOf(s.x,s.z);
+    mg.strokeStyle='#e8c547'; mg.lineWidth=1.4;
+    mg.strokeRect(OX(p[0])-2.5,p[1]*sy-2.5,sx+5,sy+5);
+  });
 }
 function updHearts(dt){
   const stealth=teacher.stealth>0;
@@ -5775,9 +5843,9 @@ function tick(now){
   fx1+=input.mx; fz1-=input.mz;
   if(role==='student'&&me.confuse>0){ fx1=-fx1; fz1=-fz1; }
   const stickMag=Math.hypot(input.mx,input.mz);
-  const running=keys.ShiftLeft||keys.ShiftRight||input.run||
-                (edgeRun&&elStick.classList.contains('run'));
   const mag=Math.hypot(fx1,fz1);
+  const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&stickMag>deadZone);
+  elStick.classList.toggle('run',running);
   const mover=puppet||me;
   const canMove=(role==='teacher')?(teacher.stun<=0&&teacher.wipe<=0&&teacher.dive<=0&&
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0)
@@ -6096,6 +6164,7 @@ function tick(now){
     if(s.confuse>0) s.confuse-=dt;
     if(s.painFree>0) s.painFree-=dt;
     if(s.dull>0) s.dull-=dt;
+    if(s.watched>0) s.watched-=dt;
     if(s.colors){
       if(s.colors.r>0) s.colors.r-=dt;
       if(s.colors.b>0) s.colors.b-=dt;
@@ -6422,43 +6491,39 @@ function tick(now){
   updWalls(dt);
   for(const s of students) updAura(s,dt);
   updHearts(dt);
-  /* 座らされている仲間の位置が分かる（生徒側） */
-  if(role==='student'){
-    const seated=students.filter(function(x){ return x.state==='seated'; });
-    for(const c of allChairs){
-      if(!c.glow) continue;
-      const on=seated.some(function(x){ return c.taken===x; });
-      if(on){ c.glow.visible=true;
-        c.glow.material.opacity=0.3+Math.abs(Math.sin(elapsed*3))*0.35;
-        if(c.glow.material.color.setHex) c.glow.material.color.setHex(0xe8c547);
-        c.glow.scale.set(1.2,1,1.2);
-      }
-    }
-    /* 座らされている本人は全員の位置が見える */
-    if(me.state==='seated'){
-      for(const st of students){
-        if(st===me||st.state==='out'||st.state==='escaped') continue;
-        const u2=st.mesh.userData;
-        u2.aura.visible=true;
-        if(u2.auraMat.color.setHex) u2.auraMat.color.setHex(0x7fd4a2);
-        u2.auraMat.opacity=0.34;
-      }
-    }
-  }
-  /* 担いでいる間は反省椅子が壁越しに光る */
-  const showCh=(role==='teacher'&&!!teacher.carrying);
-  let near=null,nd=1e9;
-  if(showCh) for(const c of chairs){ if(c.taken) continue;
-    const dd=Math.hypot(c.x-teacher.x,c.z-teacher.z); if(dd<nd){nd=dd;near=c;} }
+  /* 反省椅子の光り方：
+     1) 誰か座っている椅子は役割に関係なく誰からも壁越しに見える(合図)
+     2) 先生が担いでいる間だけ、空いている椅子も光る(運び先の目印) */
+  const carryHint=(role==='teacher'&&!!teacher.carrying);
+  let nearEmpty=null,nearEmptyD=1e9;
+  if(carryHint) for(const c of chairs){ if(c.taken) continue;
+    const dd=Math.hypot(c.x-teacher.x,c.z-teacher.z); if(dd<nearEmptyD){nearEmptyD=dd;nearEmpty=c;} }
   for(const c of chairs){
     if(!c.glow) continue;
-    const on=showCh&&!c.taken;
-    c.glow.visible=on;
-    if(on){
+    if(c.taken){
+      c.glow.visible=true;
+      c.glow.material.opacity=0.3+Math.abs(Math.sin(elapsed*3))*0.35;
+      if(c.glow.material.color.setHex) c.glow.material.color.setHex(0xe8c547);
+      c.glow.scale.set(1.2,1,1.2);
+    } else if(carryHint){
+      c.glow.visible=true;
       const pl=0.28+Math.abs(Math.sin(elapsed*3.2))*0.3;
-      c.glow.material.opacity=(c===near)?pl+0.24:pl*0.55;
-      const sc=(c===near)?1.25:0.9;
+      c.glow.material.opacity=(c===nearEmpty)?pl+0.24:pl*0.55;
+      if(c.glow.material.color.setHex) c.glow.material.color.setHex(0xff3b2e);
+      const sc=(c===nearEmpty)?1.25:0.9;
       c.glow.scale.set(sc,1,sc);
+    } else {
+      c.glow.visible=false;
+    }
+  }
+  /* 座らされている本人は全員の位置が見える（おまけ） */
+  if(role==='student'&&me.state==='seated'){
+    for(const st of students){
+      if(st===me||st.state==='out'||st.state==='escaped') continue;
+      const u2=st.mesh.userData;
+      u2.aura.visible=true;
+      if(u2.auraMat.color.setHex) u2.auraMat.color.setHex(0x7fd4a2);
+      u2.auraMat.opacity=0.34;
     }
   }
   for(const ex of exits){
@@ -6554,8 +6619,11 @@ function tick(now){
       u.armL.rotation.z=0; u.armR.rotation.z=0;
       /* 歩行アニメ：進んだ距離で位相を回す */
       u.phase+=moved*1.5;
-      const a=Math.min(1,moved/(dt*8+1e-6));
-      const sw=Math.sin(u.phase)*0.62*Math.min(1,moved*24);
+      /* 振り幅を滑らかに補間して、動き出し・止まり際のカクつきを無くす */
+      const walkTarget=Math.min(1,moved*24);
+      u.walkAmp=(u.walkAmp===undefined?walkTarget:u.walkAmp)+
+        (walkTarget-(u.walkAmp||0))*Math.min(1,dt*9);
+      const sw=Math.sin(u.phase)*0.62*u.walkAmp;
       u.legL.rotation.x=sw; u.legR.rotation.x=-sw;
       u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
       if(e===teacher&&teacher.crawl>0){
@@ -6715,6 +6783,9 @@ function tick(now){
       sun.target.position.set(fx3,0,fz3);
       sun.target.updateMatrixWorld&&sun.target.updateMatrixWorld();
     }
+    rim.position.set(fx3-20,18,fz3-26);
+    rim.target.position.set(fx3,1.4,fz3);
+    rim.target.updateMatrixWorld&&rim.target.updateMatrixWorld();
     lamp.position.set(camera.position.x,camera.position.y+2.2,camera.position.z);
     lamp2.position.set(fx3,9,fz3);
     updDust(fx3,fz3);
@@ -7267,8 +7338,10 @@ function netClientTick(dt){
   if(keys.KeyA) fx1-=1; if(keys.KeyD) fx1+=1;
   fx1+=input.mx; fz1-=input.mz;
   if(me.confuse>0){ fx1=-fx1; fz1=-fz1; }
-  const running=keys.ShiftLeft||keys.ShiftRight||input.run||(edgeRun&&elStick.classList.contains('run'));
+  const stickMag=Math.hypot(input.mx,input.mz);
   const mag=Math.hypot(fx1,fz1);
+  const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&stickMag>deadZone);
+  elStick.classList.toggle('run',running);
   const vf=[Math.sin(camYaw),Math.cos(camYaw)], vr=[-Math.cos(camYaw),Math.sin(camYaw)];
   const canMove=(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&!(me.tackle>0));
   let mdx=0,mdz=0,mmag=0;
@@ -7378,7 +7451,10 @@ function netClientTick(dt){
     } else {
       e.mesh.rotation.x=0;
       u.phase+=moved*1.5;
-      const sw=Math.sin(u.phase)*0.62*Math.min(1,moved*24);
+      const walkTarget=Math.min(1,moved*24);
+      u.walkAmp=(u.walkAmp===undefined?walkTarget:u.walkAmp)+
+        (walkTarget-(u.walkAmp||0))*Math.min(1,dt*9);
+      const sw=Math.sin(u.phase)*0.62*u.walkAmp;
       u.legL.rotation.x=sw; u.legR.rotation.x=-sw;
       u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
       const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
@@ -7411,8 +7487,30 @@ function netClientTick(dt){
   if(msgT>0){ msgT-=dt; if(msgT<=0) elMsg.classList.remove('on'); }
   lamp.position.set(camera.position.x,camera.position.y+2.2,camera.position.z);
   lamp2.position.set(me.x,9,me.z);
+  rim.position.set(me.x-20,18,me.z-26);
+  rim.target.position.set(me.x,1.4,me.z);
+  rim.target.updateMatrixWorld&&rim.target.updateMatrixWorld();
   updDust(me.x,me.z);
   voiceUpdateVolumes();
+  /* 座っている人は誰からも壁越しに見える */
+  for(const c of chairs){
+    if(!c.glow) continue;
+    if(c.taken){
+      c.glow.visible=true;
+      c.glow.material.opacity=0.3+Math.abs(Math.sin(elapsed*3))*0.35;
+      if(c.glow.material.color.setHex) c.glow.material.color.setHex(0xe8c547);
+      c.glow.scale.set(1.2,1,1.2);
+    } else c.glow.visible=false;
+  }
+  if(me.state==='seated'){
+    for(const st of students){
+      if(st===me||st.state==='out'||st.state==='escaped') continue;
+      const u2=st.mesh.userData;
+      u2.aura.visible=true;
+      if(u2.auraMat.color.setHex) u2.auraMat.color.setHex(0x7fd4a2);
+      u2.auraMat.opacity=0.34;
+    }
+  }
   hud(dt);
   renderer.render(scene,camera);
 }
