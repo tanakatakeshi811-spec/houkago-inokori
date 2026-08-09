@@ -5805,7 +5805,15 @@ function tick(now){
       else if(!input.altHold) dp.breakT=Math.max(0,dp.breakT-dt*0.8);
     } else { label='定規を振る'; hot=t.cool<=0; }
     if(dp){ altLabel='蹴破る'; altHot=true; } else { altLabel='乗り越え'; altHot=true; }
-    if(input.actEdge&&(!dp||foe)) doAction();
+    /* 殴る・運ぶ・蹴るなど、Eで他にやることが何も無い時だけ能力2の代役にする
+       （画面上のボタンにも「R / E」と出ているため）。攻撃対象がいる時は必ず殴る */
+    const downedNear=students.filter(function(s){ return s.state==='downed'&&
+      Math.hypot(s.x-t.x,s.z-t.z)<3.2; }).length>0;
+    const nothingToDo=!t.carrying&&!downedNear&&!foe&&!dp;
+    if(input.actEdge){
+      if(nothingToDo&&AB2[t.kindKey]&&t.ab2Cd<=0) useAbility2();
+      else if(!dp||foe) doAction();
+    }
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
       hp=Math.max(hp,dp.breakT/2.2);
       if(breakPallet(dp,dt)) hp=0;
