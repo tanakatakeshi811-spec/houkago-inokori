@@ -70,6 +70,8 @@ canvas{display:block}
 #chatmenu.on{display:block}
 #chatmenu div{padding:7px 9px;font-size:11.5px;border-bottom:1px solid #ffffff14}
 #chatmenu div:last-child{border-bottom:none}
+#chatmenu div.sel{background:#e8c5471a;color:var(--yellow)}
+#chatbtn.cd{opacity:.4}
 #buffs{display:flex;flex-direction:column;gap:3px;align-items:flex-end;max-width:168px}
 .buff{display:flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;
   background:#0b120ec8;border:1px solid #ffffff26;font-size:9.5px;white-space:nowrap}
@@ -129,6 +131,28 @@ canvas{display:block}
 .btn.hot b{opacity:.75}
 #hold{position:absolute;inset:-4px;border-radius:50%;pointer-events:none}
 #cd{position:absolute;bottom:-14px;font-size:10px;opacity:.7}
+
+/* 横画面スマホ：スティック専用ゾーン（黄）／視点操作ゾーン（水） の目印。
+   当たり判定はJS側で計算し、ここは見た目だけ */
+#stickzone,#lookzone{position:fixed;display:none;pointer-events:none;border-radius:22px;
+  border:2px dashed #ffffff00;transition:opacity .25s}
+body.mlands #stickzone{display:block;border-color:#e8c54755;background:#e8c54712}
+body.mlands #lookzone{display:block;border-color:#7fc6d455;background:#7fc6d40c}
+body.mlands #pad{position:fixed;display:grid;gap:7px;align-items:stretch;justify-items:stretch}
+body.mlands .btn{border-radius:13px}
+body.mlands .btn b{bottom:3px;font-size:8.5px}
+body.mlands #chatbtn{left:auto;bottom:auto}
+@media (orientation:landscape) and (max-height:520px) and (pointer:coarse){
+  #roster{width:118px;gap:3px}
+  .rface{width:26px;height:26px}
+  .rn{font-size:10px}.rs{font-size:8px}
+  #tasks{gap:3px}
+  .sheet{width:20px;height:26px}
+  .sheet b{font-size:8px}
+  #right{gap:4px}
+  #mini{width:104px;height:60px}
+  #heart,#gear{width:28px;height:28px;font-size:13px}
+}
 
 #warp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:270px;
   max-height:70vh;overflow-y:auto;padding:14px;border-radius:4px;background:#0b120ef5;
@@ -242,6 +266,14 @@ canvas{display:block}
   font-style:normal;font-size:10px;color:#7fd4a2;letter-spacing:.2em;white-space:nowrap}
 #vig{position:absolute;inset:0;opacity:0;transition:opacity .3s;
   background:radial-gradient(120% 90% at 50% 50%,transparent 40%,#c7452f66 100%)}
+#micind{position:absolute;top:calc(env(safe-area-inset-top) + 6px);left:50%;
+  transform:translateX(-50%);display:none;align-items:center;gap:6px;
+  padding:4px 12px;border-radius:12px;background:#0b120ec8;border:1px solid #ffffff2b;
+  font-size:10.5px;letter-spacing:.08em;z-index:6}
+#micind.on{display:flex}
+#micind i{width:8px;height:8px;border-radius:50%;background:#666;font-style:normal}
+#micind.micon i{background:var(--ok);box-shadow:0 0 6px #7fd4a2}
+#micind.micoff i{background:#c7452f}
 #netwait{position:fixed;inset:0;z-index:22;background:#0b120ef2;display:none;
   flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px}
 #netwait.on{display:flex}
@@ -265,6 +297,7 @@ canvas{display:block}
   <div id="fate">運命の旋律<b id="fatetxt"></b></div>
   <div id="dronehud"><i>ドローン視点</i></div>
   <div id="vig"></div>
+  <div id="micind" class="pe"><i></i><span id="micindtxt">マイク OFF</span></div>
   <div id="tasks"></div>
   <div id="roster"></div>
   <div id="right">
@@ -311,6 +344,8 @@ canvas{display:block}
   <div id="warp" class="pe"><div class="wt">通気口を選ぶ</div>
     <div class="wh">ホイールで選択／クリックで決定・タップでも選べます</div>
     <div id="warpList"></div><div class="wc" id="warpCancel">やめる</div></div>
+  <div id="stickzone"></div>
+  <div id="lookzone"></div>
   <div id="stick"><div id="knob"></div></div>
   <div id="pad">
     <div class="btn pe" id="skill3"><span id="ab2label">能力2</span><b>R / E</b></div>
@@ -1019,7 +1054,8 @@ renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 addEventListener('resize',function(){
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight); layoutPad();
+  renderer.setSize(innerWidth,innerHeight);
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
 });
 const hemi=new THREE.HemisphereLight(0xa8c4d8,0x161f1a,0.72); scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xdce8ff,0.55);
@@ -3315,6 +3351,42 @@ function placeStick(x,y){
 }
 function stickSide(x){ return leftHand ? (x>innerWidth*0.54) : (x<innerWidth*0.46); }
 
+/* 横画面スマホ：黄色ゾーン＝スティック専用、水色ゾーン＝視点操作ゾーン。
+   画像の配置を踏まえて、左下にスティック、右側にボタンをまとめる */
+let mobileLandscape=false;
+const elStickZone=document.getElementById('stickzone'),elLookZone=document.getElementById('lookzone');
+function stickZoneRect(){
+  const w=innerWidth,h=innerHeight;
+  return leftHand
+    ? {x0:w*0.60,y0:h*0.30,x1:w*0.97,y1:h*0.97}
+    : {x0:w*0.03,y0:h*0.30,x1:w*0.40,y1:h*0.97};
+}
+function lookZoneRect(){
+  const w=innerWidth,h=innerHeight;
+  return leftHand
+    ? {x0:w*0.02,y0:h*0.05,x1:w*0.58,y1:h*0.97}
+    : {x0:w*0.42,y0:h*0.05,x1:w*0.98,y1:h*0.97};
+}
+function inRect(x,y,r){ return x>=r.x0&&x<=r.x1&&y>=r.y0&&y<=r.y1; }
+function inStickZone(x,y){ return mobileLandscape?inRect(x,y,stickZoneRect()):stickSide(x); }
+function checkMobileLandscape(){
+  let ml=false;
+  try{
+    ml=matchMedia('(orientation:landscape) and (max-height:520px) and (pointer:coarse)').matches;
+  }catch(e){}
+  mobileLandscape=ml;
+  document.body.classList.toggle('mlands',ml);
+  if(ml){
+    const sr=stickZoneRect();
+    elStickZone.style.left=sr.x0+'px'; elStickZone.style.top=sr.y0+'px';
+    elStickZone.style.width=(sr.x1-sr.x0)+'px'; elStickZone.style.height=(sr.y1-sr.y0)+'px';
+    const lr=lookZoneRect();
+    elLookZone.style.left=lr.x0+'px'; elLookZone.style.top=lr.y0+'px';
+    elLookZone.style.width=(lr.x1-lr.x0)+'px'; elLookZone.style.height=(lr.y1-lr.y0)+'px';
+  }
+  layoutPad(); layoutChatBtn();
+}
+
 addEventListener('pointerdown',function(e){
   if(introPath.length){ intro=0; introPath=[]; introIdx=0; return; }
   if(!started||over) return;
@@ -3331,7 +3403,7 @@ addEventListener('pointerdown',function(e){
     }
     return;
   }
-  if(stickSide(e.clientX)&&stickPid===null){
+  if(inStickZone(e.clientX,e.clientY)&&stickPid===null){
     stickPid=e.pointerId; placeStick(e.clientX,e.clientY);
   } else if(lookPid===null){
     lookPid=e.pointerId; lookX=e.clientX; lookY=e.clientY; lookIdle=0;
@@ -3344,13 +3416,9 @@ addEventListener('pointermove',function(e){
   if(e.pointerId===stickPid){
     let dx=e.clientX-stickX, dy=e.clientY-stickY;
     let d=Math.hypot(dx,dy);
-    if(d>STICK_R){
-      /* 原点を追従させて引っかかりを無くす */
-      const over=(d-STICK_R)/d;
-      stickX+=dx*over; stickY+=dy*over;
-      elStick.style.left=(stickX-75)+'px'; elStick.style.top=(stickY-75)+'px';
-      dx*=STICK_R/d; dy*=STICK_R/d; d=STICK_R;
-    }
+    /* 原点は押した場所に固定（追従させない）。範囲外は知恵の輪のように
+       クランプするだけで、離すまで基準点は動かさない */
+    if(d>STICK_R){ dx*=STICK_R/d; dy*=STICK_R/d; d=STICK_R; }
     elKnob.style.left=(45+dx)+'px'; elKnob.style.top=(45+dy)+'px';
     const n=d/STICK_R;
     if(n<deadZone){ input.mx=0; input.mz=0; edgeTime=0; elStick.classList.remove('run'); }
@@ -3415,10 +3483,38 @@ document.getElementById('skill').addEventListener('pointerdown',function(e){e.st
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
   const s=btnScale;
+  [elAlt,elAb,elAb2,elRun,elAct].forEach(function(el){ el.style.margin='0'; el.style.gridArea=''; });
+  if(mobileLandscape){
+    /* 横画面スマホ：右側（左手モードなら左側）に2列でまとめる。
+       画像の配置を踏まえて 能力2/行動 を大きめの列に、隠れる・能力・走るを
+       もう一列にまとめる */
+    const side=leftHand?'left':'right';
+    elPad.style.display='grid';
+    elPad.style[side]='calc(env(safe-area-inset-right) + 10px)';
+    elPad.style[leftHand?'right':'left']='auto';
+    elPad.style.bottom='calc(env(safe-area-inset-bottom) + 8px)';
+    elPad.style.top='auto';
+    elPad.style.gridTemplateColumns=leftHand?'106px 58px':'58px 106px';
+    elPad.style.gridTemplateRows='46px 46px 1fr';
+    elPad.style.gridTemplateAreas=leftHand
+      ? '"ab2 alt" "act ab" "act run"'
+      : '"alt ab2" "ab act" "run act"';
+    elPad.style.height='164px'; elPad.style.width='auto';
+    function setG(el,area,fs){
+      el.style.gridArea=area; el.style.width='100%'; el.style.height='100%'; el.style.fontSize=fs+'px';
+    }
+    setG(elAlt,'alt',10); setG(elAb,'ab',10); setG(elAb2,'ab2',9.5);
+    setG(elRun,'run',10); setG(elAct,'act',12.5);
+    return;
+  }
+  elPad.style.display='flex';
+  elPad.style.gridTemplateColumns=''; elPad.style.gridTemplateRows='';
+  elPad.style.gridTemplateAreas=''; elPad.style.height='';
   const big=Math.round(100*s), mid=Math.round(66*s), sml=Math.round(58*s);
   const side=leftHand?'left':'right';
   const other=leftHand?'right':'left';
   elPad.style[side]='16px'; elPad.style[other]='auto';
+  elPad.style.top='auto';
   elPad.style.bottom='calc(env(safe-area-inset-bottom) + 26px)';
   elPad.style.alignItems=leftHand?'flex-start':'flex-end';
   function set(el,w,fs,mb,mr){
@@ -3432,6 +3528,22 @@ function layoutPad(){
   set(elAlt,mid,Math.round(11.5*s),10,Math.round(96*s));
   set(elRun,mid,Math.round(12*s),10,Math.round(96*s));
   set(elAct,big,Math.round(13.5*s),0,0);
+}
+/* チャットボタン配置：横画面スマホはボタン群の上あたりへ */
+function layoutChatBtn(){
+  if(mobileLandscape){
+    elChatBtn.style.top='calc(env(safe-area-inset-top) + 6px)';
+    elChatBtn.style.bottom='auto';
+    if(leftHand){ elChatBtn.style.left='calc(env(safe-area-inset-left) + 10px)'; elChatBtn.style.right='auto'; }
+    else { elChatBtn.style.right='calc(env(safe-area-inset-right) + 10px)'; elChatBtn.style.left='auto'; }
+    elChatMenu.style.top='calc(env(safe-area-inset-top) + 44px)';
+    elChatMenu.style.bottom='auto';
+    if(leftHand){ elChatMenu.style.left='calc(env(safe-area-inset-left) + 10px)'; elChatMenu.style.right='auto'; }
+    else { elChatMenu.style.right='calc(env(safe-area-inset-right) + 10px)'; elChatMenu.style.left='auto'; }
+  } else {
+    elChatBtn.style.top=''; elChatBtn.style.bottom=''; elChatBtn.style.left=''; elChatBtn.style.right='';
+    elChatMenu.style.top=''; elChatMenu.style.bottom=''; elChatMenu.style.left=''; elChatMenu.style.right='';
+  }
 }
 
 /* 設定パネル */
@@ -3462,7 +3574,8 @@ const mini=document.getElementById('mini');
 tog('t_edge',function(v,el){ edgeRun=v; el.textContent=v?'ON':'OFF'; });
 tog('t_cam', function(v,el){ autoCam=v; el.textContent=v?'ON':'OFF'; });
 tog('t_auto',function(v,el){ autoAct=v; el.textContent=v?'ON':'OFF'; });
-tog('t_left',function(v,el){ leftHand=v; el.textContent=v?'ON':'OFF'; layoutPad(); });
+tog('t_left',function(v,el){ leftHand=v; el.textContent=v?'ON':'OFF';
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); } });
 tog('t_inv', function(v,el){ invert=v; el.textContent=v?'ON':'OFF'; });
 tog('t_vib', function(v,el){ vibOn=v; el.textContent=v?'ON':'OFF'; });
 tog('t_shadow',function(v,el){
@@ -6606,6 +6719,7 @@ function tick(now){
     lamp2.position.set(fx3,9,fz3);
     updDust(fx3,fz3);
   }
+  voiceUpdateVolumes();
   hud(dt);
   renderer.render(scene,camera);
 }
@@ -6634,6 +6748,141 @@ let netPrevGateOpen=false;    // client: 門が開いた瞬間を検知する用
 let netSeenToastId=0;         // client: 既に表示したトーストのID
 let netLastToast='', netToastId=0;   // host: 直近のtoast内容とID
 
+/* ---- 近接ボイスチャット ----
+   PeerJSのcall()で全員が直接1対1につながるメッシュ方式（ホストがいなくても
+   誰と誰が繋がっているかさえ揃えば動く）。ホストが「今つながっている全員の
+   PeerJS ID」を配って、各自がまだ繋いでいない相手へ発信する。
+   自分より文字コードが後ろのIDにだけ自分から発信することで、二重通話を防ぐ。
+   距離に応じてWeb AudioのGainNodeで音量を下げる（近いほど大きく、遠いほど小さく）。 */
+let micOn=false, localVoiceStream=null, voiceCtx=null, voiceMyId='';
+const voiceCalls={}, voiceGains={};
+let voiceIdToSlot={};
+function micIndicatorUpdate(){
+  const el=document.getElementById('micind');
+  if(!el) return;
+  el.classList.toggle('on',netMode!=='off');
+  el.classList.toggle('micon',micOn);
+  el.classList.toggle('micoff',!micOn);
+  const t=document.getElementById('micindtxt');
+  if(t) t.textContent=micOn?'マイク ON':'マイク OFF';
+}
+function voiceEnsureCtx(){
+  if(!voiceCtx){
+    try{ voiceCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+  }
+  if(voiceCtx&&voiceCtx.resume) try{ voiceCtx.resume(); }catch(e){}
+  return voiceCtx;
+}
+function voiceAnswerStream(){
+  if(localVoiceStream) return localVoiceStream;
+  /* まだマイクを許可していない相手からの着信には、無音のダミーで応答する */
+  try{
+    const ctx=voiceEnsureCtx();
+    return ctx.createMediaStreamDestination().stream;
+  }catch(e){ return new MediaStream(); }
+}
+function voiceAttach(peerId,remoteStream){
+  try{
+    const ctx=voiceEnsureCtx(); if(!ctx) return;
+    voiceDropAudio(peerId);
+    const src=ctx.createMediaStreamSource(remoteStream);
+    const gain=ctx.createGain(); gain.gain.value=0;
+    src.connect(gain); gain.connect(ctx.destination);
+    voiceGains[peerId]={gain:gain,src:src};
+  }catch(e){}
+}
+function voiceDropAudio(peerId){
+  const g=voiceGains[peerId];
+  if(g){ try{ g.src.disconnect(); g.gain.disconnect(); }catch(e){} delete voiceGains[peerId]; }
+}
+function voiceDrop(peerId){ voiceDropAudio(peerId); delete voiceCalls[peerId]; }
+function voiceAttachIncoming(peer){
+  peer.on('call',function(call){
+    try{ call.answer(voiceAnswerStream()); }catch(e){ return; }
+    const id=call.peer;
+    voiceCalls[id]=call;
+    call.on('stream',function(remote){ voiceAttach(id,remote); });
+    call.on('close',function(){ voiceDrop(id); });
+    call.on('error',function(){ voiceDrop(id); });
+  });
+}
+function voiceCallPeer(peerId){
+  if(!netPeer||peerId===voiceMyId||voiceCalls[peerId]) return;
+  try{
+    const call=netPeer.call(peerId,voiceAnswerStream());
+    if(!call) return;
+    voiceCalls[peerId]=call;
+    call.on('stream',function(remote){ voiceAttach(peerId,remote); });
+    call.on('close',function(){ voiceDrop(peerId); });
+    call.on('error',function(){ voiceDrop(peerId); });
+  }catch(e){}
+}
+function voiceOnRoster(ids,slots){
+  voiceIdToSlot=slots||{};
+  if(!netPeer||!ids) return;
+  voiceMyId=netPeer.id;
+  ids.forEach(function(id){
+    if(id===voiceMyId||voiceMyId>id) return;   /* 片方だけが発信する */
+    voiceCallPeer(id);
+  });
+}
+function netBroadcastVoiceRoster(){
+  if(netMode!=='host'||!netPeer) return;
+  const hostId=netPeer.id;
+  const ids=[hostId].concat(netConns.map(function(c){ return c.conn.peer; }));
+  const slots={}; slots[hostId]=(role==='student')?0:'teacher';
+  netConns.forEach(function(c){ slots[c.conn.peer]=netStudentIndexForSlot(c.slot); });
+  netBroadcast({t:'roster',ids:ids,slots:slots});
+  voiceOnRoster(ids,slots);
+}
+function voiceTeardown(){
+  Object.keys(voiceCalls).forEach(function(id){ try{ voiceCalls[id].close(); }catch(e){} });
+  Object.keys(voiceGains).forEach(voiceDropAudio);
+  if(localVoiceStream){
+    localVoiceStream.getTracks().forEach(function(t){ t.stop(); });
+    localVoiceStream=null;
+  }
+  micOn=false; voiceIdToSlot={};
+  micIndicatorUpdate();
+}
+async function voiceToggle(){
+  if(netMode==='off'){ toast('ボイスチャットはオンライン対戦専用'); return; }
+  if(!micOn){
+    if(!localVoiceStream){
+      try{
+        localVoiceStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+      }catch(e){ toast('マイクを使えなかった（権限を確認して）'); return; }
+      /* 許可が下りるまでの間に切断されていたら諦める */
+      if(netMode==='off'){ voiceTeardown(); return; }
+    }
+    micOn=true;
+    localVoiceStream.getAudioTracks().forEach(function(t){ t.enabled=true; });
+    Object.keys(voiceIdToSlot).forEach(voiceCallPeer);
+  } else {
+    micOn=false;
+    if(localVoiceStream) localVoiceStream.getAudioTracks().forEach(function(t){ t.enabled=false; });
+  }
+  micIndicatorUpdate();
+  beep(micOn?880:340,0.12,'sine',0.08);
+}
+function voiceUpdateVolumes(){
+  const ids=Object.keys(voiceGains);
+  if(!ids.length) return;
+  const ready=started&&!over&&me;
+  ids.forEach(function(id){
+    let vol=1;
+    if(ready){
+      const idx=voiceIdToSlot[id];
+      const other=(idx==='teacher')?teacher:((typeof idx==='number')?students[idx]:null);
+      if(other&&other.state!=='out'){
+        const d=Math.hypot(other.x-me.x,other.z-me.z);
+        vol=Math.max(0,1-d/26); vol*=vol;
+      } else vol=0;
+    }
+    voiceGains[id].gain.gain.value=vol*1.3;
+  });
+}
+
 function netMaxSlots(){ return role==='teacher'?4:3; }
 function netStudentIndexForSlot(slot){ return role==='teacher'?slot:(slot+1); }
 function netStuIdx(s){ return students.indexOf(s); }
@@ -6642,10 +6891,16 @@ function netPickCode(){
   let s=''; for(let i=0;i<4;i++) s+=AB[(Math.random()*AB.length)|0];
   return s;
 }
-function netSetStatus(msg){
+let netStatusT=null;
+function netSetStatus(msg,persist){
   const el=document.getElementById('netStatus');
   if(!el) return;
-  if(msg){ el.style.display='block'; el.textContent=msg; } else el.style.display='none';
+  if(netStatusT){ clearTimeout(netStatusT); netStatusT=null; }
+  if(msg){
+    el.style.display='block'; el.textContent=msg;
+    /* 「部屋コードXXXX」等の継続表示以外(エラーや失敗の通知)は5秒で自動的に消す */
+    if(!persist) netStatusT=setTimeout(function(){ el.style.display='none'; netStatusT=null; },5000);
+  } else el.style.display='none';
 }
 function netRenderPeerList(){
   const el=document.getElementById('netPeerList');
@@ -6666,6 +6921,7 @@ function netTeardown(){
   try{ if(netPeer) netPeer.destroy(); }catch(e){}
   netPeer=null; netConns=[]; netHostConn=null; netMode='off'; netInputs={}; netEvents=[];
   netClientSlot=-1; netLastSnap=null; netSeenToastId=0; netToastId=0;
+  voiceTeardown();
   const off=document.getElementById('netOffline'), rm=document.getElementById('netRoom');
   if(off) off.style.display='block';
   if(rm) rm.style.display='none';
@@ -6693,16 +6949,18 @@ function netOpenHost(){
   netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[];
   const code=netPickCode();
   netRoomCode=code;
-  netSetStatus('部屋を作っています…');
+  netSetStatus('部屋を作っています…',true);
   netLockRoleToggle(true);
   try{ netPeer=new Peer('houkago-inokori-'+code,{debug:0}); }
   catch(e){ netSetStatus('部屋を作れなかった'); netMode='off'; netLockRoleToggle(false); return; }
+  voiceAttachIncoming(netPeer);
   netPeer.on('open',function(){
     document.getElementById('netOffline').style.display='none';
     document.getElementById('netRoom').style.display='block';
     document.getElementById('netCodeShow').textContent=code;
     netRenderPeerList();
-    netSetStatus('部屋コード '+code+'　友達を待っています');
+    netSetStatus('部屋コード '+code+'　友達を待っています',true);
+    micIndicatorUpdate();
   });
   netPeer.on('connection',function(conn){
     conn.on('open',function(){
@@ -6711,7 +6969,8 @@ function netOpenHost(){
       netConns.push({conn:conn,slot:slot});
       netSend(conn,{t:'welcome',slot:slot});
       netRenderPeerList();
-      netSetStatus('部屋コード '+code+'　'+netConns.length+'人 接続中');
+      netSetStatus('部屋コード '+code+'　'+netConns.length+'人 接続中',true);
+      netBroadcastVoiceRoster();
     });
     conn.on('data',function(msg){ netHostOnData(conn,msg); });
     conn.on('close',function(){ netHostOnClose(conn); });
@@ -6734,7 +6993,8 @@ function netHostOnClose(conn){
     toast('友達の接続が切れた（AIが引き継ぐ）');
   }
   netRenderPeerList();
-  netSetStatus(netMode==='host'?('部屋コード '+netRoomCode+'　'+netConns.length+'人 接続中'):'');
+  netSetStatus(netMode==='host'?('部屋コード '+netRoomCode+'　'+netConns.length+'人 接続中'):'',true);
+  if(netMode==='host') netBroadcastVoiceRoster();
 }
 function netHostOnData(conn,msg){
   if(!msg||!msg.t) return;
@@ -6752,19 +7012,21 @@ function netJoinRoom(codeRaw){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
   netMode='client'; netRoomCode=code; netClientSlot=-1;
-  netSetStatus('接続しています…');
+  netSetStatus('接続しています…',true);
   const myId='houkago-inokori-guest-'+Math.random().toString(36).slice(2,8);
   try{ netPeer=new Peer(myId,{debug:0}); }
   catch(e){ netSetStatus('接続できなかった'); netMode='off'; return; }
+  voiceAttachIncoming(netPeer);
   netPeer.on('open',function(){
     const conn=netPeer.connect('houkago-inokori-'+code,{reliable:true});
     netHostConn=conn;
     conn.on('open',function(){
-      netSetStatus('接続した！ホストの開始を待っています…');
+      netSetStatus('接続した！ホストの開始を待っています…',true);
       document.getElementById('go').style.display='none';
       document.getElementById('netWaitCode').textContent=code;
       document.getElementById('netWaitMsg').innerHTML='ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…';
       document.getElementById('netwait').classList.add('on');
+      micIndicatorUpdate();
     });
     conn.on('data',function(msg){ netClientOnData(msg); });
     conn.on('close',function(){ netClientDisconnected('ホストとの接続が切れた'); });
@@ -6790,6 +7052,7 @@ function netClientOnData(msg){
   if(msg.t==='welcome'){ /* スロット確定。開始待ち */ }
   else if(msg.t==='full'){ netSetStatus('この部屋は満員だった'); }
   else if(msg.t==='start'){ netClientOnStart(msg); }
+  else if(msg.t==='roster'){ voiceOnRoster(msg.ids,msg.slots); }
   else if(msg.t==='snap'){ netLastSnap=msg; }
   else if(msg.t==='end'){ netClientOnEnd(msg); }
 }
@@ -6820,7 +7083,7 @@ function netClientOnStart(payload){
   document.getElementById('title').style.display='none';
   started=true; over=false; camYaw=me.yaw; last=performance.now();
   startIntro();
-  layoutPad();
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
   try{ ac().resume(); }catch(e){}
   toast('今日の担当は'+KINDS[teacherKind].name+'　黄色い机が課題');
 }
@@ -7149,6 +7412,7 @@ function netClientTick(dt){
   lamp.position.set(camera.position.x,camera.position.y+2.2,camera.position.z);
   lamp2.position.set(me.x,9,me.z);
   updDust(me.x,me.z);
+  voiceUpdateVolumes();
   hud(dt);
   renderer.render(scene,camera);
 }
@@ -7209,10 +7473,16 @@ function renderChat(){
     return '<div class="cmsg '+c.cls+'"><b>'+c.who+'</b> '+c.text+'</div>';
   }).join('');
 }
+let chatCd=0;
 function updChat(dt){
   for(let i=chatLog.length-1;i>=0;i--){
     chatLog[i].t+=dt;
     if(chatLog[i].t>9){ chatLog.splice(i,1); renderChat(); }
+  }
+  if(chatCd>0){
+    chatCd-=dt;
+    elChatBtn.classList.add('cd');
+    if(chatCd<=0){ chatCd=0; elChatBtn.classList.remove('cd'); }
   }
 }
 const CHAT_CMDS=[
@@ -7224,6 +7494,10 @@ const CHAT_CMDS=[
   {k:'status',t:'進捗を教えて'}
 ];
 function chatOrder(cmd,from){
+  if(!from){
+    if(chatCd>0) return;   /* 連打防止：3秒クールダウン */
+    chatCd=3;
+  }
   const nm=from?from.name:'あなた';
   const cd=CHAT_CMDS.filter(function(c){ return c.k===cmd; })[0];
   say(nm,cd?cd.t:cmd,'');
@@ -7250,19 +7524,62 @@ function orderTarget(s){
   if(s.order.t<=0){ s.order=null; return null; }
   return s.order;
 }
+let chatRows=[],chatIdx=0;
+function chatHighlight(){
+  chatRows.forEach(function(r,i){ r.classList.toggle('sel',i===chatIdx); });
+}
+function isTyping(e){
+  const t=e&&e.target; return !!(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'));
+}
+function openChatMenu(){ elChatMenu.classList.add('on'); chatHighlight(); }
+function closeChatMenu(){ elChatMenu.classList.remove('on'); }
 (function(){
-  CHAT_CMDS.forEach(function(c){
+  CHAT_CMDS.forEach(function(c,i){
     const d=document.createElement('div');
     d.textContent=c.t;
     d.addEventListener('pointerdown',function(e){
-      e.stopPropagation(); elChatMenu.classList.remove('on');
+      e.stopPropagation(); chatIdx=i; closeChatMenu();
       chatOrder(c.k,null);
     });
     elChatMenu.appendChild(d);
+    chatRows.push(d);
   });
   elChatBtn.addEventListener('pointerdown',function(e){
-    e.stopPropagation(); elChatMenu.classList.toggle('on');
+    e.stopPropagation();
+    if(elChatMenu.classList.contains('on')) closeChatMenu(); else openChatMenu();
   });
+})();
+/* PC版：キー「1」でチャットを開閉、ホイールかカーソルキーで選択、
+   Enter またはクリックで送信（通気口メニューと同じ操作感） */
+addEventListener('wheel',function(e){
+  if(!elChatMenu.classList.contains('on')) return;
+  e.preventDefault();
+  chatIdx=(chatIdx+(e.deltaY>0?1:-1)+chatRows.length)%chatRows.length;
+  chatHighlight(); beep(560,0.04,'square',0.05);
+},{passive:false});
+addEventListener('keydown',function(e){
+  if(isTyping(e)) return;
+  if(e.code==='Digit1'&&role==='student'&&started&&!over){
+    if(elChatMenu.classList.contains('on')) closeChatMenu(); else openChatMenu();
+    e.preventDefault(); return;
+  }
+  if(!elChatMenu.classList.contains('on')) return;
+  if(e.code==='ArrowDown'||e.code==='ArrowUp'){
+    chatIdx=(chatIdx+(e.code==='ArrowDown'?1:-1)+chatRows.length)%chatRows.length;
+    chatHighlight(); e.preventDefault();
+  } else if(e.code==='Enter'||e.code==='Space'){
+    const cmd=CHAT_CMDS[chatIdx]; closeChatMenu();
+    if(cmd) chatOrder(cmd.k,null);
+    e.preventDefault();
+  } else if(e.code==='Escape') closeChatMenu();
+});
+addEventListener('keydown',function(e){
+  if(isTyping(e)) return;
+  if(e.code==='Digit2'){ voiceToggle(); e.preventDefault(); }
+});
+(function(){
+  const el=document.getElementById('micind');
+  if(el) el.addEventListener('pointerdown',function(e){ e.stopPropagation(); voiceToggle(); });
 })();
 
 /* ---------- ロビー（焚き火のたまり場） ---------- */
@@ -7647,6 +7964,7 @@ document.getElementById('go').addEventListener('click',function(){
         rosterPick:rosterPick, weaponPick:weaponPick, taskDesks:taskDesks,
         mySlot:netStudentIndexForSlot(c.slot)});
     });
+    netBroadcastVoiceRoster();
   }
   me=(role==='teacher')?teacher:students[0];
   if(role==='student'&&me.skill==='reveal'){ setAura(teacher,'reveal',3); teacher.revealT=3; }
@@ -7658,7 +7976,7 @@ document.getElementById('go').addEventListener('click',function(){
   camYaw=(role==='teacher')?(me.yaw+Math.PI):me.yaw;
   last=performance.now();
   startIntro();
-  layoutPad();
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
   try{ ac().resume(); }catch(e){}
   toast(role==='teacher'?'生徒を探せ':('今日の担当は'+KINDS[teacherKind].name+'　黄色い机が課題'));
 });
@@ -7733,7 +8051,9 @@ document.getElementById('again').addEventListener('click',function(){
 });
 try{ refreshStats(); buildList(); showStage(); }
 catch(err){ if(window.__err) window.__err('タイトル初期化: '+err.message); }
-try{ layoutPad(); }catch(err){}
+try{ checkMobileLandscape(); }catch(err){ try{ layoutPad(); }catch(e2){} }
+addEventListener('orientationchange',function(){ setTimeout(function(){
+  try{ checkMobileLandscape(); }catch(e){} },200); });
 (function(){
   const ld=document.getElementById('loading');
   if(ld) ld.style.display='none';
