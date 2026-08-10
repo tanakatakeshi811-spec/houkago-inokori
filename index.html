@@ -14,7 +14,12 @@
   -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 html,body{height:100%;overflow:hidden;background:var(--board2);
   font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
-  color:var(--chalk);touch-action:none;overscroll-behavior:none;position:fixed;width:100%}
+  color:var(--chalk);overscroll-behavior:none;position:fixed;width:100%}
+/* body に touch-action:none を置くと、子要素側で touch-action:pan-y を
+   指定していてもブラウザは祖先との共通部分(none)を採用してしまい、
+   スマホでキャラ選択などのリストが一切スクロールできなくなる。
+   ゲームプレイ中のスティック/視点操作のドラッグは JS 側の
+   pointerdown で preventDefault して止める方式に変更した */
 canvas{display:block}
 #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
 .pe{pointer-events:auto}
@@ -152,6 +157,22 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   #right{gap:4px}
   #mini{width:104px;height:60px}
   #heart,#gear{width:28px;height:28px;font-size:13px}
+  /* 横画面スマホのタイトル画面：キャラ選択パネルを縦いっぱいに広げつつ、
+     はじめるボタン側の文字(#tinfo)をパネルの右側だけに寄せて、
+     重なって押せなくなるのを避ける */
+  #rail{gap:5px}
+  .rbtn{width:38px;height:38px;font-size:7px}
+  .rbtn i{font-size:14px}
+  #panelbox{left:52px;width:200px;max-height:82vh;padding:9px}
+  #panelbox h3{margin:10px 0 5px}
+  .slot{padding:4px}
+  .slot canvas{width:26px;height:34px}
+  .slot .sn{font-size:9.5px}
+  .slot .sn i{font-size:7.5px}
+  #tinfo{left:300px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 6px)}
+  #tname{font-size:15px}
+  #tdesc{font-size:8.5px;line-height:1.5}
+  #go{padding:8px 26px;font-size:12px}
 }
 
 #warp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:270px;
@@ -216,7 +237,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .slot .sn i{display:block;font-style:normal;font-size:8.5px;opacity:.45;margin-top:2px}
 #tport,#tport3d,#pvtoggle{display:none}
 #tinfo{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 12px);
-  z-index:3;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+  z-index:3;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;
+  pointer-events:none}
+/* tinfoの文字だけが#panelboxの上に乗って、キャラ選択の一番下の項目を
+   タップできなくすることがあった。文字部分はクリック不要なので領域ごと
+   pointer-events:noneにし、実際に押す「はじめる」ボタンだけ復活させる */
+#go{pointer-events:auto}
 #tname{font-size:19px;letter-spacing:.16em;text-shadow:0 2px 10px #000}
 #tdesc{font-size:9.5px;line-height:1.7;opacity:.66;max-width:min(560px,86vw);
   text-shadow:0 1px 6px #000}
@@ -3495,6 +3521,9 @@ addEventListener('pointerdown',function(e){
     }
     return;
   }
+  /* 画面全体のtouch-action:noneをやめた分、実際のゲーム操作(スティック/視点)の
+     指ドラッグだけはここでブラウザの既定スクロールを止める */
+  e.preventDefault();
   if(inStickZone(e.clientX,e.clientY)&&stickPid===null){
     stickPid=e.pointerId; placeStick(e.clientX,e.clientY);
   } else if(lookPid===null){
