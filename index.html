@@ -266,6 +266,9 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   font-style:normal;font-size:10px;color:#7fd4a2;letter-spacing:.2em;white-space:nowrap}
 #vig{position:absolute;inset:0;opacity:0;transition:opacity .3s;
   background:radial-gradient(120% 90% at 50% 50%,transparent 40%,#c7452f66 100%)}
+/* 常時うっすら効かせる周辺減光。ホラー映画っぽい画面の締まりを出す（被弾時の#vigとは別枠） */
+#moodvig{position:absolute;inset:0;pointer-events:none;z-index:4;
+  background:radial-gradient(115% 85% at 50% 46%,transparent 52%,#03050488 100%)}
 #micind{position:absolute;top:calc(env(safe-area-inset-top) + 6px);left:50%;
   transform:translateX(-50%);display:none;align-items:center;gap:6px;
   padding:4px 12px;border-radius:12px;background:#0b120ec8;border:1px solid #ffffff2b;
@@ -297,6 +300,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="fate">運命の旋律<b id="fatetxt"></b></div>
   <div id="dronehud"><i>ドローン視点</i></div>
   <div id="vig"></div>
+  <div id="moodvig"></div>
   <div id="micind" class="pe"><i></i><span id="micindtxt">マイク OFF</span></div>
   <div id="tasks"></div>
   <div id="roster"></div>
@@ -324,6 +328,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <label>解像度 <span id="v_res">1.0</span></label><input type="range" id="s_res" min="5" max="10" value="10">
     <div class="row"><span>影と陰影</span><span class="tog" id="t_shadow">OFF</span></div>
     <div class="row"><span>空気中のホコリ</span><span class="tog on" id="t_dust">ON</span></div>
+    <div class="row"><span>発光エフェクト</span><span class="tog on" id="t_bloom">ON</span></div>
     <div class="row"><span>ミニマップ</span><span class="tog on" id="t_mini">表示</span></div>
     <div class="row"><span>効果音</span><span class="tog on" id="t_snd">ON</span></div>
     <h3>ゲーム</h3>
@@ -485,6 +490,20 @@ window.addEventListener('error',function(e){
 <script>if(typeof THREE==='undefined')window.__err('three.js（3Dライブラリ）を読み込めませんでした。ネットワークか広告ブロッカーの可能性があります。');</script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>if(typeof Peer==='undefined')document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/scr'+'ipt>');</script>
+<!-- ポストプロセス（発光ブルーム）。読み込めなくても致命的ではないので、
+     失敗した場合は普通の描画にそのままフォールバックする -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.EffectComposer)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.RenderPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.CopyShader)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.LuminosityHighPassShader)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.ShaderPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.UnrealBloomPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"><\/scr'+'ipt>');</script>
 <script>
 "use strict";
 /* ============================================================
@@ -1048,15 +1067,40 @@ try{
 }catch(e){}
 let shadowsOn=false;
 let resScale=1;
-function applyRes(){ renderer.setPixelRatio(Math.min(devicePixelRatio,2)*resScale); }
+/* ポストプロセス（発光ブルーム）。CDNから読めなかった時やエラー時は
+   composerがnullのままになり、普通の描画に自動でフォールバックする */
+let composer=null, bloomPass=null, postFXOn=true;
+function applyRes(){
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2)*resScale);
+  if(composer) composer.setSize(innerWidth,innerHeight);
+}
 applyRes();
 renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 addEventListener('resize',function(){
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(composer) composer.setSize(innerWidth,innerHeight);
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
 });
+function setupPostFX(){
+  if(!(THREE.EffectComposer&&THREE.RenderPass&&THREE.ShaderPass&&THREE.UnrealBloomPass)) return;
+  try{
+    composer=new THREE.EffectComposer(renderer);
+    composer.addPass(new THREE.RenderPass(scene,camera));
+    bloomPass=new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.55,0.45,0.82);
+    bloomPass.renderToScreen=true;
+    composer.addPass(bloomPass);
+    composer.setSize(innerWidth,innerHeight);
+  }catch(e){ composer=null; bloomPass=null; }
+}
+function renderScene(){
+  if(composer&&postFXOn){
+    try{ composer.render(); return; }catch(e){ composer=null; }
+  }
+  renderer.render(scene,camera);
+}
+try{ setupPostFX(); }catch(e){}
 const hemi=new THREE.HemisphereLight(0xa8c4d8,0x161f1a,0.72); scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xdce8ff,0.55);
 sun.position.set(24,52,18);
@@ -1164,8 +1208,34 @@ function makeHomeworkTex(){
   return new THREE.CanvasTexture(cv);
 }
 const HW_TEX=makeHomeworkTex();
+/* 床の汚れ/ノイズテクスチャ（手続き生成）。単色の床がのっぺりしないように、
+   ごく薄い明暗のムラを掛け合わせる。RepeatWrappingでタイル状に敷き詰める */
+function makeGrungeTex(size,baseGray,variance,blotches){
+  const cv=document.createElement('canvas'); cv.width=size; cv.height=size;
+  const g=cv.getContext('2d');
+  const id=g.createImageData(size,size);
+  for(let i=0;i<id.data.length;i+=4){
+    const v=Math.max(0,Math.min(255,baseGray+(Math.random()-0.5)*variance));
+    id.data[i]=v; id.data[i+1]=v; id.data[i+2]=v; id.data[i+3]=255;
+  }
+  g.putImageData(id,0,0);
+  g.globalAlpha=0.1;
+  for(let i=0;i<blotches;i++){
+    const x=Math.random()*size, y=Math.random()*size, r=10+Math.random()*46;
+    g.fillStyle=Math.random()<0.5?'#000':'#fff';
+    g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill();
+  }
+  g.globalAlpha=1;
+  const tex=new THREE.CanvasTexture(cv);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  return tex;
+}
+const FLOOR_TEX=makeGrungeTex(256,203,24,16);
+FLOOR_TEX.repeat.set((COLS*T)/6,(ROWS*T)/6);
+const GYM_TEX=makeGrungeTex(256,214,20,12);
+GYM_TEX.repeat.set(10,8);
 const M={
-  floor:new THREE.MeshLambertMaterial({color:0x7a6c58}),
+  floor:new THREE.MeshLambertMaterial({color:0x7a6c58,map:FLOOR_TEX}),
   wallLow:LM(0x6d8479), wallUp:LM(0xdcd6c2), trim:LM(0xb9b09a),
   glass:new THREE.MeshPhongMaterial({color:0x9fc6d4,transparent:true,opacity:0.42,
     shininess:140,specular:0xffffff}),
@@ -1187,7 +1257,7 @@ const M={
   carB:new THREE.MeshPhongMaterial({color:0x6b3a3a,shininess:70,specular:0xaaaaaa}),
   water:new THREE.MeshPhongMaterial({color:0x4f9cc4,shininess:120,specular:0xbfe4ff,
     transparent:true,opacity:0.75}),
-  gym:new THREE.MeshLambertMaterial({color:0xb98d4e}),
+  gym:new THREE.MeshLambertMaterial({color:0xb98d4e,map:GYM_TEX}),
   wall:new THREE.MeshLambertMaterial({color:0xd6d0bc}),
   locker:new THREE.MeshLambertMaterial({color:0x8fa2a8}),
   shelf:new THREE.MeshLambertMaterial({color:0x7d5c3e}),
@@ -3605,6 +3675,7 @@ tog('t_shadow',function(v,el){
   el.textContent=v?'ON':'OFF';
 });
 tog('t_dust',function(v,el){ if(dust) dust.visible=v; el.textContent=v?'ON':'OFF'; });
+tog('t_bloom',function(v,el){ postFXOn=v; el.textContent=v?'ON':'OFF'; });
 tog('t_mini',function(v,el){ mini.style.display=v?'block':'none'; el.textContent=v?'表示':'非表示'; });
 tog('t_snd', function(v,el){ sndOn=v; el.textContent=v?'ON':'OFF'; });
 document.getElementById('t_quit').addEventListener('pointerdown',function(e){
@@ -3762,7 +3833,9 @@ function updPallets(dt){
     if(p.fall>0){
       p.fall-=dt;
       const k=Math.min(1,1-Math.max(0,p.fall)/0.36);
-      const e=1-Math.pow(1-k,3);
+      /* ease-out-back：少し行き過ぎてから収まる「どすん」とした重みを出す */
+      const c1=1.70158,c3=c1+1,kk=k-1;
+      const e=1+c3*kk*kk*kk+c1*kk*kk;
       p.mesh.rotation.z=e*1.18;
       p.mesh.rotation.y=p.ang+e*0.42;
       p.mesh.position.set(p.x+(p.mx-p.x)*e,1.75-e*1.05,p.z+(p.mz-p.z)*e);
@@ -4337,6 +4410,11 @@ function damage(s,amt,heavy){
   }
   slam(s); stats.hits++;
   netEmitHit(s);
+  /* 被弾ノックバック（見た目だけ。当たり判定用のs.x/s.zには触らない） */
+  {
+    const kdx=s.x-teacher.x,kdz=s.z-teacher.z,kd=Math.hypot(kdx,kdz)||1;
+    s.knockDX=kdx/kd; s.knockDZ=kdz/kd; s.knockT=0.32;
+  }
   teacher.wrathGauge=(teacher.wrathGauge||0)+34*amt;
   if(teacher.kindKey==='dream'){ s.sleep=1; s.awakeT=0; }
   s.rush=3.0;                       /* 攻撃されると3秒だけ足が速くなる */
@@ -5798,13 +5876,13 @@ function tick(now){
   const dt=Math.max(0,Math.min(0.05,(now-last)/1000)); last=now;
   if(!started&&!over){
     try{ updLobby(dt); }catch(e){}
-    renderer.render(scene,camera);
+    renderScene();
     return;
   }
   if(started&&introPath.length){
-    if(updIntro(dt)){ renderer.render(scene,camera); return; }
+    if(updIntro(dt)){ renderScene(); return; }
   }
-  if(!started||over){ renderer.render(scene,camera); return; }
+  if(!started||over){ renderScene(); return; }
   if(netMode==='client'){ netClientTick(dt); return; }
   elapsed+=dt; lookIdle+=dt;
 
@@ -6165,6 +6243,7 @@ function tick(now){
     if(s.painFree>0) s.painFree-=dt;
     if(s.dull>0) s.dull-=dt;
     if(s.watched>0) s.watched-=dt;
+    if(s.knockT>0) s.knockT-=dt;
     if(s.colors){
       if(s.colors.r>0) s.colors.r-=dt;
       if(s.colors.b>0) s.colors.b-=dt;
@@ -6581,6 +6660,14 @@ function tick(now){
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw;
     e.mesh.rotation.z=0;
+    if(e.knockT>0){
+      /* 被弾ノックバック：見た目だけ吹き飛ぶ（当たり判定は動かさない） */
+      const kk=Math.max(0,e.knockT/0.32), kease=kk*kk;
+      e.mesh.position.x+=e.knockDX*kease*0.85;
+      e.mesh.position.z+=e.knockDZ*kease*0.85;
+      e.mesh.position.y+=Math.sin(kk*Math.PI)*0.22;
+      e.mesh.rotation.x=-kease*0.3;
+    }
     if(e.state==='downed'){
       e.mesh.rotation.z=1.35; e.mesh.position.y=0.55;
       u.legL.rotation.x=0.25; u.legR.rotation.x=-0.15;
@@ -6792,7 +6879,7 @@ function tick(now){
   }
   voiceUpdateVolumes();
   hud(dt);
-  renderer.render(scene,camera);
+  renderScene();
 }
 requestAnimationFrame(tick);
 
@@ -7250,6 +7337,7 @@ function netHostBroadcastSnapshot(dt){
         trapMash:s.trapMash||0, seatT:s.seatT, downT:s.downT, wig:s.wig||0, breath:s.breath,
         holdBreath:s.holdBreath, exh:s.exh, stam:s.stam, blind:s.blind,
         vault:s.vault||0, vaultMax:s.vaultMax||1, vaultK:s.vaultK||0, seatCount:s.seatCount,
+        knockT:s.knockT||0, knockDX:s.knockDX||0, knockDZ:s.knockDZ||0,
         qte: s.qte?{t:s.qte.t,n:s.qte.n}:null, abCd:s.abCd, abUses:s.abUses, lock:s.lock,
         painFree:s.painFree } };
     }),
@@ -7429,6 +7517,13 @@ function netClientTick(dt){
       continue;
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw; e.mesh.rotation.z=0;
+    if(e.knockT>0){
+      const kk=Math.max(0,e.knockT/0.32), kease=kk*kk;
+      e.mesh.position.x+=e.knockDX*kease*0.85;
+      e.mesh.position.z+=e.knockDZ*kease*0.85;
+      e.mesh.position.y+=Math.sin(kk*Math.PI)*0.22;
+      e.mesh.rotation.x=-kease*0.3;
+    }
     if(e.state==='downed'){
       e.mesh.rotation.z=1.35; e.mesh.position.y=0.55;
       u.legL.rotation.x=0.25; u.legR.rotation.x=-0.15;
@@ -7512,7 +7607,7 @@ function netClientTick(dt){
     }
   }
   hud(dt);
-  renderer.render(scene,camera);
+  renderScene();
 }
 
 /* ---- タイトル画面のUI配線 ---- */
