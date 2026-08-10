@@ -1070,6 +1070,13 @@ let resScale=1;
 /* ポストプロセス（発光ブルーム）。CDNから読めなかった時やエラー時は
    composerがnullのままになり、普通の描画に自動でフォールバックする */
 let composer=null, bloomPass=null, postFXOn=true;
+try{
+  if(matchMedia('(pointer:coarse)').matches){
+    postFXOn=false;
+    const bEl=document.getElementById('t_bloom');
+    if(bEl){ bEl.classList.remove('on'); bEl.textContent='OFF'; }
+  }
+}catch(e){}
 function applyRes(){
   renderer.setPixelRatio(Math.min(devicePixelRatio,2)*resScale);
   if(composer) composer.setSize(innerWidth,innerHeight);
