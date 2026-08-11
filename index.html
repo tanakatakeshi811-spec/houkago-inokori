@@ -8527,7 +8527,7 @@ function softReset(){
     if(d.sheet){ scene.remove(d.sheet); d.sheet=null; } });
   tasks=[];
   pallets.forEach(function(p){
-    p.state='up'; p.breakT=0; p.fall=0;
+    p.state='up'; p.breakT=0; p.fall=0; p.wobT=0;
     grid[p.r][p.c]='.'; grid[p.pr][p.pc]='.';
     p.mesh.material=M.pallet; p.mesh.rotation.set(0,p.ang,0);
     p.mesh.position.set(p.x,1.75,p.z);
