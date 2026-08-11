@@ -1917,7 +1917,11 @@ function updShots(dt){
     const sh=shots[i]; sh.t+=dt;
     const sp=26;
     sh.x+=sh.dx*sp*dt; sh.z+=sh.dz*sp*dt;
-    sh.m.position.set(sh.x,1.8+Math.sin(sh.t*14)*0.1,sh.z);
+    /* 当たり判定はXZ距離だけで見ているので、Y方向に控えめな山なりの
+       弧を足しても判定には影響しない。まっすぐ水平に飛ぶだけより
+       物理的な投擲に見える */
+    const maxT=sh.blade?1.1:1.4, arcK=Math.min(1,sh.t/maxT), arcH=Math.sin(arcK*Math.PI)*0.35;
+    sh.m.position.set(sh.x,1.8+arcH+Math.sin(sh.t*14)*0.1,sh.z);
     sh.m.rotation.x+=dt*12;
     let dead=(sh.t>(sh.blade?1.1:1.4))||
       (!sh.blade&&solid.apply(null,tileOf(sh.x,sh.z)));
@@ -8491,7 +8495,7 @@ document.getElementById('go').addEventListener('click',function(){
 
 /* ---------- タイトルに戻す（スコアを保持） ---------- */
 function softReset(){
-  bgmStop();
+  bgmStop(); bgmTension=0;
   if(netMode!=='off') netTeardown();   /* 部屋を作っていた/入っていたら解散する */
   players.forEach(function(e){ scene.remove(e.mesh); });
   students=[]; teacher=null; players=[]; me=null;
