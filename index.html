@@ -105,6 +105,24 @@ canvas{display:block}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
 #stam.low i{background:var(--alert)}
 
+/* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
+   スタミナや進捗(0〜1)を --ringpct に、色を --ringcolor に入れて更新する */
+#actring{position:absolute;left:50%;bottom:33%;transform:translateX(-50%);
+  width:104px;height:104px;display:none;z-index:4;pointer-events:none;
+  --ringpct:0;--ringcolor:#e8c547}
+#actring.on{display:block}
+#actring .ring{position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(var(--ringcolor) calc(var(--ringpct)*360deg),#ffffff1f 0deg);
+  filter:drop-shadow(0 0 7px color-mix(in srgb,var(--ringcolor) 70%,transparent))}
+#actring .core{position:absolute;inset:8px;border-radius:50%;background:#0b120eec;
+  border:1px solid #ffffff2b;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:1px}
+#actring .icon{font-size:26px;line-height:1;color:var(--ringcolor);
+  filter:drop-shadow(0 2px 4px #000)}
+#actring .icon svg{width:26px;height:26px;display:block}
+#actring .pct{font-size:12.5px;font-weight:700;color:var(--ringcolor);letter-spacing:.04em}
+#actring .lbl{font-size:7.5px;opacity:.6;letter-spacing:.1em;margin-top:1px;white-space:nowrap}
+
 #skill{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
   width:220px;height:220px;display:none;align-items:center;justify-content:center}
 #skill.on{display:flex}
@@ -141,8 +159,10 @@ canvas{display:block}
    当たり判定はJS側で計算し、ここは見た目だけ */
 #stickzone,#lookzone{position:fixed;display:none;pointer-events:none;border-radius:22px;
   border:2px dashed #ffffff00;transition:opacity .25s}
-body.mlands #stickzone{display:block;border-color:#e8c54755;background:#e8c54712}
-body.mlands #lookzone{display:block;border-color:#7fc6d455;background:#7fc6d40c}
+/* 操作ゾーンの当たり判定自体はJS側(inStickZone等)で別管理なので、
+   枠線・色を消して見た目だけ非表示にする(要望により黄色/水色の枠を撤去) */
+body.mlands #stickzone{display:block;border-color:transparent;background:transparent}
+body.mlands #lookzone{display:block;border-color:transparent;background:transparent}
 body.mlands #pad{position:fixed;display:grid;gap:7px;align-items:stretch;justify-items:stretch}
 body.mlands .btn{border-radius:13px}
 body.mlands .btn b{bottom:3px;font-size:8.5px}
@@ -368,6 +388,9 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="wig"><i></i></div>
   <div id="mashn"></div>
   <div id="stam"><i></i></div>
+  <div id="actring"><div class="ring"></div><div class="core">
+    <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
+    <div class="lbl" id="ringlbl"></div></div></div>
   <div id="skill" class="pe">
     <div id="ring"></div><div id="zone"></div><div id="needle"></div>
     <div id="skilltxt">画面のどこでもタップ</div>
@@ -3083,7 +3106,19 @@ const STU=[
  {name:'白瀬 心春',short:'心春',uniform:0xf0c9d4,hair:0xc9a882,perk:'aed',
   ptxt:'保健委員｜仲間の救助が少し速い',
   skill:'revive',sname:'パルス蘇生',cd:8,uses:3,
-  stxt:'近くでダウンしている仲間を、順番待ちなしでその場に起こす（3回まで）。起こされた仲間はしばらく足が速くなる'}
+  stxt:'近くでダウンしている仲間を、順番待ちなしでその場に起こす（3回まで）。起こされた仲間はしばらく足が速くなる'},
+ {name:'早乙女 翔',short:'翔',uniform:0x2f5a44,hair:0x1e1a16,perk:'dash2',
+  ptxt:'限界突破｜乗り越え動作が少し速い',
+  skill:'unbound',sname:'リミッター解除',cd:26,
+  stxt:'スタミナを全回復し、4秒間 加速する'},
+ {name:'遠山 なる',short:'なる',uniform:0xd6b23a,hair:0x4a2f28,perk:'bcast',
+  ptxt:'放送部｜合図（チャット）のクールダウンが短い',
+  skill:'announce',sname:'檄を飛ばす',cd:28,
+  stxt:'「みんな、油断しないで！」――周囲の仲間全員を3秒間 加速させる'},
+ {name:'百目木 弦',short:'弦',uniform:0x3a3f5c,hair:0x24201c,perk:'focus',
+  ptxt:'弓道部｜課題を進める速度が少し速い',
+  skill:'snipe',sname:'牽制の一矢',cd:24,
+  stxt:'8〜24m先の視界内にいる先生を狙い、足を4秒止める'}
 ];
 const WEAPONS=[
  {k:'',        n:'キャラ標準'},
@@ -3164,7 +3199,10 @@ const LOOK={
   clown:{body:'human',hairStyle:'wild',acc:'clownface',weapon:'',accent:0xc94a52,
          skin:0xf4f2ea,hair:0xd8622a,eye:0x22242a},
   seitokai:{body:'human',tall:true,hairStyle:'long',acc:'armband',weapon:'axe',accent:0x4a3a5c,
-         hair:0xd8d0e0,skin:0xcac4d0,eye:0xc9a0ff}
+         hair:0xd8d0e0,skin:0xcac4d0,eye:0xc9a0ff},
+  garden:{body:'human',hairStyle:'short',acc:'hat',weapon:'shears',accent:0x4a6b3a,skin:0xc9a468},
+  magnet:{body:'human',hairStyle:'wild',acc:'glasses',weapon:'hammer',accent:0x5a4a6b},
+  band  :{body:'human',hairStyle:'short',acc:'',weapon:'baton',accent:0x2a2a3a}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -3190,6 +3228,9 @@ const SLOOK={
   slug :{hairStyle:'short',acc:'band',weapon:'bat',male:true,pants:0x22304a},
   aed  :{hairStyle:'twin',acc:'',weapon:'syringe'},
   bug  :{hairStyle:'twin',acc:'glasses',weapon:'flask'},
+  dash2:{hairStyle:'short',acc:'band',weapon:'',male:true,pants:0x2a3a2f},
+  bcast:{hairStyle:'bob',acc:'',weapon:''},
+  focus:{hairStyle:'twin',acc:'band',weapon:''},
   foot2:{}
 };
 SLOOK.foot={hairStyle:'short',acc:'band',weapon:'band',male:true,pants:0x3a2f2a};
@@ -3220,7 +3261,10 @@ const KINDS={
   ripper:{name:'霧刃の紳士',   ability:'霧の刃／寒意',        color:0x232630, cd:20},
   wheel:{name:'軋車の三兄弟',  ability:'車輪形態／悲鳴',      color:0x5a4a3a, cd:6},
   clown:{name:'三色道化',      ability:'色爆弾／分身',        color:0xa83a4a, cd:5},
-  seitokai:{name:'風紀委員の亡霊',ability:'目付け／取り憑き突進',color:0x352a40, cd:9}
+  seitokai:{name:'風紀委員の亡霊',ability:'目付け／取り憑き突進',color:0x352a40, cd:9},
+  garden:{name:'花壇の見回り先生', ability:'スプリンクラー放水', color:0x4a6b3a, cd:11},
+  magnet:{name:'地学部顧問',       ability:'磁力探知',         color:0x5a4a6b, cd:16},
+  band  :{name:'吹奏楽部顧問',     ability:'指揮棒一閃',       color:0x2a2a3a, cd:13}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -3249,7 +3293,10 @@ const TCH=[
  {key:'wheel',desc:'車輪形態｜爆速で走り、轢いた生徒に「刺」を最大3本刺す。板は轢き壊す／人間形態に戻ると悲鳴が発動し、刺1本=0.5・2本=1.0・3本で即ダウン。仲間同士で刺を抜ける'},
  {key:'clown',desc:'色爆弾｜赤=スキル封印／黒=減速／白=課題が遅くなる。違う色を2つ以上重ねた相手への一撃は2倍。分身を置くと同時に2方向から爆弾が飛ぶ'},
  {key:'wolf',desc:'人間形態は48mまで生徒を感知。攻撃や板破壊で8秒の獣形態へ。飛びかかり（タップ7m／溜め14m・障害物を跳び越える）は0.5ダメージ＋獲物マーク、マーク中に追撃でもう0.5。20秒ごとに現れる痕跡を拾うと速度+10%。存在感MAXでマークが消えにくくなる'},
- {key:'seitokai',desc:'目付け｜見えている生徒に印を付ける（12秒間有効）／取り憑き突進｜印を付けた生徒の隣へ距離を無視して瞬間移動する'}
+ {key:'seitokai',desc:'目付け｜見えている生徒に印を付ける（12秒間有効）／取り憑き突進｜印を付けた生徒の隣へ距離を無視して瞬間移動する'},
+ {key:'garden',desc:'スプリンクラー放水｜半径10m以内の生徒に水をかけて3秒減速させる'},
+ {key:'magnet',desc:'磁力探知｜進行中の課題プリントの位置をマップに感知する'},
+ {key:'band',desc:'指揮棒一閃｜2.5秒加速しつつ、見えている生徒の気配をマップに示す'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -3295,7 +3342,7 @@ function spawnAll(){
       sleep:0,weak:0,forget:0,snareCd:0,guard:0,tackle:0,drone:0,deaf:0,blind:0,dmg:0,mark:0,
       spikes:0,dull:0,colors:null,runCd:0,
       downT:0,seatT:0,stam:1,path:[],pathT:0,rescueT:0,hide:null,vault:0,
-      vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0};
+      vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0,toppleFxT:0};
   });
   const far=spots.filter(function(w){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
@@ -3307,7 +3354,8 @@ function spawnAll(){
   const SPD={teke:1.06,wolf:1.03,mask:1.02,cat:1.04,monk:1.03,wheel:0.96,
              clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
              dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
-             fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0};
+             fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
+             garden:1.0,magnet:0.98,band:1.0};
   teacher={kind:'teacher',name:K.name,
     mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
     x:gp.x,z:gp.z,yaw:0,speed:DIFF.tSpeed*(SPD[teacherKind]||1),
@@ -3787,6 +3835,7 @@ function tryVault(e){
   else           dur=isT?0.70:0.48;
   if(e.perk==='foot') dur*=0.7;
   if(e.perk==='slug') dur*=0.7;
+  if(e.perk==='dash2') dur*=0.85;
   e.vault=dur; e.vaultMax=dur; e.vaultK=0;
   e.vFrom={x:e.x,z:e.z}; e.vTo={x:p.x,z:p.z};
   e.yaw=Math.atan2(dc,dr);
@@ -3890,6 +3939,7 @@ function dropPallet(p,dropper){
   if(dropper&&dropper.perk==='slug') dropper.pushT=0.28;
   if(dropper){ dropper.pushT=(dropper.perk==='foot')?0.25:0.45;
     dropper.yaw=Math.atan2(p.x-dropper.x,p.z-dropper.z); }
+  if(dropper===me) me.toppleFxT=0.5;   /* 板を倒す動作のリングHUDを一瞬だけ光らせる */
   beep(120,0.4,'sawtooth',0.16); noise(p.x,p.z,12);
   const d=Math.hypot(teacher.x-p.x,teacher.z-p.z);
   if(d<4.3&&teacher.stun<=0){
@@ -4242,7 +4292,6 @@ function useStudentSkill(s){
     beep(420,0.25,'square',0.1);
   } else if(s.skill==='drone'){
     s.drone=30.0; s.bombs=2; s.abCd=s.abMax; s.bombHold=0;
-    setAura(teacher,'reveal',30.0); teacher.revealT=30.0;
     droneObj.x=s.x; droneObj.z=s.z; droneObj.m.visible=true;
     setAura(teacher,'reveal',6.0); teacher.revealT=6.0;
     if(s===me) toast('偵察ドローン発進（本体は無防備）');
@@ -4259,6 +4308,26 @@ function useStudentSkill(s){
       if(s===me) toast('フラッシュ！先生がめまいを起こした');
       else toast(s.name+'のフラッシュが決まった');
     } else { if(s===me) toast('正面に先生がいない'); }
+  } else if(s.skill==='unbound'){
+    s.stam=1; s.rush=4.0; s.abCd=s.abMax;
+    if(s===me) toast('リミッター解除！スタミナ全回復＋4秒 加速');
+    beep(880,0.18,'square',0.11);
+  } else if(s.skill==='announce'){
+    s.abCd=s.abMax;
+    let n=0;
+    students.forEach(function(x){ if(x.state==='free'){ x.rush=Math.max(x.rush||0,3.0); n++; } });
+    if(s===me) toast('檄を飛ばした！仲間'+n+'人が3秒 加速');
+    else toast(s.name+'が檄を飛ばした（全員 一時加速）');
+    beep(700,0.3,'triangle',0.12);
+  } else if(s.skill==='snipe'){
+    const dx=teacher.x-s.x,dz=teacher.z-s.z,d=Math.hypot(dx,dz);
+    if(d<8||d>24||!los(s.x,s.z,teacher.x,teacher.z)){
+      if(s===me) toast('8〜24mの視界内でないと狙えない'); return;
+    }
+    s.abCd=s.abMax; teacher.slowT=4.0; teacher.path=[];
+    if(s===me) toast('牽制の一矢！先生の足を止めた');
+    else toast(s.name+'の一矢が決まった');
+    beep(1100,0.15,'triangle',0.12);
   }
 }
 /* ドローン */
@@ -4323,7 +4392,7 @@ function workTask(s,d,dt){
       if(s===me) toast('劇薬ができた（'+s.abUses+'）'); beep(700,0.14,'sine',0.08); } }
   }
   d.prog=Math.min(1,d.prog+dt*DIFF.work*(s===me?1:0.8)*
-    (s.perk==='work'?1.12:(s.perk==='read'?1.10:(s.perk==='proto'?5.0:1)))*
+    (s.perk==='work'?1.12:(s.perk==='read'?1.10:(s.perk==='proto'?5.0:(s.perk==='focus'?1.10:1))))*
     (spotlightOn(s)?1.25:1));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
   if(d.prog>=1){
@@ -4744,7 +4813,7 @@ const AB2={
   mask:'やり投げ', dream:'夢渡り', anima:'警備室ワープ', fallen:'無念の一閃',
   beet:'運命の旋律', chalk:'チョーク粉塵', kok:'狐憑き', vice:'監視の目',
   seitokai:'取り憑き突進',
-  model:'', pe:'', math:'', jan:'', teke:''
+  model:'', pe:'', math:'', jan:'', teke:'', garden:'', magnet:'', band:''
 };
 function useAbility2(){
   const t=teacher;
@@ -5138,6 +5207,26 @@ function useAbility(){
     if(!near){ toast(t.kindKey==='kok'?'鳥居に近づいて使う':'通気口に近づいて使う'); return; }
     if(role==='teacher') openWarp(near);
     else { const b=pickVent(near); if(b) startWarp(b); }
+  } else if(t.kindKey==='garden'){
+    t.abCd=KINDS.garden.cd;
+    let hit=0;
+    students.forEach(function(x){
+      if(x.state==='free'&&!x.hide&&Math.hypot(x.x-t.x,x.z-t.z)<10){ x.slow=3.0; hit++; }
+    });
+    toast(hit?('スプリンクラー放水！'+hit+'人が濡れて減速'):'スプリンクラー放水（近くに誰もいなかった）');
+    beep(300,0.3,'sine',0.12); bigNoise(0.2,0.5); noise(t.x,t.z,10);
+  } else if(t.kindKey==='magnet'){
+    t.abCd=KINDS.magnet.cd;
+    const active=tasks.filter(function(x){ return x.prog<1; });
+    active.forEach(function(x){ mark(x.x,x.z,0xff6a5a); });
+    toast(active.length?'磁力探知：進行中の課題を感知した':'磁力探知（進行中の課題が無い）');
+    beep(200,0.35,'sawtooth',0.1);
+  } else if(t.kindKey==='band'){
+    t.abCd=KINDS.band.cd; t.boost=2.5;
+    let n=0;
+    students.forEach(function(x){ if(x.state==='free'&&!x.hide){ mark(x.x,x.z,0xe8c547); n++; } });
+    toast('指揮棒一閃！2.5秒加速して'+n+'人の気配を掴んだ');
+    beep(500,0.25,'triangle',0.12);
   }
 }
 function roomAt(c,r){
@@ -5420,6 +5509,9 @@ function aiTeacher(dt){
       else if(t.kindKey==='pe'&&d>6&&d<15&&t.dash<=0&&t.aiCharge<=0){
         t.aiCharge=0.85; t.charge=0; }
       else if(t.kindKey==='math'&&d<9) useAbility();
+      else if(t.kindKey==='garden'&&d<9) useAbility();
+      else if(t.kindKey==='magnet'&&t.abCd<=0&&Math.random()<0.01) useAbility();
+      else if(t.kindKey==='band'&&d<12) useAbility();
     }
     if(d<3.8) swing(t.dash>0);
     /* 相手の進行方向を読んで先回り */
@@ -5524,6 +5616,9 @@ function aiStudent(s,dt){
     else if(s.skill==='reveal'&&Math.random()<0.004) useStudentSkill(s);
     else if(s.skill==='revive'&&students.some(function(x){ return x!==s&&x.state==='downed'&&
       Math.hypot(x.x-s.x,x.z-s.z)<3.4; })) useStudentSkill(s);
+    else if(s.skill==='unbound'&&td<12&&s.stam<0.4) useStudentSkill(s);
+    else if(s.skill==='announce'&&Math.random()<0.003) useStudentSkill(s);
+    else if(s.skill==='snipe'&&td>8&&td<24&&los(teacher.x,teacher.z,s.x,s.z)) useStudentSkill(s);
   }
   if(td>=18) s.chased=0;
   if(td<16&&los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0){
@@ -5665,6 +5760,30 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
       elHeart=document.getElementById('heart'),elStam=document.querySelector('#stam i'),
       elStamBox=document.getElementById('stam'),elActLabel=document.getElementById('actlabel'),
       elHold=document.getElementById('hold');
+/* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
+   CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
+   板を倒す動作だけはちょうど良い絵文字が無いので簡単な線画SVGを自作した */
+const elActRing=document.getElementById('actring'),elRingIcon=document.getElementById('ringicon'),
+      elRingPct=document.getElementById('ringpct'),elRingLbl=document.getElementById('ringlbl');
+const RING_ICON={
+  run:'🏃',
+  climb:'🧗',
+  topple:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '+
+    'stroke-linecap="round" stroke-linejoin="round"><circle cx="6.4" cy="4.6" r="1.8" fill="currentColor" stroke="none"/>'+
+    '<path d="M6.4 6.7v5.2M6.4 8.3l3.8-1.3M6.4 11.9l-1.7 4.8M6.4 11.9l2.8 4.4"/>'+
+    '<rect x="12" y="2.6" width="7" height="12.6" rx="0.6" transform="rotate(11 15.5 8.9)"/></svg>'
+};
+const RING_LABEL={run:'RUN 走る',climb:'CLIMB 乗り越え',topple:'TOPPLE 倒す'};
+let ringMode=null;
+function updActionRing(mode,pct,color){
+  if(!mode){ if(ringMode){ elActRing.classList.remove('on'); ringMode=null; } return; }
+  if(!elActRing.classList.contains('on')) elActRing.classList.add('on');
+  if(ringMode!==mode){ ringMode=mode; elRingIcon.innerHTML=RING_ICON[mode]; elRingLbl.textContent=RING_LABEL[mode]; }
+  const p=Math.max(0,Math.min(1,pct||0));
+  elActRing.style.setProperty('--ringpct',p);
+  elActRing.style.setProperty('--ringcolor',color||'#e8c547');
+  elRingPct.textContent=Math.round(p*100)+'%';
+}
 for(let i=0;i<TASK_N;i++) elTasks.innerHTML+='<div class="sheet" id="sh'+i+'"><i></i><b>'+(i+1)+'</b></div>';
 const mg=mini.getContext('2d');
 function drawFace(g,W,H,o){
@@ -6186,6 +6305,18 @@ function tick(now){
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false;
+
+  /* ダッシュ・板を倒す・乗り越えの大きめリングHUD更新（生徒のみ） */
+  if(role==='student'){
+    if(me.toppleFxT>0) me.toppleFxT=Math.max(0,me.toppleFxT-dt);
+    if(me.state==='free'&&me.vault>0){
+      updActionRing('climb',1-me.vault/(me.vaultMax||1),'#7fc6d4');
+    } else if(me.toppleFxT>0){
+      updActionRing('topple',1-me.toppleFxT/0.5,'#e8a15f');
+    } else if(running&&mag>0.15&&me.state==='free'){
+      updActionRing('run',me.stam,(me.stam<0.25)?'#c7452f':'#e8c547');
+    } else updActionRing(null);
+  } else updActionRing(null);
 
   elChatBtn.style.display=(role==='student')?'flex':'none';
   elActLabel.textContent=label;
@@ -6928,6 +7059,7 @@ requestAnimationFrame(tick);
    ホストの答えにそっと寄せる。それ以外（課題・攻撃・スキル等）は
    ホストからの返事が届いてから反映されるので、わずかに遅れて感じる。 */
 let netMode='off';            // 'off' | 'host' | 'client'
+let netConnGen=0;             // 接続試行のたび+1。古いタイムアウトの誤爆を防ぐ
 let netPeer=null, netRoomCode='';
 let netConns=[];              // host: [{conn,slot}]
 let netHostConn=null;         // client: ホストへの接続
@@ -7110,6 +7242,7 @@ function netLockRoleToggle(lock){
   el.style.pointerEvents=lock?'none':'auto';
 }
 function netTeardown(){
+  netConnGen++;   /* 保留中の接続タイムアウト監視を無効化する */
   try{ netConns.forEach(function(c){ c.conn.close(); }); }catch(e){}
   try{ if(netHostConn) netHostConn.close(); }catch(e){}
   try{ if(netPeer) netPeer.destroy(); }catch(e){}
@@ -7148,6 +7281,15 @@ function netOpenHost(){
   try{ netPeer=new Peer('houkago-inokori-'+code,{debug:0}); }
   catch(e){ netSetStatus('部屋を作れなかった'); netMode='off'; netLockRoleToggle(false); return; }
   voiceAttachIncoming(netPeer);
+  /* シグナリングサーバーが反応しないまま何も起きないケースの保険。
+     エラーイベントが一切来ないまま固まった時のためのタイムアウト */
+  const hostGen=++netConnGen;
+  setTimeout(function(){
+    if(netConnGen!==hostGen) return;
+    if(!netPeer||!netPeer.open){
+      netTeardown(); netSetStatus('部屋を作成できなかった（時間切れ）');
+    }
+  },12000);
   netPeer.on('open',function(){
     document.getElementById('netOffline').style.display='none';
     document.getElementById('netRoom').style.display='block';
@@ -7211,6 +7353,14 @@ function netJoinRoom(codeRaw){
   try{ netPeer=new Peer(myId,{debug:0}); }
   catch(e){ netSetStatus('接続できなかった'); netMode='off'; return; }
   voiceAttachIncoming(netPeer);
+  /* エラーイベントが来ないまま「接続しています…」が固まるケースの保険 */
+  const joinGen=++netConnGen;
+  setTimeout(function(){
+    if(netConnGen!==joinGen) return;
+    if(!netHostConn||!netHostConn.open){
+      netTeardown(); netSetStatus('接続がタイムアウトした（部屋コードを確認してください）');
+    }
+  },12000);
   netPeer.on('open',function(){
     const conn=netPeer.connect('houkago-inokori-'+code,{reliable:true});
     netHostConn=conn;
@@ -7330,6 +7480,16 @@ function netApplyStudentInput(s,inp,dt){
     } else { s.holdBreath=false; s.breath=Math.min(1,(s.breath===undefined?1:s.breath)+dt/5); s.leakT=0; }
     if(s.perk==='ghost'){ s.holdBreath=true; s.breath=1; }
     if(inp.altEdge){ s.hide=null; s.mesh.visible=true; s.holdBreath=false; }
+  } else if(s.drone>0){
+    /* ドローン飛行中は行動ボタンで粉爆弾をため落とし、乗り越えボタンで
+       ドローンを戻す（ローカル操作のtick()内ロジックと同じにする。
+       これが無いとオンライン参加者はドローン中に粉爆弾が使えず、
+       誤って乗り越え判定が走ってしまっていた） */
+    const chg=s.bombHold||0;
+    if(inp.act){ s.bombHold=Math.min(1.2,chg+dt/1.5); }
+    else if(chg>0.05){ dropPowderBomb(s,chg); s.bombHold=0; }
+    else s.bombHold=0;
+    if(inp.altEdge){ s.drone=0; droneObj.m.visible=false; }
   } else if(s.state==='free'){
     const p=nearPallet(s,'up'), lk=nearLocker(s);
     if(inp.altEdge){
@@ -7500,6 +7660,9 @@ function netClientTick(dt){
     const p=nearPallet(me,'up');
     if(p){ altLabel='板を倒す'; altHot=true; } else if(lk){ altLabel='隠れる'; altHot=true; } else { altLabel='乗り越え'; altHot=true; }
     hp=a?(me.rescueT||0)/2.4:(hv?(me.healT||0)/10.5:(d?d.prog:0));
+    /* 板を倒す判定自体はホスト権威だが、リングHUDは見た目だけなので
+       ローカルで先読みして一瞬光らせる（ホストの結果を待たない） */
+    if(input.altEdge&&p) me.toppleFxT=0.5;
   } else if(me.state==='carried'){ label='もがく'; hot=true; hp=me.wig||0; altLabel='もがく'; altHot=true; }
   else if(me.state==='seated'&&me.qte){ label='こらえる'; hot=true; hp=(me.qte.n||0)/10; }
   else label=(me.state==='seated')?'反省椅子…':((me.state==='downed')?'ダウン中…':'—');
@@ -7508,6 +7671,15 @@ function netClientTick(dt){
     const ready=(me.abCd<=0)&&(me.abUses!==0)&&(me.lock<=0)&&me.state==='free';
     abDim=!ready; abHot=ready;
   } else { abLabel='固有なし'; abDim=true; }
+
+  if(me.toppleFxT>0) me.toppleFxT=Math.max(0,me.toppleFxT-dt);
+  if(me.state==='free'&&me.vault>0){
+    updActionRing('climb',1-me.vault/(me.vaultMax||1),'#7fc6d4');
+  } else if(me.toppleFxT>0){
+    updActionRing('topple',1-me.toppleFxT/0.5,'#e8a15f');
+  } else if(running&&mag>0.15&&me.state==='free'){
+    updActionRing('run',me.stam,(me.stam<0.25)?'#c7452f':'#e8c547');
+  } else updActionRing(null);
 
   netSendT-=dt;
   if(input.mash){ netMashCount++; }
@@ -7724,8 +7896,8 @@ const CHAT_CMDS=[
 ];
 function chatOrder(cmd,from){
   if(!from){
-    if(chatCd>0) return;   /* 連打防止：3秒クールダウン */
-    chatCd=3;
+    if(chatCd>0) return;   /* 連打防止：3秒クールダウン（放送部は慣れているので1.5秒） */
+    chatCd=(role==='student'&&me&&me.perk==='bcast')?1.5:3;
   }
   const nm=from?from.name:'あなた';
   const cd=CHAT_CMDS.filter(function(c){ return c.k===cmd; })[0];
@@ -8261,6 +8433,7 @@ function softReset(){
   dashWarn.visible=false;
   scActive=false; scTarget=null; scNext=3; elSkill.classList.remove('on');
   elMashN.classList.remove('on'); elStun.classList.remove('on'); elWig.style.display='none';
+  elActRing.classList.remove('on'); ringMode=null;
   Object.keys(stats).forEach(function(k){ stats[k]=0; });
   endTimer=0;
   over=false; started=false; elapsed=0; msgT=0; elMsg.classList.remove('on');
