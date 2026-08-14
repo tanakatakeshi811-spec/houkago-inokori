@@ -332,6 +332,23 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #netwait .code{font-size:30px;letter-spacing:.3em;color:var(--yellow)}
 #netwait button{padding:11px 26px;border:1px solid var(--chalk);color:var(--chalk);background:transparent;
   font-family:inherit;font-size:12px;letter-spacing:.2em}
+.icongrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
+.icongrid div{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  font-size:16px;border:1px solid #ffffff2e;border-radius:3px;background:#0b120e99;cursor:pointer}
+.icongrid div.sel{border-color:var(--yellow);background:#e8c5471a}
+#profName{width:100%;box-sizing:border-box;background:#0b120e;border:1px solid #ffffff44;
+  color:#f2efe4;padding:8px;border-radius:3px;font-family:inherit;font-size:13px;
+  text-align:center;margin-bottom:9px}
+.netPRow{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px;text-align:left}
+.netPRow .ic{font-size:14px}
+.netPRow .nm{flex:1}
+.netPRow .idn{opacity:.5;font-size:9px}
+.netSRow{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid #ffffff2a;
+  border-radius:3px;margin-bottom:6px;background:#0b120e99;cursor:pointer;font-size:10.5px;text-align:left}
+.netSRow:active{border-color:var(--yellow)}
+.netSRow .ic{font-size:15px}
+.netSRow .nm{flex:1}
+.netSRow .cd{opacity:.55;letter-spacing:.1em}
 </style>
 </head>
 <body>
@@ -468,11 +485,15 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       </p>
     </div>
     <div class="pane" id="p_net">
+      <p class="lbl">プロフィール</p>
+      <input id="profName" maxlength="10" placeholder="名前（10文字まで）">
+      <div class="icongrid" id="profIconGrid"></div>
       <p class="lbl">みんなで遊ぶ</p>
       <div id="netOffline">
         <div class="seg small" style="margin-bottom:9px">
           <div id="netMakeBtn" style="flex:1;text-align:center">部屋を作る</div>
           <div id="netJoinBtn" style="flex:1;text-align:center">コードで入る</div>
+          <div id="netSearchBtn" style="flex:1;text-align:center">サーバー検索</div>
         </div>
         <div id="netJoinBox" style="display:none">
           <input id="netCodeInput" maxlength="4"
@@ -481,6 +502,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
             color:#f2efe4;padding:8px;border-radius:3px;margin-bottom:8px;font-family:inherit">
           <div class="tog on" id="netJoinGo" style="text-align:center;width:100%;box-sizing:border-box">入室する</div>
         </div>
+        <div id="netSearchBox" style="display:none">
+          <div id="netSearchList" style="font-size:10.5px;line-height:1.6;opacity:.85;margin-bottom:8px">
+            「検索する」を押すと、今公開されている部屋を探しに行きます</div>
+          <div class="tog on" id="netSearchGo" style="text-align:center;width:100%;box-sizing:border-box">検索する</div>
+        </div>
       </div>
       <div id="netRoom" style="display:none">
         <p class="lbl" id="netRoomLbl">部屋コード</p>
@@ -488,11 +514,13 @@ body.mlands #chatbtn{left:auto;bottom:auto}
           text-align:center;margin:6px 0 12px">----</div>
         <p class="lbl">接続中</p>
         <div id="netPeerList" style="font-size:11px;line-height:2;opacity:.85">まだ誰も来ていない</div>
-        <div class="tog" id="netLeaveBtn" style="text-align:center;width:100%;box-sizing:border-box;margin-top:12px">退室する</div>
+        <div class="tog" id="netPublicToggle" style="text-align:center;width:100%;box-sizing:border-box;margin-top:10px">検索に公開する: OFF</div>
+        <div class="tog" id="netLeaveBtn" style="text-align:center;width:100%;box-sizing:border-box;margin-top:8px">退室する</div>
       </div>
       <p class="hint" style="margin-top:12px">
         先生役はホストだけ。友達は空いている生徒枠に入る。<br>
-        人数が足りない枠は今まで通りAIが埋める。
+        人数が足りない枠は今まで通りAIが埋める。<br>
+        コードを知っていれば直接入れる。「検索に公開する」をONにした部屋だけサーバー検索に出る。
       </p>
     </div>
   </div>
@@ -518,6 +546,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <h2>オンライン</h2>
   <div class="code" id="netWaitCode">----</div>
   <p id="netWaitMsg">ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…</p>
+  <div id="netWaitPeers" style="width:220px"></div>
   <button id="netWaitLeave">退室する</button>
 </div>
 
@@ -7179,6 +7208,62 @@ let netLastSnap=null;         // client: 直近に受け取ったスナップシ
 let netPrevGateOpen=false;    // client: 門が開いた瞬間を検知する用
 let netSeenToastId=0;         // client: 既に表示したトーストのID
 let netLastToast='', netToastId=0;   // host: 直近のtoast内容とID
+let netPlayersList=[];        // client: 待機中に見えている参加者一覧（表示用）
+let netHostProfile=null;      // client: ホストの名前・アイコン
+
+/* ---- プロフィール（名前・アイコン、ローカル保存） ---- */
+let myProfile={name:'',icon:''};
+const PROFILE_ICONS=['🦊','🐱','🐰','🐼','🐸','🦉','🐧','🦁','🐻','🐨','🐵','🦔','🐹','🦄','🐙','🐢','🦋','🐝','🌟','🔥'];
+function escHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function stageName(key){
+  const s=STAGES.filter(function(x){ return x.key===key; })[0];
+  return s?s.name:key;
+}
+
+/* ---- サーバー検索用の状態（詳しい仕組みは netLobbySync 付近のコメント参照） ---- */
+const LOBBY_ID='houkago-inokori-lobby-v1';
+let netPublic=false;          // host: 「検索に公開する」トグルの状態
+let netLobbyPeer=null;        // このタブがロビー役を担っている場合のPeerオブジェクト
+let netLobbyRooms={};         // ロビー役のときに保持する公開部屋一覧 {peerId:{info,ts}}
+let netLobbyPubConn=null;     // ロビー役ではない場合、既存ロビーへ登録しに行く接続
+let netLobbyRoleDecided=false;// ロビー役になれるか一度だけ判定したか
+let netSearchPeer=null;       // 検索中に使う使い捨てのPeerオブジェクト
+function saveProfile(){
+  try{ localStorage.setItem('hi_profile_v1',JSON.stringify({name:myProfile.name,icon:myProfile.icon})); }catch(e){}
+}
+function loadProfile(){
+  try{
+    const raw=localStorage.getItem('hi_profile_v1');
+    if(raw){ const o=JSON.parse(raw); if(o&&o.name) myProfile.name=String(o.name).slice(0,10); if(o&&o.icon) myProfile.icon=o.icon; }
+  }catch(e){}
+  if(!myProfile.icon) myProfile.icon=PROFILE_ICONS[Math.floor(Math.random()*PROFILE_ICONS.length)];
+  if(!myProfile.name) myProfile.name='生徒'+String(PID).slice(-4);
+}
+function buildProfileUI(){
+  loadProfile();
+  const g=document.getElementById('profIconGrid');
+  if(g){
+    g.innerHTML=PROFILE_ICONS.map(function(ic){ return '<div data-ic="'+ic+'">'+ic+'</div>'; }).join('');
+    Array.prototype.forEach.call(g.children,function(el){
+      if(el.dataset.ic===myProfile.icon) el.classList.add('sel');
+      el.addEventListener('click',function(){
+        Array.prototype.forEach.call(g.children,function(x){ x.classList.remove('sel'); });
+        el.classList.add('sel'); myProfile.icon=el.dataset.ic; saveProfile();
+      });
+    });
+  }
+  const inp=document.getElementById('profName');
+  if(inp){
+    inp.value=myProfile.name;
+    inp.addEventListener('input',function(){
+      myProfile.name=inp.value.slice(0,10); saveProfile();
+    });
+  }
+}
 
 /* ---- 近接ボイスチャット ----
    PeerJSのcall()で全員が直接1対1につながるメッシュ方式（ホストがいなくても
@@ -7338,8 +7423,31 @@ function netRenderPeerList(){
   const el=document.getElementById('netPeerList');
   if(!el) return;
   if(!netConns.length){ el.textContent='まだ誰も来ていない'; return; }
-  el.innerHTML=netConns.map(function(c,i){
-    return (i+1)+'人目　生徒枠 '+(c.slot+1); }).join('<br>');
+  el.innerHTML=netConns.map(function(c){
+    const p=c.profile;
+    const nm=p?escHtml(p.name||'名無し'):'（自己紹介待ち…）';
+    const ic=p?(p.icon||'👤'):'❔';
+    const idn=(p&&p.pid)?('ID '+escHtml(p.pid)):'';
+    return '<div class="netPRow"><span class="ic">'+ic+'</span><span class="nm">'+nm
+      +'　生徒枠'+(c.slot+1)+'</span><span class="idn">'+idn+'</span></div>';
+  }).join('');
+}
+function netBroadcastPlayers(){
+  if(netMode!=='host') return;
+  const list=[{icon:myProfile.icon,name:myProfile.name,pid:String(PID),role:(role==='teacher'?'先生(ホスト)':'生徒(ホスト)')}]
+    .concat(netConns.filter(function(c){ return c.profile; }).map(function(c){
+      return {icon:c.profile.icon,name:c.profile.name,pid:c.profile.pid,role:'生徒'+(c.slot+1)};
+    }));
+  netBroadcast({t:'players',list:list});
+}
+function renderNetWaitPeers(){
+  const el=document.getElementById('netWaitPeers');
+  if(!el) return;
+  if(!netPlayersList.length){ el.innerHTML=''; return; }
+  el.innerHTML=netPlayersList.map(function(p){
+    return '<div class="netPRow"><span class="ic">'+(p.icon||'👤')+'</span><span class="nm">'
+      +escHtml(p.name||'名無し')+'　'+escHtml(p.role||'')+'</span></div>';
+  }).join('');
 }
 function netLockRoleToggle(lock){
   const el=document.getElementById('trole');
@@ -7354,6 +7462,14 @@ function netTeardown(){
   try{ if(netPeer) netPeer.destroy(); }catch(e){}
   netPeer=null; netConns=[]; netHostConn=null; netMode='off'; netInputs={}; netEvents=[];
   netClientSlot=-1; netLastSnap=null; netSeenToastId=0; netToastId=0;
+  netPlayersList=[]; netHostProfile=null;
+  /* サーバー検索（ロビー）関連もここで一緒に片付ける。ロビー役を担っていた場合は
+     ここで手放す（次に誰かが公開トグルをONにした時に改めて誰かが引き継ぐ） */
+  netPublic=false; netLobbyRoleDecided=false;
+  try{ if(netLobbyPubConn) netLobbyPubConn.close(); }catch(e){}
+  netLobbyPubConn=null;
+  try{ if(netLobbyPeer) netLobbyPeer.destroy(); }catch(e){}
+  netLobbyPeer=null; netLobbyRooms={};
   voiceTeardown();
   const off=document.getElementById('netOffline'), rm=document.getElementById('netRoom');
   if(off) off.style.display='block';
@@ -7362,6 +7478,11 @@ function netTeardown(){
   netLockRoleToggle(false);
   document.getElementById('netwait').classList.remove('on');
   document.getElementById('go').style.display='';
+  const pt=document.getElementById('netPublicToggle');
+  if(pt){ pt.classList.remove('on'); pt.textContent='検索に公開する: OFF'; }
+  const swb=document.getElementById('netSearchBox'); if(swb) swb.style.display='none';
+  const jwb=document.getElementById('netJoinBox'); if(jwb) jwb.style.display='none';
+  const wp=document.getElementById('netWaitPeers'); if(wp) wp.innerHTML='';
 }
 function netAssignSlot(){
   if(started&&!over) return -1;               /* 試合中の途中参加は今回は非対応 */
@@ -7409,10 +7530,11 @@ function netOpenHost(){
       const slot=netAssignSlot();
       if(slot<0){ netSend(conn,{t:'full'}); setTimeout(function(){ conn.close(); },300); return; }
       netConns.push({conn:conn,slot:slot});
-      netSend(conn,{t:'welcome',slot:slot});
+      netSend(conn,{t:'welcome',slot:slot,host:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)}});
       netRenderPeerList();
       netSetStatus('部屋コード '+code+'　'+netConns.length+'人 接続中',true);
       netBroadcastVoiceRoster();
+      netLobbySync();
     });
     conn.on('data',function(msg){ netHostOnData(conn,msg); });
     conn.on('close',function(){ netHostOnClose(conn); });
@@ -7436,7 +7558,7 @@ function netHostOnClose(conn){
   }
   netRenderPeerList();
   netSetStatus(netMode==='host'?('部屋コード '+netRoomCode+'　'+netConns.length+'人 接続中'):'',true);
-  if(netMode==='host') netBroadcastVoiceRoster();
+  if(netMode==='host'){ netBroadcastVoiceRoster(); netBroadcastPlayers(); netLobbySync(); }
 }
 function netHostOnData(conn,msg){
   if(!msg||!msg.t) return;
@@ -7446,6 +7568,15 @@ function netHostOnData(conn,msg){
     const prev=netInputs[c.slot];
     netInputs[c.slot]=msg;
     if(msg.mashN&&prev&&prev.mashN) msg.mashN+=0;   /* mashNは受信のたび消費するので上書きでよい */
+  } else if(msg.t==='profile'){
+    const c=netConns.filter(function(x){ return x.conn===conn; })[0];
+    if(!c) return;
+    c.profile={name:String(msg.name||'名無し').slice(0,10),icon:msg.icon||'👤',pid:String(msg.pid||'')};
+    netRenderPeerList();
+    netSetStatus('部屋コード '+netRoomCode+'　'+c.profile.icon+' '+c.profile.name
+      +' が参加！（'+netConns.length+'人接続中）',true);
+    netBroadcastPlayers();
+    netLobbySync();
   }
 }
 function netJoinRoom(codeRaw){
@@ -7477,6 +7608,7 @@ function netJoinRoom(codeRaw){
       document.getElementById('netWaitMsg').innerHTML='ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…';
       document.getElementById('netwait').classList.add('on');
       micIndicatorUpdate();
+      netSend(conn,{t:'profile',name:myProfile.name,icon:myProfile.icon,pid:String(PID)});
     });
     conn.on('data',function(msg){ netClientOnData(msg); });
     conn.on('close',function(){ netClientDisconnected('ホストとの接続が切れた'); });
@@ -7499,10 +7631,18 @@ function netClientDisconnected(why){
 }
 function netClientOnData(msg){
   if(!msg||!msg.t) return;
-  if(msg.t==='welcome'){ /* スロット確定。開始待ち */ }
+  if(msg.t==='welcome'){
+    if(msg.host){
+      netHostProfile=msg.host;
+      const el=document.getElementById('netWaitMsg');
+      if(el) el.innerHTML='ホスト '+(netHostProfile.icon||'👤')+' <b>'+escHtml(netHostProfile.name||'名無し')
+        +'</b> の部屋に接続しました。<br>「はじめる」を押すのを待っています…';
+    }
+  }
   else if(msg.t==='full'){ netSetStatus('この部屋は満員だった'); }
   else if(msg.t==='start'){ netClientOnStart(msg); }
   else if(msg.t==='roster'){ voiceOnRoster(msg.ids,msg.slots); }
+  else if(msg.t==='players'){ netPlayersList=msg.list||[]; renderNetWaitPeers(); }
   else if(msg.t==='snap'){ netLastSnap=msg; }
   else if(msg.t==='end'){ netClientOnEnd(msg); }
 }
@@ -7546,6 +7686,140 @@ function netClientOnEnd(payload){
   document.getElementById('rsub').innerHTML=payload.rsub||'';
   document.getElementById('result').style.display='flex';
   if(document.exitPointerLock) document.exitPointerLock();
+}
+
+/* ===== サーバー検索（簡易ロビー） =====
+   専用サーバーが無い静的サイトなので、固定のpeer ID（LOBBY_ID）を「ロビー役」に
+   見立てる。「検索に公開する」をONにしたホストは、まず自分でLOBBY_IDを
+   名乗り出てみる（＝new Peer(LOBBY_ID)）。誰も名乗っていなければそのまま
+   自分がロビー役になり、他の公開ホストからの登録・検索側からの問い合わせを
+   中継する。既に誰かがロビー役なら（unavailable-idエラー）、自分は普通の
+   クライアントとしてそのロビーへ「自分の部屋情報」を5秒おきに送るだけになる。
+   ロビー役のタブが閉じられると次に公開トグルをONにした誰かが自然に
+   引き継ぐ（自己修復的だが、ロビー役が居ない間は検索結果が空になるだけ。
+   その間もコード手入力での入室は今まで通り使える）。 */
+function netLobbyDecideRole(){
+  if(netLobbyRoleDecided) return;
+  netLobbyRoleDecided=true;
+  if(typeof Peer==='undefined') return;
+  let p, done=false;
+  try{ p=new Peer(LOBBY_ID,{debug:0}); }catch(e){ netLobbyConnectPub(); return; }
+  const bail=setTimeout(function(){
+    if(done) return; done=true;
+    try{ p.destroy(); }catch(e){}
+    netLobbyConnectPub();
+  },5000);
+  p.on('open',function(){
+    if(done) return; done=true; clearTimeout(bail);
+    netLobbyPeer=p;
+    p.on('connection',function(conn){ netLobbySetupHostConn(conn); });
+  });
+  p.on('error',function(){
+    if(done) return; done=true; clearTimeout(bail);
+    try{ p.destroy(); }catch(e){}
+    netLobbyConnectPub();
+  });
+}
+function netLobbyConnectPub(){
+  if(!netPeer||!netPeer.open) return;
+  try{
+    const conn=netPeer.connect(LOBBY_ID,{reliable:true});
+    netLobbyPubConn=conn;
+    conn.on('close',function(){ if(netLobbyPubConn===conn) netLobbyPubConn=null; });
+    conn.on('error',function(){ if(netLobbyPubConn===conn) netLobbyPubConn=null; });
+  }catch(e){}
+}
+function netLobbySetupHostConn(conn){
+  conn.on('data',function(msg){
+    if(!msg||!msg.t) return;
+    if(msg.t==='register'&&msg.info) netLobbyRooms[conn.peer]={info:msg.info,ts:Date.now()};
+    else if(msg.t==='unregister') delete netLobbyRooms[conn.peer];
+    else if(msg.t==='query') netSend(conn,{t:'list',rooms:netLobbyBuildList()});
+  });
+  conn.on('close',function(){ delete netLobbyRooms[conn.peer]; });
+}
+function netLobbyBuildList(){
+  const now=Date.now(), out=[];
+  Object.keys(netLobbyRooms).forEach(function(id){
+    const r=netLobbyRooms[id];
+    if(now-r.ts<16000) out.push(r.info); else delete netLobbyRooms[id];
+  });
+  return out;
+}
+/* 5秒おきに呼ぶ（公開中でなければほぼ何もしない軽い関数）。
+   公開ON→ロビー役の決定・自分の部屋情報の送信/更新。公開OFF→登録を消す */
+function netLobbySync(){
+  const active=netPublic&&netMode==='host'&&netPeer&&netPeer.open&&!(started&&!over);
+  if(active){
+    netLobbyDecideRole();
+    const info={code:netRoomCode,name:(myProfile.name||'名無し').slice(0,10),icon:myProfile.icon||'👤',
+      count:netConns.length+1,max:netMaxSlots()+1,stage:stageName(curStage)};
+    if(netLobbyPeer&&netPeer) netLobbyRooms[netPeer.id]={info:info,ts:Date.now()};
+    else if(netLobbyPubConn&&netLobbyPubConn.open) netSend(netLobbyPubConn,{t:'register',info:info});
+    else if(netLobbyRoleDecided&&!netLobbyPeer&&(!netLobbyPubConn||!netLobbyPubConn.open)) netLobbyConnectPub();
+  } else {
+    if(netLobbyPeer&&netPeer) delete netLobbyRooms[netPeer.id];
+    if(netLobbyPubConn&&netLobbyPubConn.open) netSend(netLobbyPubConn,{t:'unregister'});
+  }
+}
+function netLobbySearch(){
+  const el=document.getElementById('netSearchList');
+  if(el) el.textContent='検索しています…';
+  try{ if(netSearchPeer) netSearchPeer.destroy(); }catch(e){}
+  netSearchPeer=null;
+  if(typeof Peer==='undefined'){ if(el) el.textContent='通信ライブラリを読み込めなかった'; return; }
+  const myId='houkago-inokori-seek-'+Math.random().toString(36).slice(2,8);
+  let p, done=false;
+  try{ p=new Peer(myId,{debug:0}); }catch(e){ if(el) el.textContent='検索できなかった'; return; }
+  netSearchPeer=p;
+  const bail=setTimeout(function(){
+    if(done) return; done=true;
+    try{ p.destroy(); }catch(e){}
+    if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+  },7000);
+  p.on('open',function(){
+    let conn;
+    try{ conn=p.connect(LOBBY_ID,{reliable:true}); }
+    catch(e){ if(!done){ done=true; clearTimeout(bail); if(el) el.textContent='検索できなかった'; } return; }
+    conn.on('open',function(){ netSend(conn,{t:'query'}); });
+    conn.on('data',function(msg){
+      if(done) return; done=true; clearTimeout(bail);
+      if(msg&&msg.t==='list') netRenderSearchResults(msg.rooms||[]);
+      else if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+      try{ conn.close(); }catch(e){}
+      try{ p.destroy(); }catch(e){}
+    });
+    conn.on('error',function(){
+      if(done) return; done=true; clearTimeout(bail);
+      if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+    });
+  });
+  p.on('error',function(e){
+    if(done) return; done=true; clearTimeout(bail);
+    const msg=(e&&e.type)?e.type:String(e);
+    if(el) el.textContent=(msg.indexOf('peer-unavailable')>=0)
+      ?'今公開中の部屋は無いみたい（検索サーバー役が誰もいない）。コードで入ってね'
+      :'検索できなかった';
+  });
+}
+function netRenderSearchResults(rooms){
+  const el=document.getElementById('netSearchList');
+  if(!el) return;
+  if(!rooms||!rooms.length){ el.textContent='公開中の部屋は見つからなかった（コードで入ってね）'; return; }
+  el.innerHTML=rooms.map(function(r){
+    return '<div class="netSRow" data-code="'+escHtml(r.code||'')+'">'
+      +'<span class="ic">'+(r.icon||'👤')+'</span>'
+      +'<span class="nm">'+escHtml(r.name||'名無し')+'の部屋　'+(r.count||1)+'/'+(r.max||4)+'人　'+escHtml(r.stage||'')+'</span>'
+      +'<span class="cd">'+escHtml(r.code||'')+'</span></div>';
+  }).join('');
+  Array.prototype.forEach.call(el.querySelectorAll('.netSRow'),function(row){
+    row.addEventListener('click',function(){
+      const code=row.dataset.code;
+      if(!code) return;
+      document.getElementById('netCodeInput').value=code;
+      netJoinRoom(code);
+    });
+  });
 }
 
 /* ---- ホスト側：参加者の入力で生徒を動かす（studentAct等の既存の
@@ -7933,12 +8207,24 @@ function netClientTick(dt){
 document.getElementById('netMakeBtn').addEventListener('click',function(){ netOpenHost(); });
 document.getElementById('netJoinBtn').addEventListener('click',function(){
   document.getElementById('netJoinBox').style.display='block';
+  document.getElementById('netSearchBox').style.display='none';
 });
 document.getElementById('netJoinGo').addEventListener('click',function(){
   netJoinRoom(document.getElementById('netCodeInput').value);
 });
 document.getElementById('netCodeInput').addEventListener('keydown',function(e){
   if(e.key==='Enter') netJoinRoom(document.getElementById('netCodeInput').value);
+});
+document.getElementById('netSearchBtn').addEventListener('click',function(){
+  document.getElementById('netSearchBox').style.display='block';
+  document.getElementById('netJoinBox').style.display='none';
+});
+document.getElementById('netSearchGo').addEventListener('click',netLobbySearch);
+document.getElementById('netPublicToggle').addEventListener('click',function(){
+  netPublic=!netPublic;
+  this.classList.toggle('on',netPublic);
+  this.textContent='検索に公開する: '+(netPublic?'ON':'OFF');
+  netLobbySync();
 });
 document.getElementById('netLeaveBtn').addEventListener('click',function(){ netTeardown(); });
 document.getElementById('netWaitLeave').addEventListener('click',function(){ netTeardown(); softReset(); });
@@ -8227,7 +8513,14 @@ function updLobby(dt){
 
 /* ---------- タイトル（キャラ選択） ---------- */
 let myIndex=0, kindIndex=0;
-let PID=String(100000+Math.floor(Math.random()*899999)), SCORE=0, COINS=0;
+/* IDはこれまで毎回ランダムだったが、プロフィール機能を足すついでにローカル保存して
+   固定IDにした（次回訪問時も同じID＝「参加者の表示」でずっと自分を示せる） */
+let PID=(function(){
+  try{ const v=localStorage.getItem('hi_pid_v1'); if(v) return v; }catch(e){}
+  const p=String(100000+Math.floor(Math.random()*899999));
+  try{ localStorage.setItem('hi_pid_v1',p); }catch(e){}
+  return p;
+})(), SCORE=0, COINS=0;
 
 function cssHex(c){ let h=c.toString(16); while(h.length<6) h='0'+h; return '#'+h; }
 function drawChar(g,W,H,o){
@@ -8485,6 +8778,7 @@ document.getElementById('go').addEventListener('click',function(){
   /* 先生は一人称なのでカメラの向きと体の向きが半周ずれる。開始直後にクルッと
      回ってしまわないよう、ここで合わせておく */
   started=true; over=false;
+  if(netMode==='host') netLobbySync();   /* 試合が始まったら検索結果からは消す（途中参加は非対応なので） */
   camYaw=(role==='teacher')?(me.yaw+Math.PI):me.yaw;
   last=performance.now();
   startIntro();
@@ -8564,9 +8858,10 @@ document.getElementById('again').addEventListener('click',function(){
   /* オンラインで遊んでいた場合は部屋が解散するので、タイトルからまた
      部屋を作る／入り直してもらう（自動で一人用を始めない） */
 });
-try{ refreshStats(); buildList(); showStage(); }
+try{ refreshStats(); buildList(); showStage(); buildProfileUI(); }
 catch(err){ if(window.__err) window.__err('タイトル初期化: '+err.message); }
 try{ checkMobileLandscape(); }catch(err){ try{ layoutPad(); }catch(e2){} }
+setInterval(netLobbySync,5000);   /* サーバー検索の公開ハートビート（非公開時はほぼ何もしない） */
 addEventListener('orientationchange',function(){ setTimeout(function(){
   try{ checkMobileLandscape(); }catch(e){} },200); });
 (function(){
