@@ -3392,7 +3392,7 @@ const TCH=[
  {key:'garden',desc:'スプリンクラー放水｜半径10m以内の生徒に水をかけて3秒減速させる'},
  {key:'magnet',desc:'磁力探知｜進行中の課題プリントの位置をマップに感知する'},
  {key:'band',desc:'指揮棒一閃｜2.5秒加速しつつ、見えている生徒の気配をマップに示す'},
- {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は1秒溜めての組み付き突進(3m)、外すともう一度、連続で外すとスタン／コウモリ形態｜生徒からは見えず足跡だけ緑色に見える。三人称・速度3倍で浮遊し、椅子や窓へ好きな場所を選んでワープできる'}
+ {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜爪の一撃、能力1を1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は1秒溜めての組み付き突進(5m)、外すと1秒以内にもう一度、連続で外すとスタン／コウモリ形態｜三人称・速度3倍で浮遊し椅子や窓へ好きな場所へワープできる偵察専用形態。攻撃はできない代わりに、先生側からは生徒が直接見えず生徒の足跡だけが緑色に見える（生徒側からはコウモリの姿は普通に見える）'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -4817,7 +4817,7 @@ function dnFireLine(){
 }
 function dnWolfPounce(){
   const t=teacher;
-  const dist=3;
+  const dist=5;
   const sx2=Math.sin(t.yaw), sz2=Math.cos(t.yaw);
   let land=null;
   for(let d=dist;d>=0.6;d-=0.4){
@@ -4825,7 +4825,7 @@ function dnWolfPounce(){
     if(walk(tl[0],tl[1])&&inStage(tl[0])){ land={x:t.x+sx2*d,z:t.z+sz2*d}; break; }
   }
   if(!land) land={x:t.x,z:t.z};
-  t.dnLeap=0.26; t.dnLeapMax=0.26; t.dnLeapHit=[];
+  t.dnLeap=0.42; t.dnLeapMax=0.42; t.dnLeapHit=[];
   t.dnLeapFrom={x:t.x,z:t.z}; t.dnLeapTo=land;
   /* クールダウン(3秒)は技全体が決着した時（命中／2連続失敗／再挑戦の時間切れ）に
      updDarkNode側でまとめて掛ける。ここでは掛けない（1回目の失敗後、1秒以内の
@@ -4967,19 +4967,28 @@ function updDarkNode(dt){
   } else if(dnScents.length){
     dnScents.forEach(function(c){ scene.remove(c.m); }); dnScents.length=0;
   }
-  /* コウモリ形態：緑の足跡だけが見た目に残る（本体は透明） */
-  if(t.dnForm===2){
+  /* コウモリ形態：先生（コウモリ）側は生徒を直接見られない代わりに、
+     生徒の足跡が緑色で見える（狼の匂いトラッキングのコウモリ版）。
+     自分が先生役の時だけ生成する（一人用でAI教師が万一この形態を
+     使っても、生徒役のプレイヤー画面には見せない） */
+  if(t.dnForm===2&&role==='teacher'){
     t.dnFootT=(t.dnFootT||0)+dt;
-    if(t.dnFootT>=0.5){
+    if(t.dnFootT>=1.0){
       t.dnFootT=0;
-      const m=new THREE.Mesh(new THREE.CircleGeometry(0.5,8),
-        new THREE.MeshBasicMaterial({color:0x35ff6a,transparent:true,opacity:0.6,depthTest:false}));
-      m.rotation.x=-Math.PI/2; m.position.set(t.x,0.08,t.z); m.renderOrder=985;
-      scene.add(m); dnFootprints.push({m:m,t:0});
+      students.forEach(function(s2){
+        if(s2.state!=='free'||s2.hide) return;
+        const spd=Math.hypot(s2.x-(s2.px||s2.x),s2.z-(s2.pz||s2.z))/Math.max(dt,1/120);
+        if(spd>0.6){
+          const m=new THREE.Mesh(new THREE.CircleGeometry(0.5,8),
+            new THREE.MeshBasicMaterial({color:0x35ff6a,transparent:true,opacity:0.6,depthTest:false}));
+          m.rotation.x=-Math.PI/2; m.position.set(s2.x,0.08,s2.z); m.renderOrder=985;
+          scene.add(m); dnFootprints.push({m:m,t:0});
+        }
+      });
     }
     for(let i=dnFootprints.length-1;i>=0;i--){
-      const f=dnFootprints[i]; f.t+=dt; f.m.material.opacity=0.6*(1-f.t/4);
-      if(f.t>4){ scene.remove(f.m); dnFootprints.splice(i,1); }
+      const f=dnFootprints[i]; f.t+=dt; f.m.material.opacity=0.6*(1-f.t/6);
+      if(f.t>6){ scene.remove(f.m); dnFootprints.splice(i,1); }
     }
   } else if(dnFootprints.length){
     dnFootprints.forEach(function(f){ scene.remove(f.m); }); dnFootprints.length=0;
@@ -5144,6 +5153,8 @@ function doAction(){
   }
   const d=students.filter(function(s){ return s.state==='downed'&&Math.hypot(s.x-teacher.x,s.z-teacher.z)<3.2; })[0];
   if(d){ teacher.carrying=d; d.state='carried'; d.wig=0; beep(240,0.2,'sine',0.08); return; }
+  /* コウモリ形態は偵察専用で、生徒にダメージを与える手段を持たない */
+  if(teacher.kindKey==='darknode'&&teacher.dnForm===2) return;
   swing(false);
 }
 function startDash(ch){
@@ -5879,7 +5890,7 @@ function aiTeacher(dt){
       else if(t.kindKey==='darknode'){
         /* AIは狼形態に固定して戦う（人間の火線・コウモリのワープは今回プレイヤー専用） */
         if(t.dnForm!==1&&t.ab2Cd<=0){ t.dnForm=1; t.ab2Cd=2.0; t.charge=0; }
-        else if(t.dnForm===1&&d>2.2&&d<3.6&&t.dnLeap<=0&&t.stun<=0){
+        else if(t.dnForm===1&&d>2.2&&d<5.6&&t.dnLeap<=0&&t.stun<=0){
           t.yaw=Math.atan2(tgt.x-t.x,tgt.z-t.z); dnWolfPounce();
         }
       }
@@ -6266,7 +6277,15 @@ function drawMini(){
 }
 function updHearts(dt){
   const stealth=teacher.stealth>0;
+  /* コウモリ形態は先生側が生徒を直接見られない（代わりに足跡で追跡する）。
+     自分（先生役=ホストのみ）のローカル画面でだけ生徒モデルを隠す */
+  const dnBlind=(role==='teacher'&&teacher.kindKey==='darknode'&&teacher.dnForm===2);
   for(const s of students){
+    if(dnBlind){
+      const u3=s.mesh.userData;
+      if(u3.heart) u3.heart.visible=false; if(u3.hglow) u3.hglow.visible=false;
+      s.mesh.visible=false; continue;
+    }
     if(s.drone>0&&s.exposed<=0){ const u2=s.mesh.userData;
       u2.heart.visible=false; u2.hglow.visible=false; s.mesh.visible=false; continue; }
     if(s.drone<=0&&s.state==='free'&&!s.hide) s.mesh.visible=true;
@@ -6459,8 +6478,11 @@ function tick(now){
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
                   !(me.drone>0)&&!(me.tackle>0));
 
-  /* 画面の奥方向。三人称はカメラ→自分、一人称はカメラの視線 */
-  const viewYaw=(role==='teacher')?(camYaw+Math.PI):camYaw;
+  /* 画面の奥方向。三人称はカメラ→自分、一人称はカメラの視線
+     （ダークノードの狼／コウモリ形態は先生でも三人称になるので、
+     一人称用の+180度補正を掛けないようにする） */
+  const teacherFP=(role==='teacher')&&!(teacher.kindKey==='darknode'&&teacher.dnForm>0);
+  const viewYaw=teacherFP?(camYaw+Math.PI):camYaw;
   const vf=[Math.sin(viewYaw),Math.cos(viewYaw)];      /* 前 */
   const vr=[-Math.cos(viewYaw),Math.sin(viewYaw)];     /* 右 */
 
@@ -6581,16 +6603,16 @@ function tick(now){
       /* 人間形態：能力1を1秒ホールドで溜め、離すと前方5m幅の火線 */
       abLabel='火線';
       if(input.abHold&&t.abCd<=0&&t.stun<=0&&t.wipe<=0){
-        t.charge=Math.min(1,t.charge+dt*1.0);
+        t.charge=Math.min(1,t.charge+dt*1.0); hp=t.charge;
         abLabel=(t.charge>=1)?'火線（離して発動）':'溜め中 '+Math.round(t.charge*100)+'%';
       } else if(t.charge>=1){ dnFireLine(); t.charge=0; }
       else t.charge=0;
     } else if(t.kindKey==='darknode'&&t.dnForm===1){
       /* 狼形態：通常攻撃ボタンそのものが正規の技（噛みつき）。1秒ホールドで
-         溜め、離すと3m組み付き突進。技全体で3秒クールダウン共有（t.abCdを流用） */
+         溜め、離すと5m組み付き突進。技全体で3秒クールダウン共有（t.abCdを流用） */
       abLabel=t.dnPounceStage>=1?'再挑戦の組み付き':'組み付き突進';
       if((input.act||input.abHold)&&t.dnLeap<=0&&t.stun<=0&&t.wipe<=0&&t.abCd<=0){
-        t.charge=Math.min(1,t.charge+dt*1.0);
+        t.charge=Math.min(1,t.charge+dt*1.0); hp=t.charge;
         abLabel=(t.charge>=1)?'組み付き（離して発動）':'溜め中 '+Math.round(t.charge*100)+'%';
       } else if(t.charge>=1&&t.dnLeap<=0){ dnWolfPounce(); t.charge=0; }
       else t.charge=0;
@@ -7410,9 +7432,11 @@ function tick(now){
     const camT=(puppet&&puppet!==me)?puppet:
       ((specTarget&&specTarget.state!=='out'&&specTarget.state!=='escaped')?specTarget:me);
     ruler.visible=false;
+    /* コウモリは生徒側からはステルスではない（正しくはコウモリ側が生徒を
+       見えなくなる。updHearts内のdnBlindを参照）ので、ここでは先生の姿は
+       他の透明化系(invis/cloak/wheelOn)と同じ条件のまま普通に見える */
     teacher.mesh.visible=(teacher.blend<=0)&&(teacher.invis<=0)&&
-      !(teacher.cloak>0)&&!teacher.wheelOn&&
-      !(teacher.kindKey==='darknode'&&teacher.dnForm===2);
+      !(teacher.cloak>0)&&!teacher.wheelOn;
     if(teacher.shadow>0&&teacher.mesh.visible){
       teacher.mesh.scale.set(1,0.82,1);
     }
