@@ -481,7 +481,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         移動 WASD／走る Shift／視点 マウス<br>
         行動 E／乗り越え F／能力 Q・R<br>
         もがき・連打はクリック（F・J）<br>
-        椅子で F・J を押すと仲間を観戦
+        椅子・脱落中は F・J で仲間や自分の視点を観戦
       </p>
     </div>
     <div class="pane" id="p_net">
@@ -6185,20 +6185,21 @@ function tick(now){
       else puppet=null;
     }
   } else puppet=null;
-  /* 反省椅子からの観戦 */
-  if(role==='student'&&me.state==='seated'){
+  /* 反省椅子・脱落後の観戦。F/J で仲間だけでなく「自分自身の視点」にも
+     切り替えられるように、自分を候補の先頭に含めたリストを巡回する
+     （以前は座席中は仲間しか見られず、脱落(out/escaped)時は最初に見つかった
+     生存者へ強制的に人格が乗り移ってその子を操作できてしまっていた。
+     観戦は見るだけにして、操作の乗っ取りは廃止した） */
+  if(role==='student'&&(me.state==='seated'||me.state==='out'||me.state==='escaped')){
     if(input.mash||input.altEdge){
-      const alive=students.filter(function(x){ return x.state==='free'||x.state==='downed'; });
-      if(alive.length){
-        specIdx=(specIdx+1)%alive.length; specTarget=alive[specIdx];
-        toast('観戦：'+specTarget.name);
+      const pool=[me].concat(students.filter(function(x){
+        return x!==me&&(x.state==='free'||x.state==='downed'); }));
+      if(pool.length>1){
+        specIdx=(specIdx+1)%pool.length; specTarget=pool[specIdx];
+        toast(specTarget===me?'観戦：自分の視点':'観戦：'+specTarget.name);
       }
     }
   } else specTarget=null;
-  if(role==='student'&&(me.state==='out'||me.state==='escaped')){
-    const nx=students.filter(function(s){ return s.state!=='out'&&s.state!=='escaped'; })[0];
-    if(nx){ me=nx; toast('視点を切り替えた（'+me.name+'）'); }
-  }
 
   /* --- 入力ベクトル --- */
   let fx1=0,fz1=0;
@@ -6497,7 +6498,10 @@ function tick(now){
   } else if(me.qte){
     elStun.textContent='3秒で10連打！'; elStun.classList.add('on');
   } else if(me.state==='seated'){
-    elStun.textContent='F / J で仲間を観戦（仲間の位置が見える）';
+    elStun.textContent='F / J で仲間や自分の視点を観戦（仲間の位置が見える）';
+    elStun.classList.add('on');
+  } else if(me.state==='out'||me.state==='escaped'){
+    elStun.textContent='F / J で仲間や自分の視点を観戦';
     elStun.classList.add('on');
   } else if(me.hide){
     elStun.textContent=me.holdBreath?('息を止めている '+Math.round((me.breath||0)*100)+'%'):'ロッカーの中';
@@ -7662,6 +7666,10 @@ function netApplyTaskDesks(coords){
   });
 }
 function netClientOnStart(payload){
+  /* 連戦（2試合目以降）で前の試合の残骸（板・机・チョークの粉塵など）を
+     引きずらないよう、必ず一度ローカル状態を掃除してから作り直す。
+     初回の開始時は既に綺麗な状態なので、これは無害な二重掃除になる */
+  softReset(true);
   curStage=payload.stage; teacherKind=payload.teacherKind; DIFF=payload.diff;
   rosterPick=payload.rosterPick; weaponPick=payload.weaponPick||'';
   netClientSlot=payload.mySlot;
@@ -8743,8 +8751,7 @@ Array.prototype.forEach.call(document.querySelectorAll('#diff div'),function(d){
     if(k==='hard')   DIFF={name:k,tSpeed:7.6,work:0.055,checkGap:[2.4,4.2],zone:34};
   });
 });
-document.getElementById('go').addEventListener('click',function(){
-  if(netMode==='client') return;   /* 参加者はホストの開始を待つだけ */
+function startMatch(){
   if(curStage==='random') curStage=STAGES[(Math.random()*STAGES.length)|0].key;
   if(role==='student'){
     if(botPick==='random'){ const ks=Object.keys(KINDS);
@@ -8786,12 +8793,19 @@ document.getElementById('go').addEventListener('click',function(){
   try{ ac().resume(); }catch(e){}
   bgmStart();
   toast(role==='teacher'?'生徒を探せ':('今日の担当は'+KINDS[teacherKind].name+'　黄色い机が課題'));
+}
+document.getElementById('go').addEventListener('click',function(){
+  if(netMode==='client') return;   /* 参加者はホストの開始を待つだけ */
+  startMatch();
 });
 
-/* ---------- タイトルに戻す（スコアを保持） ---------- */
-function softReset(){
+/* ---------- タイトルに戻す（スコアを保持） ----------
+   keepNet===true の時は、オンライン接続はそのまま維持して次の試合に備える
+   （「もう一度」で友達との接続を切らずに連戦するための引数。タイトルへ戻る
+   時は今まで通り部屋を解散する） */
+function softReset(keepNet){
   bgmStop(); bgmTension=0;
-  if(netMode!=='off') netTeardown();   /* 部屋を作っていた/入っていたら解散する */
+  if(keepNet!==true&&netMode!=='off') netTeardown();   /* 部屋を作っていた/入っていたら解散する */
   players.forEach(function(e){ scene.remove(e.mesh); });
   students=[]; teacher=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
@@ -8847,16 +8861,27 @@ function softReset(){
   intro=0; introPath=[]; introIdx=0;
   closeWarp();
   document.getElementById('result').style.display='none';
-  document.getElementById('title').style.display='flex';
+  if(keepNet!==true) document.getElementById('title').style.display='flex';
   refreshStats(); buildList(); showStage();
 }
-document.getElementById('toTitle').addEventListener('click',softReset);
+document.getElementById('toTitle').addEventListener('click',function(){ softReset(); });
 document.getElementById('again').addEventListener('click',function(){
-  const wasNet=(netMode!=='off');
+  if(netMode==='host'){
+    /* ホストは接続を維持したまま、そのまま次の試合を作って全員に配信する */
+    softReset(true);
+    startMatch();
+    return;
+  }
+  if(netMode==='client'){
+    /* 参加者は接続を維持したまま、ホストが次の「はじめる」を押すのを待つ */
+    softReset(true);
+    document.getElementById('netWaitCode').textContent=netRoomCode||'----';
+    document.getElementById('netWaitMsg').innerHTML='ホストが次の試合を始めるのを待っています…';
+    document.getElementById('netwait').classList.add('on');
+    return;
+  }
   softReset();
-  if(!wasNet) document.getElementById('go').click();
-  /* オンラインで遊んでいた場合は部屋が解散するので、タイトルからまた
-     部屋を作る／入り直してもらう（自動で一人用を始めない） */
+  document.getElementById('go').click();
 });
 try{ refreshStats(); buildList(); showStage(); buildProfileUI(); }
 catch(err){ if(window.__err) window.__err('タイトル初期化: '+err.message); }
