@@ -3294,7 +3294,7 @@ const LOOK={
   garden:{body:'human',hairStyle:'short',acc:'hat',weapon:'shears',accent:0x4a6b3a,skin:0xc9a468},
   magnet:{body:'human',hairStyle:'wild',acc:'glasses',weapon:'hammer',accent:0x5a4a6b},
   band  :{body:'human',hairStyle:'short',acc:'',weapon:'baton',accent:0x2a2a3a},
-  darknode:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'',accent:0x241a2e,
+  darknode:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'claw',accent:0x241a2e,
          hair:0x14101a,skin:0x3a3040,eye:0xff3b2e}
 };
 const SLOOK={
@@ -3467,7 +3467,7 @@ function spawnAll(){
     phase:0,crawl:0,blind:0,blend:0,stillT:0,fateT:0,fatePhase:0,fateMark:0,pounce:0,
     invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
     dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
-    dnPounceStage:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0};
+    dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0};
   players=students.concat([teacher]);
   refreshVentLook();
   oniAllies.forEach(function(o){ scene.remove(o.mesh); }); oniAllies.length=0;
@@ -4799,6 +4799,7 @@ function updWolf(dt){
 const scents=[];
 /* ===== ダークノード（3形態の怪人）===== */
 const dnFireLines=[], dnScents=[], dnFootprints=[];
+const DN_FORM_NAMES=['人間形態','狼形態','コウモリ形態'];
 function dnFireLine(){
   const t=teacher;
   t.abCd=9;
@@ -4826,7 +4827,9 @@ function dnWolfPounce(){
   if(!land) land={x:t.x,z:t.z};
   t.dnLeap=0.26; t.dnLeapMax=0.26; t.dnLeapHit=[];
   t.dnLeapFrom={x:t.x,z:t.z}; t.dnLeapTo=land;
-  t.abCd=1.2;   /* AIの連続ポンコツ突進を防ぐための小休止（プレイヤーは溜め時間自体が間隔になるため未使用） */
+  /* クールダウン(3秒)は技全体が決着した時（命中／2連続失敗／再挑戦の時間切れ）に
+     updDarkNode側でまとめて掛ける。ここでは掛けない（1回目の失敗後、1秒以内の
+     再挑戦を妨げないため） */
   beep(650,0.18,'sawtooth',0.12); noise(t.x,t.z,7);
   toast(t.dnPounceStage>=1?'再び組み付き突進！':'組み付き突進！');
 }
@@ -4913,11 +4916,26 @@ function updDarkNode(dt){
     if(hitAny) t.dnPounceHit=true;
     if(t.dnLeap<=0){
       t.dnLeap=0; t.x=t.dnLeapTo.x; t.z=t.dnLeapTo.z; unstick(t);
-      if(t.dnPounceHit){ t.dnPounceStage=0; t.dnPounceHit=false; }
-      else if(t.dnPounceStage>=1){
-        t.dnPounceStage=0; t.stun=Math.max(t.stun,1.8);
-        toast('組み付き突進が2回とも外れて隙ができた！'); beep(110,0.3,'sawtooth',0.12);
-      } else { t.dnPounceStage=1; toast('外れた…もう一度だけ組み付ける'); }
+      if(t.dnPounceHit){
+        /* 命中：技は決着、3秒クールダウン */
+        t.dnPounceStage=0; t.dnPounceHit=false; t.dnPounceWindow=0; t.abCd=3;
+      } else if(t.dnPounceStage>=1){
+        /* 2回とも外れた：既存の空振りスタンをそのまま使う（先生共通の値） */
+        t.dnPounceStage=0; t.dnPounceWindow=0; t.abCd=3;
+        swingMiss(); toast('組み付き突進が2回とも外れて隙ができた！');
+      } else {
+        /* 1回目の失敗：1秒以内に再挑戦しないと不発（クールダウンへ） */
+        t.dnPounceStage=1; t.dnPounceWindow=1.0;
+        toast('外れた…1秒以内にもう一度組み付ける');
+      }
+    }
+  }
+  /* 再挑戦チャンスの1秒タイマー（時間切れなら不発、クールダウンだけ入る） */
+  if(t.dnPounceStage===1&&t.dnLeap<=0){
+    t.dnPounceWindow=(t.dnPounceWindow===undefined?1.0:t.dnPounceWindow)-dt;
+    if(t.dnPounceWindow<=0){
+      t.dnPounceStage=0; t.dnPounceWindow=0; t.abCd=3;
+      toast('もう一度のチャンスを逃した'); beep(140,0.2,'sawtooth',0.1);
     }
   }
   /* 狼形態：生徒の足跡から匂いが残る（5秒ごと、走っている生徒のみ） */
@@ -5290,8 +5308,7 @@ function useAbility2(){
     t.dnForm=(t.dnForm+1)%3;
     t.charge=0; t.dnLeap=0; t.dnPounceStage=0; t.dnPounceHit=false;
     t.ab2Cd=2.0;
-    const names=['人間形態','狼形態','コウモリ形態'];
-    toast(names[t.dnForm]+'に変身した');
+    toast(DN_FORM_NAMES[t.dnForm]+'に変身した');
     beep(t.dnForm===1?260:(t.dnForm===2?760:420),0.3,'sawtooth',0.12);
   }
 }
@@ -6569,9 +6586,10 @@ function tick(now){
       } else if(t.charge>=1){ dnFireLine(); t.charge=0; }
       else t.charge=0;
     } else if(t.kindKey==='darknode'&&t.dnForm===1){
-      /* 狼形態：通常攻撃を1秒ホールドで溜め、離すと3m組み付き突進 */
+      /* 狼形態：通常攻撃ボタンそのものが正規の技（噛みつき）。1秒ホールドで
+         溜め、離すと3m組み付き突進。技全体で3秒クールダウン共有（t.abCdを流用） */
       abLabel=t.dnPounceStage>=1?'再挑戦の組み付き':'組み付き突進';
-      if((input.act||input.abHold)&&t.dnLeap<=0&&t.stun<=0&&t.wipe<=0){
+      if((input.act||input.abHold)&&t.dnLeap<=0&&t.stun<=0&&t.wipe<=0&&t.abCd<=0){
         t.charge=Math.min(1,t.charge+dt*1.0);
         abLabel=(t.charge>=1)?'組み付き（離して発動）':'溜め中 '+Math.round(t.charge*100)+'%';
       } else if(t.charge>=1&&t.dnLeap<=0){ dnWolfPounce(); t.charge=0; }
@@ -6602,7 +6620,9 @@ function tick(now){
       Math.hypot(s.x-t.x,s.z-t.z)<3.2; }).length>0;
     const nothingToDo=!t.carrying&&!downedNear&&!foe&&!dp;
     if(input.actEdge){
-      if(nothingToDo&&AB2[t.kindKey]&&t.ab2Cd<=0) useAbility2();
+      /* ダークノードは攻撃ボタンが常に通常攻撃（人間=引っ掻き／狼=噛みつきの
+         溜め開始）専用。能力の代役にはしない（能力1/能力2は専用ボタンのみ） */
+      if(nothingToDo&&AB2[t.kindKey]&&t.ab2Cd<=0&&t.kindKey!=='darknode') useAbility2();
       else if(!dp||foe) doAction();
     }
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
@@ -6701,7 +6721,11 @@ function tick(now){
   elActKey.textContent=(role==='student'&&me.state==='carried')?'F / J 連打':'E';
   elAct.classList.toggle('hot',hot);
   elAltLabel.textContent=altLabel; elAlt.classList.toggle('hot',altHot);
-  const ab2name=(role==='teacher')?AB2[teacher.kindKey]:SAB2[me.perk];
+  const ab2name=(role==='teacher')?
+    (teacher.kindKey==='darknode'?
+      ('今:'+DN_FORM_NAMES[teacher.dnForm]+' →'+DN_FORM_NAMES[(teacher.dnForm+1)%3]):
+      AB2[teacher.kindKey])
+    :SAB2[me.perk];
   elAb2.style.display=ab2name?'flex':'none';
   if(ab2name){
     const cd2=(role==='teacher')?teacher.ab2Cd:(me.ab2Cd||0);
