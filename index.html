@@ -2754,7 +2754,7 @@ function person(opt){
         skin=PM(opt.skin||0xf0d3b4,22,0x3a2c22),
         acc=LM(opt.accent||0xe4e0d4), white=LM(0xf4f2ea), dark=LM(0x2c3038);
   const hipY=1.05*S, chest=1.62*S, headY=2.42*S;
-  const floaty=(body==='float'||body==='bust');
+  const floaty=(body==='float'||body==='bust'||body==='batform');
   /* 脚 */
   const legL=limb(dark,0.32*S,1.05*S,0.32*S,-0.24*S,hipY,0);
   const legR=limb(dark,0.32*S,1.05*S,0.32*S, 0.24*S,hipY,0);
@@ -2779,6 +2779,30 @@ function person(opt){
     if(bk==='monkey'){
       bx(g,LM(opt.hair||0x4a3524),1.0*S,0.9*S,0.6*S,0,chest-0.1*S,-0.1*S);
     }
+  }
+  if(body==='batform'){
+    /* コウモリ：肩から扇状の翼（膜3枚＋オレンジの筋）、足元に小さな鉤爪 */
+    const wingMat=LM(opt.wing||0x2c3868), veinMat=LM(opt.accent||0xd97a2a);
+    [-1,1].forEach(function(sx){
+      const wg=new THREE.Group();
+      wg.position.set(sx*0.5*S,chest+0.5*S,0);
+      for(let i=0;i<3;i++){
+        const seg=new THREE.Mesh(new THREE.BoxGeometry(0.85*S,0.035*S,0.58*S-i*0.09*S),wingMat);
+        seg.position.set(sx*0.6*S,-0.04*S-i*0.06*S,-0.04*S);
+        seg.rotation.y=sx*(0.18+i*0.3);
+        seg.rotation.z=sx*(0.04-i*0.1);
+        wg.add(seg);
+        const vein=new THREE.Mesh(new THREE.BoxGeometry(0.88*S,0.05*S,0.06*S),veinMat);
+        vein.position.copy(seg.position); vein.position.y+=0.02*S;
+        vein.rotation.copy(seg.rotation);
+        wg.add(vein);
+      }
+      g.add(wg);
+    });
+    [-1,1].forEach(function(sx){
+      const ft=new THREE.Mesh(new THREE.ConeGeometry(0.09*S,0.22*S,6),LM(opt.accent||0xd97a2a));
+      ft.position.set(sx*0.16*S,hipY-0.25*S,0.02*S); ft.rotation.x=Math.PI; g.add(ft);
+    });
   }
   if(body==='dog'){
     /* 四つ足 */
@@ -3045,6 +3069,26 @@ function person(opt){
     e1.position.set(-0.42*S,0.06*S,0); e1.scale.set(0.5,1,1); head.add(e1);
     const e2=e1.clone(); e2.position.x=0.42*S; head.add(e2);
     bx(head,LM(0xc94a52),0.5*S,0.1*S,0.08*S,0,-0.2*S,0.42*S);
+  } else if(a==='batface'){
+    /* とがった耳（外は紫、中はオレンジ） */
+    [-1,1].forEach(function(sx){
+      const ear=new THREE.Mesh(new THREE.ConeGeometry(0.22*S,0.5*S,4),LM(opt.hair||0x2e2244));
+      ear.position.set(sx*0.28*S,0.5*S,-0.02*S); ear.rotation.y=Math.PI/4; ear.rotation.x=sx*0.1;
+      head.add(ear);
+      const inner=new THREE.Mesh(new THREE.ConeGeometry(0.12*S,0.3*S,4),LM(opt.accent||0xd97a2a));
+      inner.position.set(sx*0.28*S,0.44*S,0.05*S); inner.rotation.y=Math.PI/4; inner.rotation.x=sx*0.1;
+      head.add(inner);
+    });
+    /* 短い鼻づらと牙 */
+    bx(head,LM(opt.skin||0x4a3a5c),0.4*S,0.3*S,0.3*S,0,-0.14*S,0.4*S);
+    bx(head,LM(0x14101a),0.14*S,0.08*S,0.06*S,0,-0.06*S,0.54*S);
+    for(let i=-1;i<=1;i+=2)
+      bx(head,LM(0xf4f2ea),0.06*S,0.16*S,0.06*S,i*0.11*S,-0.24*S,0.5*S);
+    /* 赤い目 */
+    for(let i=-1;i<=1;i+=2){
+      const eye=new THREE.Mesh(new THREE.SphereGeometry(0.075*S,10,8),LM(0xff2a1c));
+      eye.position.set(i*0.16*S,0.06*S,0.36*S); head.add(eye);
+    }
   } else if(a==='phones'){
     bx(head,LM(0x24272b),1.0*S,0.16*S,0.5*S,0,0.3*S,-0.05*S);
     bx(head,LM(0x24272b),0.24*S,0.42*S,0.42*S,-0.46*S,-0.05*S,0);
@@ -3392,7 +3436,7 @@ const TCH=[
  {key:'garden',desc:'スプリンクラー放水｜半径10m以内の生徒に水をかけて3秒減速させる'},
  {key:'magnet',desc:'磁力探知｜進行中の課題プリントの位置をマップに感知する'},
  {key:'band',desc:'指揮棒一閃｜2.5秒加速しつつ、見えている生徒の気配をマップに示す'},
- {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜爪の一撃、能力1を1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は1秒溜めての組み付き突進(5m)、外すと1秒以内にもう一度、連続で外すとスタン／コウモリ形態｜三人称・速度3倍で浮遊し椅子や窓へ好きな場所へワープできる偵察専用形態。攻撃はできない代わりに、先生側からは生徒が直接見えず生徒の足跡だけが緑色に見える（生徒側からはコウモリの姿は普通に見える）'}
+ {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜爪の一撃、能力1を1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は0.5秒溜めての組み付き突進(7m、板も破壊できるが失敗するとスタン)、外すと1秒以内にもう一度、連続で外すとスタン／コウモリ形態｜三人称・速度3倍で浮遊し椅子や窓へ好きな場所へワープできる偵察専用形態。攻撃はできない代わりに、先生側からは生徒が直接見えず生徒の足跡だけが緑色に見える（生徒側からはコウモリの姿は普通に見える）'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -3467,7 +3511,20 @@ function spawnAll(){
     phase:0,crawl:0,blind:0,blend:0,stillT:0,fateT:0,fatePhase:0,fateMark:0,pounce:0,
     invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
     dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
-    dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0};
+    dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0,
+    dnBreak:0,dnBreakTarget:null};
+  if(teacherKind==='darknode'){
+    /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
+       teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
+       当たり判定コードは全部teacher.meshを見ているので、参照を差し替える
+       方式なら他のコードを一切変えずに済む） */
+    const wolfMesh=person({body:'beast',beast:'wolf',hairStyle:'wild',acc:'wolfface',tall:true,
+      uniform:0x9a8f7a,hair:0x6f6354,accent:0x7a6f5c,skin:0x8c8170,eye:0xd4b876});
+    const batMesh=person({body:'batform',acc:'batface',tall:false,
+      uniform:0x4a2f6b,wing:0x232a52,accent:0xd97a2a,hair:0x2a1f3f,skin:0x4a3a5c});
+    wolfMesh.visible=false; batMesh.visible=false;
+    teacher.dnMeshes=[teacher.mesh,wolfMesh,batMesh];
+  }
   players=students.concat([teacher]);
   refreshVentLook();
   oniAllies.forEach(function(o){ scene.remove(o.mesh); }); oniAllies.length=0;
@@ -4800,24 +4857,112 @@ const scents=[];
 /* ===== ダークノード（3形態の怪人）===== */
 const dnFireLines=[], dnScents=[], dnFootprints=[];
 const DN_FORM_NAMES=['人間形態','狼形態','コウモリ形態'];
+/* 匂い（狼の嗅覚トラッキング）用の、はっきり見える暖色グロー */
+const DN_SCENT_TEX=(function(){
+  const cv=document.createElement('canvas'); cv.width=64; cv.height=64;
+  const g=cv.getContext('2d');
+  const grad=g.createRadialGradient(32,32,2,32,32,31);
+  grad.addColorStop(0,'rgba(255,214,90,1)');
+  grad.addColorStop(0.45,'rgba(255,150,20,0.95)');
+  grad.addColorStop(0.8,'rgba(230,90,10,0.55)');
+  grad.addColorStop(1,'rgba(230,90,10,0)');
+  g.fillStyle=grad; g.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(cv);
+})();
+/* 濃い緑の肉球足跡（コウモリ側に見せる生徒の足跡）。参考画像の濃さに寄せて
+   円ではなく実際の肉球シルエットを描く */
+function makePawTex(fill){
+  const cv=document.createElement('canvas'); cv.width=64; cv.height=64;
+  const g=cv.getContext('2d');
+  g.fillStyle=fill;
+  g.beginPath();
+  g.moveTo(32,58);
+  g.bezierCurveTo(15,58,9,40,15,31);
+  g.bezierCurveTo(20,24,44,24,49,31);
+  g.bezierCurveTo(55,40,49,58,32,58);
+  g.closePath(); g.fill();
+  [[14,21],[24,10],[40,10],[50,21]].forEach(function(p){
+    g.beginPath(); g.ellipse(p[0],p[1],7.2,10,0,0,Math.PI*2); g.fill();
+  });
+  return new THREE.CanvasTexture(cv);
+}
+const DN_PAW_TEX=makePawTex('rgba(16,66,22,0.97)');
+/* 不気味な黒煙+赤い炎の柱テクスチャ（Dead by Daylightの祭壇の炎を参考にした
+   雰囲気の手続き生成。実際のスケルトン絵ではなく、上部にぼんやり赤い光の
+   塊を置くだけの簡易表現） */
+function makeFirePillarTex(){
+  const w=96,h=192;
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const g=cv.getContext('2d');
+  g.clearRect(0,0,w,h);
+  g.fillStyle='rgba(12,9,11,0.93)';
+  for(let i=0;i<16;i++){
+    const t2=i/15;
+    const cx=w/2+Math.sin(t2*9+1.3)*11*(1-t2*0.4)+(Math.random()-0.5)*6;
+    const cy=h*(1-t2*0.94)-4;
+    const rx=(1-t2*0.55)*24+Math.random()*7;
+    const ry=15+Math.random()*6;
+    g.beginPath(); g.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); g.fill();
+  }
+  const grad=g.createLinearGradient(0,h,0,h*0.12);
+  grad.addColorStop(0,'rgba(255,214,120,0.95)');
+  grad.addColorStop(0.22,'rgba(255,90,30,0.92)');
+  grad.addColorStop(0.55,'rgba(210,20,20,0.8)');
+  grad.addColorStop(1,'rgba(120,0,10,0)');
+  g.fillStyle=grad;
+  g.beginPath(); g.moveTo(w*0.5,h);
+  for(let i=0;i<=12;i++){
+    const t2=i/12, x=w*0.5+Math.sin(t2*7+2)*11*(1-t2)+(Math.random()-0.5)*5, y=h-(t2*h*0.88);
+    g.lineTo(x,y);
+  }
+  g.lineTo(w*0.5,h*0.08);
+  for(let i=12;i>=0;i--){
+    const t2=i/12, x=w*0.5-Math.sin(t2*7+2)*11*(1-t2)-(Math.random()-0.5)*5, y=h-(t2*h*0.88);
+    g.lineTo(x,y);
+  }
+  g.closePath(); g.fill();
+  /* 不気味な骸骨っぽい赤い光の塊（詳細は描かず、淡い光のシルエットだけ） */
+  g.fillStyle='rgba(255,70,50,0.4)';
+  g.beginPath(); g.ellipse(w*0.5,h*0.3,9,13,0,0,Math.PI*2); g.fill();
+  g.fillStyle='rgba(20,10,10,0.5)';
+  g.beginPath(); g.ellipse(w*0.5-4,h*0.29,2.4,3,0,0,Math.PI*2); g.fill();
+  g.beginPath(); g.ellipse(w*0.5+4,h*0.29,2.4,3,0,0,Math.PI*2); g.fill();
+  const tex=new THREE.CanvasTexture(cv);
+  return tex;
+}
+const FIRE_PILLAR_TEX=makeFirePillarTex();
 function dnFireLine(){
   const t=teacher;
   t.abCd=9;
   const fx=Math.sin(t.yaw), fz=Math.cos(t.yaw);
   const rx=Math.cos(t.yaw), rz=-Math.sin(t.yaw);
-  const line={x:t.x,z:t.z,dx:fx,dz:fz,rx:rx,rz:rz,len:14,hw:2.5,t:0,life:1.4,hit:[]};
-  const g=new THREE.Mesh(new THREE.PlaneGeometry(5,14),
-    new THREE.MeshBasicMaterial({color:0xff5a1e,transparent:true,opacity:0.55,depthWrite:false}));
-  g.rotation.x=-Math.PI/2; g.rotation.z=t.yaw;
-  g.position.set(t.x+fx*7,0.15,t.z+fz*7); g.renderOrder=986;
-  scene.add(g); line.mesh=g;
+  const len=14, hw=2.5, life=1.4;
+  const line={x:t.x,z:t.z,dx:fx,dz:fz,rx:rx,rz:rz,len:len,hw:hw,t:0,life:life,hit:[]};
+  /* 前方に不気味な炎柱を5本並べる（1本の細い光線ではなく、DbDの祭壇の炎を
+     参考にした黒煙+赤い光の柱を連ねる演出） */
+  const mat=new THREE.MeshBasicMaterial({map:FIRE_PILLAR_TEX,transparent:true,
+    depthWrite:false,side:THREE.DoubleSide,opacity:0});
+  const pillars=[];
+  const N=5;
+  for(let i=0;i<N;i++){
+    const along=len*((i+1)/(N+1));
+    const pg=new THREE.Group();
+    for(let k=0;k<2;k++){
+      const pl=new THREE.Mesh(new THREE.PlaneGeometry(2.6,4.8),mat);
+      pl.rotation.y=k*Math.PI/2; pl.position.y=2.4;
+      pg.add(pl);
+    }
+    pg.position.set(t.x+fx*along,0,t.z+fz*along); pg.renderOrder=986;
+    scene.add(pg); pillars.push(pg);
+  }
+  line.pillars=pillars; line.mat=mat;
   dnFireLines.push(line);
   toast('ダークノードが火線を放った！');
   beep(90,0.5,'sawtooth',0.16); bigNoise(0.3,1.0); noise(t.x,t.z,14);
 }
 function dnWolfPounce(){
   const t=teacher;
-  const dist=5;
+  const dist=7;
   const sx2=Math.sin(t.yaw), sz2=Math.cos(t.yaw);
   let land=null;
   for(let d=dist;d>=0.6;d-=0.4){
@@ -4825,13 +4970,22 @@ function dnWolfPounce(){
     if(walk(tl[0],tl[1])&&inStage(tl[0])){ land={x:t.x+sx2*d,z:t.z+sz2*d}; break; }
   }
   if(!land) land={x:t.x,z:t.z};
-  t.dnLeap=0.42; t.dnLeapMax=0.42; t.dnLeapHit=[];
+  /* 距離7m・速度は従来比+70%（旧5m/0.42秒=約11.9m/s → 約20.2m/s） */
+  t.dnLeap=0.35; t.dnLeapMax=0.35; t.dnLeapHit=[];
   t.dnLeapFrom={x:t.x,z:t.z}; t.dnLeapTo=land;
   /* クールダウン(3秒)は技全体が決着した時（命中／2連続失敗／再挑戦の時間切れ）に
      updDarkNode側でまとめて掛ける。ここでは掛けない（1回目の失敗後、1秒以内の
      再挑戦を妨げないため） */
   beep(650,0.18,'sawtooth',0.12); noise(t.x,t.z,7);
   toast(t.dnPounceStage>=1?'再び組み付き突進！':'組み付き突進！');
+}
+function dnWolfBreakPallet(p){
+  const t=teacher;
+  /* その場から動かず、専用の破壊モーションを再生してから板を破壊する。
+     代償として完了時に自分がスタンする（updDarkNode側で処理） */
+  t.dnBreak=0.9; t.dnBreakTarget=p; t.path=[];
+  beep(140,0.3,'sawtooth',0.14); noise(t.x,t.z,10);
+  toast('板に噛みついた！');
 }
 function dnOpenWarp(){
   const t=teacher;
@@ -4875,17 +5029,26 @@ function dnSpeedMul(t){
 function updDarkNode(dt){
   const t=teacher;
   if(t.kindKey!=='darknode'){
-    if(dnFireLines.length){ dnFireLines.forEach(function(l){ if(l.mesh) scene.remove(l.mesh); }); dnFireLines.length=0; }
+    if(dnFireLines.length){ dnFireLines.forEach(function(l){
+      if(l.pillars) l.pillars.forEach(function(pg){ scene.remove(pg); });
+      if(l.mat) l.mat.dispose(); }); dnFireLines.length=0; }
     if(dnScents.length){ dnScents.forEach(function(c){ scene.remove(c.m); }); dnScents.length=0; }
     if(dnFootprints.length){ dnFootprints.forEach(function(f){ scene.remove(f.m); }); dnFootprints.length=0; }
     return;
   }
   if(t.dnWarpCd>0) t.dnWarpCd=Math.max(0,t.dnWarpCd-dt);
   if(t.dnScentBoostT>0) t.dnScentBoostT=Math.max(0,t.dnScentBoostT-dt);
-  /* 火線：壁を貫通する直線状のダメージゾーン */
+  /* 火線：壁を貫通する直線状のダメージゾーン（見た目は不気味な炎柱5本） */
   for(let i=dnFireLines.length-1;i>=0;i--){
     const fl=dnFireLines[i]; fl.t+=dt;
-    if(fl.mesh) fl.mesh.material.opacity=0.55*Math.max(0,1-fl.t/fl.life);
+    if(fl.mat){
+      const fadeIn=Math.min(1,fl.t/0.15), fadeOut=Math.max(0,1-fl.t/fl.life);
+      fl.mat.opacity=0.95*Math.min(fadeIn,fadeOut);
+    }
+    if(fl.pillars) fl.pillars.forEach(function(pg,pi){
+      const flick=1+Math.sin(elapsed*14+pi*2.1)*0.08;
+      pg.scale.set(flick,1+Math.sin(elapsed*10+pi*3)*0.06,flick);
+    });
     if(fl.t<fl.life){
       students.forEach(function(s2){
         if(s2.state!=='free'||s2.hide||fl.hit.indexOf(s2)>=0) return;
@@ -4896,7 +5059,11 @@ function updDarkNode(dt){
           toast(s2.name+'が火線に触れた！');
         }
       });
-    } else { if(fl.mesh) scene.remove(fl.mesh); dnFireLines.splice(i,1); }
+    } else {
+      if(fl.pillars) fl.pillars.forEach(function(pg){ scene.remove(pg); });
+      if(fl.mat) fl.mat.dispose();
+      dnFireLines.splice(i,1);
+    }
   }
   /* 組み付き突進（跳びかかり）の移動と判定 */
   if(t.dnLeap>0){
@@ -4938,6 +5105,25 @@ function updDarkNode(dt){
       toast('もう一度のチャンスを逃した'); beep(140,0.2,'sawtooth',0.1);
     }
   }
+  /* 狼形態：板を噛み砕く専用モーション。動かず0.9秒再生し、完了時に破壊＋自分がスタン
+     （途中で外部要因により先生がよろけたら不発にして中断する） */
+  if(t.dnBreak>0){
+    if(t.stun>0){ t.dnBreak=0; t.dnBreakTarget=null; }
+    else {
+      t.dnBreak-=dt;
+      if(t.dnBreak<=0){
+        const p=t.dnBreakTarget;
+        if(p&&p.state==='down'){
+          p.state='broken'; grid[p.r][p.c]='.'; grid[p.pr][p.pc]='.';
+          p.mesh.material=M.broken; p.mesh.position.y=0.3;
+          if(netMode==='host') netDirtyPallets.push([pallets.indexOf(p),'broken']);
+          beep(150,0.35,'sawtooth',0.14); toast('板を噛み砕いた！（隙ができた）');
+        }
+        t.dnBreak=0; t.dnBreakTarget=null;
+        t.stun=Math.max(t.stun,2.0);   /* 代償のスタン */
+      }
+    }
+  }
   /* 狼形態：生徒の足跡から匂いが残る（5秒ごと、走っている生徒のみ） */
   if(t.dnForm===1){
     t.dnScentT=(t.dnScentT||0)+dt;
@@ -4947,16 +5133,19 @@ function updDarkNode(dt){
         if(s2.state!=='free'||s2.hide) return;
         const spd=Math.hypot(s2.x-(s2.px||s2.x),s2.z-(s2.pz||s2.z))/Math.max(dt,1/120);
         if(spd>(s2.base||6.4)*1.15){
-          const m=new THREE.Mesh(new THREE.CircleGeometry(0.9,10),
-            new THREE.MeshBasicMaterial({color:0xffcf5a,transparent:true,opacity:0.5,depthTest:false}));
-          m.rotation.x=-Math.PI/2; m.position.set(s2.x,0.1,s2.z); m.renderOrder=985;
+          const m=new THREE.Mesh(new THREE.CircleGeometry(1.5,14),
+            new THREE.MeshBasicMaterial({map:DN_SCENT_TEX,transparent:true,opacity:0.95,
+              depthTest:false,blending:THREE.AdditiveBlending}));
+          m.rotation.x=-Math.PI/2; m.position.set(s2.x,0.12,s2.z); m.renderOrder=985;
           scene.add(m); dnScents.push({x:s2.x,z:s2.z,m:m,t:0});
         }
       });
     }
     for(let i=dnScents.length-1;i>=0;i--){
       const c=dnScents[i]; c.t+=dt;
-      c.m.material.opacity=0.5*(1-c.t/12);
+      /* はっきり見えるよう、消える直前まで濃さを保ってから急に薄くする */
+      const life=Math.max(0,1-c.t/12);
+      c.m.material.opacity=0.95*Math.min(1,life*2.2)*(1+Math.sin(elapsed*6)*0.08);
       if(Math.hypot(t.x-c.x,t.z-c.z)<2.2){
         t.dnScentBoostT=6.0;
         toast('匂いを辿って加速（+4.75%）'); beep(900,0.14,'triangle',0.09);
@@ -4979,15 +5168,19 @@ function updDarkNode(dt){
         if(s2.state!=='free'||s2.hide) return;
         const spd=Math.hypot(s2.x-(s2.px||s2.x),s2.z-(s2.pz||s2.z))/Math.max(dt,1/120);
         if(spd>0.6){
-          const m=new THREE.Mesh(new THREE.CircleGeometry(0.5,8),
-            new THREE.MeshBasicMaterial({color:0x35ff6a,transparent:true,opacity:0.6,depthTest:false}));
-          m.rotation.x=-Math.PI/2; m.position.set(s2.x,0.08,s2.z); m.renderOrder=985;
+          const m=new THREE.Mesh(new THREE.PlaneGeometry(1.1,1.1),
+            new THREE.MeshBasicMaterial({map:DN_PAW_TEX,transparent:true,opacity:0.98,
+              depthTest:false}));
+          m.rotation.x=-Math.PI/2; m.rotation.z=-s2.yaw;
+          m.position.set(s2.x,0.09,s2.z); m.renderOrder=985;
           scene.add(m); dnFootprints.push({m:m,t:0});
         }
       });
     }
     for(let i=dnFootprints.length-1;i>=0;i--){
-      const f=dnFootprints[i]; f.t+=dt; f.m.material.opacity=0.6*(1-f.t/6);
+      const f=dnFootprints[i]; f.t+=dt;
+      /* 参考画像の濃い緑くらいはっきり見えるよう、消える直前まで濃さを保つ */
+      f.m.material.opacity=0.98*Math.min(1,Math.max(0,1-f.t/6)*2.5);
       if(f.t>6){ scene.remove(f.m); dnFootprints.splice(i,1); }
     }
   } else if(dnFootprints.length){
@@ -5140,6 +5333,13 @@ function updSwing(dt){
 }
 function doAction(){
   if(role!=='teacher'||teacher.stun>0||teacher.wipe>0||teacher.dive>0) return;
+  if(teacher.kindKey==='darknode'&&teacher.dnForm===1&&!teacher.carrying&&teacher.dnBreak<=0){
+    /* 狼形態：倒れた板が近くにあれば、噛みついてその場で破壊する
+       （動かずに専用モーション→完了時に破壊、代償として自分がスタン） */
+    const dp2=pallets.filter(function(p){ return p.state==='down'&&
+      Math.hypot(p.x-teacher.x,p.z-teacher.z)<4.4; })[0];
+    if(dp2){ dnWolfBreakPallet(dp2); return; }
+  }
   if(teacher.kindKey==='wolf'&&!teacher.carrying&&
      !students.filter(function(s){ return s.state==='downed'&&
        Math.hypot(s.x-teacher.x,s.z-teacher.z)<3.2; }).length) return;
@@ -5319,6 +5519,13 @@ function useAbility2(){
     t.dnForm=(t.dnForm+1)%3;
     t.charge=0; t.dnLeap=0; t.dnPounceStage=0; t.dnPounceHit=false;
     t.ab2Cd=2.0;
+    if(t.dnMeshes){
+      /* 見た目を差し替える。可視性そのものは既存のカメラ描画コード側の
+         判定に任せる（コウモリの不可視化などをそのまま自動で反映させるため） */
+      t.mesh.visible=false;
+      t.mesh=t.dnMeshes[t.dnForm];
+      t.mesh.scale.set(1,1,1); t.mesh.rotation.x=0; t.mesh.position.y=0;
+    }
     toast(DN_FORM_NAMES[t.dnForm]+'に変身した');
     beep(t.dnForm===1?260:(t.dnForm===2?760:420),0.3,'sawtooth',0.12);
   }
@@ -5890,7 +6097,7 @@ function aiTeacher(dt){
       else if(t.kindKey==='darknode'){
         /* AIは狼形態に固定して戦う（人間の火線・コウモリのワープは今回プレイヤー専用） */
         if(t.dnForm!==1&&t.ab2Cd<=0){ t.dnForm=1; t.ab2Cd=2.0; t.charge=0; }
-        else if(t.dnForm===1&&d>2.2&&d<5.6&&t.dnLeap<=0&&t.stun<=0){
+        else if(t.dnForm===1&&d>2.2&&d<7.6&&t.dnLeap<=0&&t.stun<=0){
           t.yaw=Math.atan2(tgt.x-t.x,tgt.z-t.z); dnWolfPounce();
         }
       }
@@ -6474,7 +6681,7 @@ function tick(now){
   const mover=puppet||me;
   const canMove=(role==='teacher')?(teacher.stun<=0&&teacher.wipe<=0&&teacher.dive<=0&&
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0&&
-                teacher.dnLeap<=0)
+                teacher.dnLeap<=0&&teacher.dnBreak<=0)
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
                   !(me.drone>0)&&!(me.tackle>0));
 
@@ -6608,11 +6815,11 @@ function tick(now){
       } else if(t.charge>=1){ dnFireLine(); t.charge=0; }
       else t.charge=0;
     } else if(t.kindKey==='darknode'&&t.dnForm===1){
-      /* 狼形態：通常攻撃ボタンそのものが正規の技（噛みつき）。1秒ホールドで
-         溜め、離すと5m組み付き突進。技全体で3秒クールダウン共有（t.abCdを流用） */
+      /* 狼形態：通常攻撃ボタンそのものが正規の技（噛みつき）。0.5秒ホールドで
+         溜め、離すと7m組み付き突進。技全体で3秒クールダウン共有（t.abCdを流用） */
       abLabel=t.dnPounceStage>=1?'再挑戦の組み付き':'組み付き突進';
       if((input.act||input.abHold)&&t.dnLeap<=0&&t.stun<=0&&t.wipe<=0&&t.abCd<=0){
-        t.charge=Math.min(1,t.charge+dt*1.0); hp=t.charge;
+        t.charge=Math.min(1,t.charge+dt*2.0); hp=t.charge;
         abLabel=(t.charge>=1)?'組み付き（離して発動）':'溜め中 '+Math.round(t.charge*100)+'%';
       } else if(t.charge>=1&&t.dnLeap<=0){ dnWolfPounce(); t.charge=0; }
       else t.charge=0;
@@ -6630,6 +6837,9 @@ function tick(now){
       label=ch?'椅子に座らせる':'運搬中'; hot=!!ch;
     } else if(students.filter(function(s){ return s.state==='downed'&&Math.hypot(s.x-me.x,s.z-me.z)<3.2; }).length){
       label='担ぎ上げる'; hot=true;
+    } else if(dp&&!foe&&t.kindKey==='darknode'&&t.dnForm===1){
+      /* 狼形態は板を蹴るのではなく噛み砕く専用モーション（doAction側で処理） */
+      label=t.dnBreak>0?'噛み砕いている…':'噛み砕く（スタンの代償）'; hot=t.dnBreak<=0;
     } else if(dp&&!foe){
       label='蹴破る'; hot=true;
       if(input.act){ hp=dp.breakT/2.2; if(breakPallet(dp,dt)) hp=0; }
@@ -7268,6 +7478,21 @@ function tick(now){
       e.mesh.position.y+=Math.sin(kk*Math.PI)*0.22+Math.sin(kk*Math.PI*3)*0.05*kk;
       e.mesh.rotation.x=-kease*0.3;
       e.mesh.rotation.z=Math.sin(kk*Math.PI*4)*0.12*kk;
+    }
+    if(e===teacher&&teacher.kindKey==='darknode'&&teacher.dnLeap>0){
+      /* 狼の組み付き突進：飛びつくジャンプの弧を描く */
+      const dnk=1-Math.max(0,teacher.dnLeap)/(teacher.dnLeapMax||0.35);
+      e.mesh.position.y+=Math.sin(dnk*Math.PI)*1.3;
+      e.mesh.rotation.x=-Math.sin(dnk*Math.PI)*0.35;
+    }
+    if(e===teacher&&teacher.kindKey==='darknode'&&teacher.dnBreak>0){
+      /* 狼の板破壊：その場にとどまって噛み砕く専用モーション
+         （開始と終了で必ず自然な姿勢に戻るよう、正弦の包絡線で前傾させる） */
+      const bk=1-Math.max(0,teacher.dnBreak)/0.9;
+      const envelope=Math.sin(Math.min(1,bk)*Math.PI);
+      const shake=Math.sin(elapsed*40)*0.12*envelope;
+      e.mesh.rotation.x=0.5*envelope+shake;
+      e.mesh.position.y-=0.15*envelope;
     }
     if(e.state==='downed'){
       e.mesh.rotation.z=1.35; e.mesh.position.y=0.55;
@@ -8217,6 +8442,7 @@ function netHostBroadcastSnapshot(dt){
       miss:teacher.miss, crawl:teacher.crawl, oneshot:teacher.oneshot, blend:teacher.blend,
       invis:teacher.invis, cloak:teacher.cloak, wheelOn:teacher.wheelOn, shadow:teacher.shadow,
       blind:teacher.blind, kindKey:teacher.kindKey, dnForm:teacher.dnForm||0,
+      dnLeap:teacher.dnLeap||0, dnLeapMax:teacher.dnLeapMax||0.35, dnBreak:teacher.dnBreak||0,
       carrying: teacher.carrying?netStuIdx(teacher.carrying):-1,
       vault:teacher.vault||0, vaultMax:teacher.vaultMax||1, vaultK:teacher.vaultK||0 } },
     stu: students.map(function(s){
@@ -8272,10 +8498,18 @@ function netInterpolate(dt){
     }
   }
   if(snap.tea){
+    const prevDnForm=teacher.dnForm;
     Object.assign(teacher,snap.tea.f);
     teacher.carrying=(snap.tea.f.carrying>=0)?students[snap.tea.f.carrying]:null;
     teacher.x+=(snap.tea.x-teacher.x)*rate; teacher.z+=(snap.tea.z-teacher.z)*rate;
     teacher.yaw=angLerp(teacher.yaw,snap.tea.yaw,rate);
+    /* ダークノードの形態が変わったら、参加者側のローカル画面でも
+       見た目（狼/コウモリ専用メッシュ）を差し替える */
+    if(teacher.dnMeshes&&teacher.dnForm!==prevDnForm){
+      teacher.mesh.visible=false;
+      teacher.mesh=teacher.dnMeshes[teacher.dnForm];
+      teacher.mesh.scale.set(1,1,1); teacher.mesh.rotation.x=0; teacher.mesh.position.y=0;
+    }
   }
   if(snap.tasks) snap.tasks.forEach(function(p,i){
     const d=tasks[i]; if(!d) return;
@@ -8429,6 +8663,21 @@ function netClientTick(dt){
       e.mesh.position.y+=Math.sin(kk*Math.PI)*0.22+Math.sin(kk*Math.PI*3)*0.05*kk;
       e.mesh.rotation.x=-kease*0.3;
       e.mesh.rotation.z=Math.sin(kk*Math.PI*4)*0.12*kk;
+    }
+    if(e===teacher&&teacher.kindKey==='darknode'&&teacher.dnLeap>0){
+      /* 狼の組み付き突進：飛びつくジャンプの弧を描く */
+      const dnk=1-Math.max(0,teacher.dnLeap)/(teacher.dnLeapMax||0.35);
+      e.mesh.position.y+=Math.sin(dnk*Math.PI)*1.3;
+      e.mesh.rotation.x=-Math.sin(dnk*Math.PI)*0.35;
+    }
+    if(e===teacher&&teacher.kindKey==='darknode'&&teacher.dnBreak>0){
+      /* 狼の板破壊：その場にとどまって噛み砕く専用モーション
+         （開始と終了で必ず自然な姿勢に戻るよう、正弦の包絡線で前傾させる） */
+      const bk=1-Math.max(0,teacher.dnBreak)/0.9;
+      const envelope=Math.sin(Math.min(1,bk)*Math.PI);
+      const shake=Math.sin(elapsed*40)*0.12*envelope;
+      e.mesh.rotation.x=0.5*envelope+shake;
+      e.mesh.position.y-=0.15*envelope;
     }
     if(e.state==='downed'){
       e.mesh.rotation.z=1.35; e.mesh.position.y=0.55;
@@ -9112,6 +9361,9 @@ function softReset(keepNet){
   bgmStop(); bgmTension=0;
   if(keepNet!==true&&netMode!=='off') netTeardown();   /* 部屋を作っていた/入っていたら解散する */
   players.forEach(function(e){ scene.remove(e.mesh); });
+  /* ダークノードの狼/コウモリ用の予備メッシュは現在表示中でない分が
+     players側のループでは消えないので、ここでまとめて片付ける */
+  if(teacher&&teacher.dnMeshes) teacher.dnMeshes.forEach(function(m){ scene.remove(m); });
   students=[]; teacher=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
   chemTraps.forEach(function(c){ scene.remove(c.m); }); chemTraps.length=0;
@@ -9122,7 +9374,9 @@ function softReset(keepNet){
   items.forEach(function(it){ scene.remove(it.g); }); items.length=0;
   inkPools.forEach(function(ip){ scene.remove(ip.m); }); inkPools.length=0;
   scents.forEach(function(c){ scene.remove(c.m); }); scents.length=0;
-  dnFireLines.forEach(function(l){ if(l.mesh) scene.remove(l.mesh); }); dnFireLines.length=0;
+  dnFireLines.forEach(function(l){
+    if(l.pillars) l.pillars.forEach(function(pg){ scene.remove(pg); });
+    if(l.mat) l.mat.dispose(); }); dnFireLines.length=0;
   dnScents.forEach(function(c){ scene.remove(c.m); }); dnScents.length=0;
   dnFootprints.forEach(function(f){ scene.remove(f.m); }); dnFootprints.length=0;
   mists.forEach(function(c){ scene.remove(c.m); }); mists.length=0;
