@@ -219,6 +219,32 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .tog{border:1px solid #ffffff44;padding:4px 11px;border-radius:2px;font-size:11px}
 .tog.on{border-color:var(--yellow);color:var(--yellow)}
 
+/* 管理者(デバッグ)モード。普段は画面のどこにも痕跡を出さない
+   （コナミコマンド入力時だけパスワード欄が現れる） */
+#adminLogin{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:220px;
+  padding:14px;border-radius:4px;background:#0b120ef8;border:1px solid #ff5f5f;display:none;
+  z-index:60;text-align:center}
+#adminLogin.on{display:block}
+#adminLogin.shake{animation:adminshake .3s}
+@keyframes adminshake{0%,100%{margin-left:0}25%{margin-left:-8px}75%{margin-left:8px}}
+#adminLogin .wt{font-size:11px;letter-spacing:.25em;color:#ff5f5f;margin-bottom:10px}
+#adminLogin input{width:100%;box-sizing:border-box;padding:8px;margin-bottom:8px;
+  background:#000;border:1px solid #ffffff33;color:#fff;border-radius:2px;font-size:14px;
+  letter-spacing:.15em;text-align:center}
+#adminLogin .wc{padding:8px;text-align:center;font-size:11px;opacity:.75;
+  border:1px solid #ff5f5f66;border-radius:2px;color:#ff5f5f}
+#adminPanel{position:fixed;top:46px;left:8px;width:216px;max-height:76vh;overflow-y:auto;
+  padding:14px;border-radius:4px;background:#0b120ef2;border:1px solid #ff5f5f66;
+  display:none;font-size:11.5px;-webkit-overflow-scrolling:touch;touch-action:pan-y;z-index:60}
+#adminPanel.on{display:block}
+#adminPanel h3{font-size:10px;letter-spacing:.24em;opacity:.6;margin:14px 0 6px;
+  font-weight:400;color:#ff8f6a}
+#adminPanel h3:first-of-type{margin-top:0}
+#adminPanel label{display:flex;justify-content:space-between;margin:8px 0 2px;opacity:.8}
+#adminPanel input[type=range]{width:100%;accent-color:#ff5f5f}
+#adminPanel input[type=number]{width:80px;background:#000;border:1px solid #ffffff33;
+  color:#fff;border-radius:2px;padding:4px;font-size:11px}
+
 #title{position:fixed;inset:0;z-index:20;display:block;background:transparent;
   padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 8px)}
 #title:before{content:"";position:absolute;inset:0;pointer-events:none;
@@ -427,6 +453,36 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <div class="btn pe" id="run"><span>走る</span><b>Shift</b></div>
     <div class="btn pe" id="act"><div id="hold"></div><span id="actlabel">—</span><b id="actkey">E</b></div>
   </div>
+</div>
+
+<!-- 管理者(デバッグ)モード。#hud/#title どちらが表示中でも必ず最前面に出るよう、
+     あえて#hudの外（#titleと同じ階層）に置いている -->
+<div id="adminLogin" class="pe">
+  <div class="wt">PASSWORD</div>
+  <input type="password" id="adminPassInput" autocomplete="off" spellcheck="false">
+  <div class="wc" id="adminLoginGo">ENTER</div>
+</div>
+<div id="adminPanel" class="pe">
+  <h3>管理者モード</h3>
+  <div class="row"><span>敵(先生)を常時表示</span><span class="tog" id="a_wallhack">OFF</span></div>
+  <div class="row"><span>ヒットボックス表示</span><span class="tog" id="a_hitbox">OFF</span></div>
+  <div class="row"><span>無敵</span><span class="tog" id="a_god">OFF</span></div>
+  <label>移動スピード倍率 <span id="v_aspd">1.0</span></label>
+  <input type="range" id="a_spd" min="2" max="40" value="10">
+  <label>攻撃の速さ倍率 <span id="v_aatk">1.0</span></label>
+  <input type="range" id="a_atk" min="2" max="40" value="10">
+  <label>耐久力+（生徒のみ） <span id="v_ahp">0</span></label>
+  <input type="range" id="a_hp" min="0" max="8" value="0" step="1">
+  <h3>ワープ</h3>
+  <div class="row"><span>X</span><input type="number" id="a_tx" value="0"></div>
+  <div class="row"><span>Z</span><input type="number" id="a_tz" value="0"></div>
+  <div class="row"><span>現在地を反映</span><span class="tog" id="a_here">取得</span></div>
+  <div class="row"><span>ワープ実行</span><span class="tog" id="a_warpgo">GO</span></div>
+  <h3>その他</h3>
+  <div class="row"><span>自分をリスポーン</span><span class="tog" id="a_revive">実行</span></div>
+  <div class="row"><span>生徒全員リスポーン</span><span class="tog" id="a_reviveall">実行</span></div>
+  <div class="row"><span>課題を全部終わらせる</span><span class="tog" id="a_finishtasks">実行</span></div>
+  <div class="row"><span>閉じる</span><span class="tog" id="a_close">閉じる</span></div>
 </div>
 
 <div id="title">
@@ -4694,6 +4750,7 @@ function paperLook(s){
 function hit(s,heavy){ return damage(s,1,heavy); }
 function damage(s,amt,heavy){
   if(s.state!=='free'||s.hide) return false;
+  if(s===me&&adminGod) return false;   /* 管理者モード：無敵 */
   if(s.parry>0){
     s.parry=0; s.rush=3.0;
     teacher.stun=Math.max(teacher.stun,1.6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
@@ -4721,10 +4778,12 @@ function damage(s,amt,heavy){
   teacher.wrathGauge=(teacher.wrathGauge||0)+34*amt;
   if(teacher.kindKey==='dream'){ s.sleep=1; s.awakeT=0; }
   s.rush=3.0;                       /* 攻撃されると3秒だけ足が速くなる */
+  /* 管理者モード：耐久力+（ダウンするまでのヒット数を増やす。対象は自分のみ） */
+  const dmgCap=2+(s===me?adminExtraHp:0);
   s.dmg=(s.dmg||0)+(heavy?2:amt);
-  if(heavy) s.dmg=2;
-  if(s.dmg>=2){
-    s.dmg=2; s.hurt=true; s.state='downed'; s.path=[]; stats.downs++;
+  if(heavy) s.dmg=dmgCap;
+  if(s.dmg>=dmgCap){
+    s.dmg=dmgCap; s.hurt=true; s.state='downed'; s.path=[]; stats.downs++;
     paperLook(s); toast(s.name+'がダウン');
   } else {
     s.hurt=(s.dmg>=1);
@@ -5278,7 +5337,7 @@ function swing(force){
     teacher.atkWindow=0; teacher.blinkLeft=2; teacher.abCd=KINDS.nurse.cd;
     setTimeout(function(){ if(teacher) teacher.stun=Math.max(teacher.stun,2.4); },340);
   }
-  teacher.cool=0.85; teacher.swing=1;
+  teacher.cool=0.85/(role==='teacher'?adminAtkSpeedMul:1); teacher.swing=1;   /* 管理者モード：攻撃速度倍率 */
   beep(300,0.08,'square',0.06);
   /* 振り始めから振り抜くまでの間ずっと当たり判定を出す。
      昔は押した瞬間の1フレームだけ見ていたので、
@@ -5311,8 +5370,9 @@ function swingLand(){
   if(teacher.kindKey==='wolf') wolfBeast(8);
   const fr=(teacher.kindKey==='model')?(1-0.3*Math.min(1,teacher.frenzy||0)):1;
   const tk=(teacher.kindKey==='teke')?6.0:1;   /* テケテケは振り払いが極端に長い */
-  teacher.wipe=3.64*fr*tk;
-  teacher.cool=3.64*fr*tk;
+  const atkSpdDiv=(role==='teacher'?adminAtkSpeedMul:1);   /* 管理者モード：攻撃速度倍率 */
+  teacher.wipe=3.64*fr*tk/atkSpdDiv;
+  teacher.cool=3.64*fr*tk/atkSpdDiv;
   if(role==='teacher'){ teacher.lunge=0.16; vib(30); }
 }
 function swingMiss(){
@@ -6469,8 +6529,8 @@ function drawMini(){
       mg.fillStyle=(s===me)?'#ffffff':'#'+s.color.toString(16);
       const p=tileOf(s.x,s.z); mg.fillRect(OX(p[0])-1,p[1]*sy-1,sx+2,sy+2);
     });
-    if(Math.hypot(teacher.x-me.x,teacher.z-me.z)<26){
-      mg.fillStyle='#c7452f';
+    if(adminWallhack||Math.hypot(teacher.x-me.x,teacher.z-me.z)<26){   /* 管理者モード：壁越し表示 */
+      mg.fillStyle=adminWallhack?'#ff5fe0':'#c7452f';
       const p=tileOf(teacher.x,teacher.z); mg.fillRect(OX(p[0])-1,p[1]*sy-1,sx+2,sy+2);
     }
   }
@@ -7115,7 +7175,8 @@ function tick(now){
     if(s.tiredT>0) s.tiredT-=dt;
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
             (s.sprintT>0?1.55:1)*(s.tiredT>0?0.85:1)*
-            (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1);
+            (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
+            (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
       if(s.dropT>(s.perk==='sound'?6:3)){ s.dropT=0; dropPaper(s.x,s.z);
@@ -7247,7 +7308,8 @@ function tick(now){
     (inWater(teacher.x,teacher.z)?0.7:1)*
     (teacher.crawl>0?1.6:1)*(teacher.phase>0?1.5:1)*
     dnSpeedMul(teacher)*
-    ((teacher.kindKey==='darknode'&&teacher.dnForm!==2&&teacher.charge>0)?0.3:1);
+    ((teacher.kindKey==='darknode'&&teacher.dnForm!==2&&teacher.charge>0)?0.3:1)*
+    (role==='teacher'?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
   updWarp(dt);
   updShots(dt);
   updRope(dt);
@@ -7714,6 +7776,7 @@ function tick(now){
   }
   voiceUpdateVolumes();
   hud(dt);
+  updAdminViz();
   renderScene();
 }
 requestAnimationFrame(tick);
@@ -8762,6 +8825,7 @@ function netClientTick(dt){
     }
   }
   hud(dt);
+  updAdminViz();
   renderScene();
 }
 
@@ -9451,6 +9515,177 @@ try{ checkMobileLandscape(); }catch(err){ try{ layoutPad(); }catch(e2){} }
 setInterval(netLobbySync,5000);   /* サーバー検索の公開ハートビート（非公開時はほぼ何もしない） */
 addEventListener('orientationchange',function(){ setTimeout(function(){
   try{ checkMobileLandscape(); }catch(e){} },200); });
+
+/* ===== 管理者(デバッグ)モード =====
+   合言葉は tama4678。画面上に常設のボタンは一切出さない。
+   コナミコマンド（↑↑↓↓←→←→BA）を入力した時だけパスワード欄が現れ、
+   合言葉が合った時だけ管理者パネルが開く。普通にプレイ・観戦している人には
+   存在自体が分からない設計（HoukagoInokori/index.html 内、通気口メニュー
+   #warp と同じ「.pe パネルを条件付きで表示する」パターンを踏襲）。
+
+   注意（フェアネス）：この管理者モードはワープ・無敵・攻撃速度/移動速度変更を
+   含み、PeerJSオンライン対戦中もローカルで有効になる（他プレイヤーに気付かれず
+   使えてしまう＝いわゆるチート状態になり得る）。開発者本人のデバッグ用途としては
+   問題ないが、フレンドとのオンライン対戦を「隠れて有利に進める」目的で常用しない。 */
+let adminUnlocked=false, adminSpeedMul=1, adminAtkSpeedMul=1,
+    adminWallhack=false, adminHitboxViz=false, adminGod=false, adminExtraHp=0;
+const ADMIN_SEQ=['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight',
+  'ArrowLeft','ArrowRight','KeyB','KeyA'];
+let adminSeqBuf=[];
+const elAdminLogin=document.getElementById('adminLogin'),
+      elAdminPass=document.getElementById('adminPassInput'),
+      elAdminPanel=document.getElementById('adminPanel');
+addEventListener('keydown',function(e){
+  if(isTyping(e)) return;
+  adminSeqBuf.push(e.code);
+  if(adminSeqBuf.length>ADMIN_SEQ.length) adminSeqBuf.shift();
+  if(adminSeqBuf.length===ADMIN_SEQ.length&&
+     ADMIN_SEQ.every(function(c,i){ return adminSeqBuf[i]===c; })){
+    adminSeqBuf=[];
+    if(adminUnlocked) elAdminPanel.classList.toggle('on');
+    else { elAdminLogin.classList.add('on'); elAdminPass.value=''; elAdminPass.focus(); }
+  }
+});
+function adminTryLogin(){
+  if(elAdminPass.value==='tama4678'){
+    adminUnlocked=true; elAdminLogin.classList.remove('on'); elAdminPass.value='';
+    elAdminPanel.classList.add('on');
+  } else {
+    elAdminPass.value='';
+    elAdminLogin.classList.add('shake');
+    setTimeout(function(){ elAdminLogin.classList.remove('shake'); },300);
+  }
+}
+document.getElementById('adminLoginGo').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); adminTryLogin(); });
+elAdminPass.addEventListener('keydown',function(e){
+  e.stopPropagation();
+  if(e.code==='Enter'){ adminTryLogin(); e.preventDefault(); }
+  else if(e.code==='Escape'){ elAdminLogin.classList.remove('on'); }
+});
+tog('a_wallhack',function(v,el){ adminWallhack=v; el.textContent=v?'ON':'OFF'; });
+tog('a_hitbox',function(v,el){ adminHitboxViz=v; el.textContent=v?'ON':'OFF'; });
+tog('a_god',function(v,el){ adminGod=v; el.textContent=v?'ON':'OFF'; });
+slider('a_spd','v_aspd',function(v){ adminSpeedMul=v; });
+slider('a_atk','v_aatk',function(v){ adminAtkSpeedMul=v; });
+document.getElementById('a_hp').addEventListener('input',function(e){
+  adminExtraHp=+e.target.value;
+  document.getElementById('v_ahp').textContent=String(adminExtraHp);
+});
+document.getElementById('a_here').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  if(!me) return;
+  const p=(role==='teacher')?teacher:me;
+  document.getElementById('a_tx').value=p.x.toFixed(1);
+  document.getElementById('a_tz').value=p.z.toFixed(1);
+});
+document.getElementById('a_warpgo').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); adminTeleport();
+});
+document.getElementById('a_revive').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); adminRevive();
+});
+document.getElementById('a_reviveall').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); adminReviveAll();
+});
+document.getElementById('a_finishtasks').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); adminFinishTasks();
+});
+document.getElementById('a_close').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); elAdminPanel.classList.remove('on');
+});
+function adminTeleport(){
+  if(!me||!started||over) return;
+  const x=+document.getElementById('a_tx').value, z=+document.getElementById('a_tz').value;
+  if(!isFinite(x)||!isFinite(z)) return;
+  if(role==='teacher'){
+    teacher.x=x; teacher.z=z; teacher.path=[];
+  } else {
+    if(me.state==='seated'){
+      const ch=allChairs.filter(function(c){ return c.taken===me; })[0];
+      if(ch) ch.taken=null;
+    }
+    if(teacher&&teacher.carrying===me) teacher.carrying=null;
+    me.state='free'; me.hide=null; me.mesh.visible=true; me.x=x; me.z=z; me.path=[];
+  }
+  toast('[管理者] ワープ実行'); beep(660,0.08,'sine',0.08);
+}
+function adminReviveOne(s){
+  if(s.state==='seated'){
+    const ch=allChairs.filter(function(c){ return c.taken===s; })[0];
+    if(ch) ch.taken=null;
+  }
+  if(teacher&&teacher.carrying===s) teacher.carrying=null;
+  s.state='free'; s.dmg=0; s.hurt=false; s.hide=null; s.qte=null; s.qteWait=0;
+  s.seatT=0; s.downT=0; s.wig=0; s.mesh.visible=true; s.mesh.rotation.z=0;
+  paperLook(s);
+}
+function adminRevive(){
+  if(!me||role==='teacher'){ toast('[管理者] 先生役には無効'); return; }
+  adminReviveOne(me);
+  toast('[管理者] リスポーンした'); beep(880,0.2,'triangle',0.12);
+}
+function adminReviveAll(){
+  if(!students||!students.length) return;
+  students.forEach(adminReviveOne);
+  toast('[管理者] 生徒全員リスポーン'); beep(880,0.2,'triangle',0.12);
+}
+function adminFinishTasks(){
+  if(!tasks||!tasks.length) return;
+  tasks.forEach(function(d){
+    if(d.prog<1){ d.prog=1; d.mesh.material=M.deskDone; if(d.sheet) d.sheet.visible=false; }
+  });
+  if(tasksDone()>=TASK_N&&!gateOpen){
+    gateOpen=true; exits.forEach(function(e){ e.mesh.material=M.exitOn; });
+    endTimer=120;
+  }
+  toast('[管理者] 課題を全部終わらせた');
+}
+/* ヒットボックス可視化：先生の攻撃間合い（外周＝通常判定、内周＝密着判定で
+   向き/壁を無視するライン）と、生徒の当たり判定（衝突半径BODY）をワイヤーで表示 */
+let adminVizObjs=null;
+function ensureAdminViz(){
+  if(adminVizObjs) return adminVizObjs;
+  const ringOuter=new THREE.Mesh(new THREE.RingGeometry(4.9,5.1,40),
+    new THREE.MeshBasicMaterial({color:0xff3b3b,transparent:true,opacity:0.6,
+      side:THREE.DoubleSide,depthTest:false}));
+  ringOuter.rotation.x=-Math.PI/2; ringOuter.renderOrder=999; ringOuter.visible=false;
+  scene.add(ringOuter);
+  const ringInner=new THREE.Mesh(new THREE.RingGeometry(2.3,2.5,40),
+    new THREE.MeshBasicMaterial({color:0xffa63b,transparent:true,opacity:0.55,
+      side:THREE.DoubleSide,depthTest:false}));
+  ringInner.rotation.x=-Math.PI/2; ringInner.renderOrder=999; ringInner.visible=false;
+  scene.add(ringInner);
+  const bodySpheres=[];
+  for(let i=0;i<6;i++){
+    const sp=new THREE.Mesh(new THREE.SphereGeometry(BODY,10,8),
+      new THREE.MeshBasicMaterial({color:0x3bd4ff,wireframe:true,transparent:true,
+        opacity:0.75,depthTest:false}));
+    sp.visible=false; sp.renderOrder=999; scene.add(sp); bodySpheres.push(sp);
+  }
+  adminVizObjs={ringOuter:ringOuter,ringInner:ringInner,bodySpheres:bodySpheres};
+  return adminVizObjs;
+}
+function updAdminViz(){
+  if(!adminHitboxViz||!started||over||!teacher){
+    if(adminVizObjs){
+      adminVizObjs.ringOuter.visible=false; adminVizObjs.ringInner.visible=false;
+      adminVizObjs.bodySpheres.forEach(function(s){ s.visible=false; });
+    }
+    return;
+  }
+  const V=ensureAdminViz();
+  V.ringOuter.visible=true; V.ringOuter.position.set(teacher.x,0.08,teacher.z);
+  V.ringInner.visible=true; V.ringInner.position.set(teacher.x,0.09,teacher.z);
+  let i=0;
+  for(const s of students){
+    if(s.state!=='free'&&s.state!=='downed') continue;
+    if(i>=V.bodySpheres.length) break;
+    const sp=V.bodySpheres[i++]; sp.visible=true; sp.position.set(s.x,1.0,s.z);
+  }
+  for(;i<V.bodySpheres.length;i++) V.bodySpheres[i].visible=false;
+}
+
 (function(){
   const ld=document.getElementById('loading');
   if(ld) ld.style.display='none';
