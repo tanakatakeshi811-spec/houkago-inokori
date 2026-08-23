@@ -420,8 +420,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <div class="row"><span>空気中のホコリ</span><span class="tog on" id="t_dust">ON</span></div>
     <div class="row"><span>発光エフェクト</span><span class="tog on" id="t_bloom">ON</span></div>
     <div class="row"><span>ミニマップ</span><span class="tog on" id="t_mini">表示</span></div>
+    <div class="row"><span>全画面表示</span><span class="tog" id="t_full">OFF</span></div>
     <div class="row"><span>効果音</span><span class="tog on" id="t_snd">ON</span></div>
+    <label>効果音の音量 <span id="v_sfxvol">100%</span></label><input type="range" id="s_sfxvol" min="0" max="10" value="10">
     <div class="row"><span>BGM</span><span class="tog on" id="t_bgm">ON</span></div>
+    <label>BGMの音量 <span id="v_bgmvol">100%</span></label><input type="range" id="s_bgmvol" min="0" max="10" value="10">
     <h3>ゲーム</h3>
     <div class="row"><span>タイトルに戻る</span><span class="tog" id="t_quit">戻る</span></div>
   </div>
@@ -568,6 +571,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         <p class="lbl" id="netRoomLbl">部屋コード</p>
         <div id="netCodeShow" style="font-size:26px;letter-spacing:.3em;color:var(--yellow);
           text-align:center;margin:6px 0 12px">----</div>
+        <div class="tog" id="netCodeCopy" style="text-align:center;width:100%;box-sizing:border-box;margin-bottom:12px">招待リンクをコピー</div>
         <p class="lbl">接続中</p>
         <div id="netPeerList" style="font-size:11px;line-height:2;opacity:.85">まだ誰も来ていない</div>
         <div class="tog" id="netPublicToggle" style="text-align:center;width:100%;box-sizing:border-box;margin-top:10px">検索に公開する: OFF</div>
@@ -2520,7 +2524,7 @@ function beep(freq,dur,type,vol){
   try{
     const a=ac(),o=a.createOscillator(),g=a.createGain();
     o.type=type||'sine'; o.frequency.value=freq;
-    g.gain.setValueAtTime(vol||0.08,a.currentTime);
+    g.gain.setValueAtTime((vol||0.08)*(typeof sfxVol==='number'?sfxVol:1),a.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+dur);
     o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur);
   }catch(e){}
@@ -2531,7 +2535,7 @@ function bigNoise(vol,dur){
     const a=ac(),o=a.createOscillator(),g=a.createGain();
     o.type='sawtooth'; o.frequency.setValueAtTime(700,a.currentTime);
     o.frequency.exponentialRampToValueAtTime(90,a.currentTime+dur);
-    g.gain.setValueAtTime(vol,a.currentTime);
+    g.gain.setValueAtTime(vol*(typeof sfxVol==='number'?sfxVol:1),a.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+dur);
     o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur);
   }catch(e){}
@@ -2556,7 +2560,7 @@ function bgmNote(freq,dur,vol,type){
     const a=ac(),o=a.createOscillator(),g=a.createGain();
     o.type=type||'sine'; o.frequency.value=freq;
     g.gain.setValueAtTime(0,a.currentTime);
-    g.gain.linearRampToValueAtTime(vol,a.currentTime+0.04);
+    g.gain.linearRampToValueAtTime(vol*(typeof bgmVol==='number'?bgmVol:1),a.currentTime+0.04);
     g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+dur);
     o.connect(g); g.connect(a.destination);
     o.start(); o.stop(a.currentTime+dur+0.05);
@@ -3953,11 +3957,11 @@ function slider(id,vid,fn,fmt){
     fn(v);
   });
 }
-slider('s_sens','v_sens',function(v){sens=v;});
-slider('s_stk','v_stk',function(v){stkSens=v;});
-slider('s_dz','v_dz',function(v){deadZone=v/10;},function(v){return (v/10).toFixed(2);});
-slider('s_bs','v_bs',function(v){btnScale=v;layoutPad();});
-slider('s_res','v_res',function(v){resScale=v;applyRes();renderer.setSize(innerWidth,innerHeight);});
+slider('s_sens','v_sens',function(v){sens=v; saveSettings();});
+slider('s_stk','v_stk',function(v){stkSens=v; saveSettings();});
+slider('s_dz','v_dz',function(v){deadZone=v/10; saveSettings();},function(v){return (v/10).toFixed(2);});
+slider('s_bs','v_bs',function(v){btnScale=v;layoutPad(); saveSettings();});
+slider('s_res','v_res',function(v){resScale=v;applyRes();renderer.setSize(innerWidth,innerHeight); saveSettings();});
 function tog(id,fn){
   const el=document.getElementById(id);
   el.addEventListener('pointerdown',function(ev){
@@ -3967,27 +3971,91 @@ function tog(id,fn){
 }
 const mini=document.getElementById('mini');
 tog('t_edge',function(v,el){ holdRun=v; el.textContent=v?'ON':'OFF';
-  input.run=false; runToggle=false; elRun.classList.remove('hot'); });
-tog('t_cam', function(v,el){ autoCam=v; el.textContent=v?'ON':'OFF'; });
-tog('t_auto',function(v,el){ autoAct=v; el.textContent=v?'ON':'OFF'; });
+  input.run=false; runToggle=false; elRun.classList.remove('hot'); saveSettings(); });
+tog('t_cam', function(v,el){ autoCam=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
+tog('t_auto',function(v,el){ autoAct=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
 tog('t_left',function(v,el){ leftHand=v; el.textContent=v?'ON':'OFF';
-  try{ checkMobileLandscape(); }catch(e){ layoutPad(); } });
-tog('t_inv', function(v,el){ invert=v; el.textContent=v?'ON':'OFF'; });
-tog('t_vib', function(v,el){ vibOn=v; el.textContent=v?'ON':'OFF'; });
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); } saveSettings(); });
+tog('t_inv', function(v,el){ invert=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
+tog('t_vib', function(v,el){ vibOn=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
 tog('t_shadow',function(v,el){
   shadowsOn=v;
   try{ renderer.shadowMap.enabled=v; sun.castShadow=v;
     scene.traverse&&scene.traverse(function(o){ if(o.material) o.material.needsUpdate=true; });
   }catch(e){}
-  el.textContent=v?'ON':'OFF';
+  el.textContent=v?'ON':'OFF'; saveSettings();
 });
-tog('t_dust',function(v,el){ if(dust) dust.visible=v; el.textContent=v?'ON':'OFF'; });
-tog('t_bloom',function(v,el){ postFXOn=v; el.textContent=v?'ON':'OFF'; });
-tog('t_mini',function(v,el){ mini.style.display=v?'block':'none'; el.textContent=v?'表示':'非表示'; });
-tog('t_snd', function(v,el){ sndOn=v; el.textContent=v?'ON':'OFF'; });
-tog('t_bgm', function(v,el){ bgmOn=v; el.textContent=v?'ON':'OFF'; if(v) bgmStart(); else bgmStop(); });
+tog('t_dust',function(v,el){ if(dust) dust.visible=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
+tog('t_bloom',function(v,el){ postFXOn=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
+tog('t_mini',function(v,el){ mini.style.display=v?'block':'none'; el.textContent=v?'表示':'非表示'; saveSettings(); });
+tog('t_snd', function(v,el){ sndOn=v; el.textContent=v?'ON':'OFF'; saveSettings(); });
+tog('t_bgm', function(v,el){ bgmOn=v; el.textContent=v?'ON':'OFF'; if(v) bgmStart(); else bgmStop(); saveSettings(); });
+/* 効果音/BGMの音量(ON/OFFトグルとは別に、大きさそのものを0〜100%で調整できる) */
+let sfxVol=1, bgmVol=1;
+slider('s_sfxvol','v_sfxvol',function(v){ sfxVol=v; saveSettings(); },function(v){return Math.round(v*100)+'%';});
+slider('s_bgmvol','v_bgmvol',function(v){ bgmVol=v; saveSettings(); },function(v){return Math.round(v*100)+'%';});
+/* 全画面表示。フルスクリーンはユーザー操作外(Escキー等)でも解除されるので、
+   fullscreenchangeイベント側でも表示を同期させる（設定としては保存しない。
+   ブラウザの仕様上、次回訪問時にユーザー操作なしで自動全画面には出来ないため） */
+tog('t_full',function(v){
+  try{
+    const de=document.documentElement;
+    if(v){
+      const req=de.requestFullscreen||de.webkitRequestFullscreen||de.mozRequestFullScreen||de.msRequestFullscreen;
+      if(req) req.call(de);
+    } else {
+      const ex=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;
+      if(ex) ex.call(document);
+    }
+  }catch(e){}
+});
+['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(function(ev){
+  document.addEventListener(ev,function(){
+    const on=!!(document.fullscreenElement||document.webkitFullscreenElement||
+      document.mozFullScreenElement||document.msFullscreenElement);
+    const el=document.getElementById('t_full');
+    if(el){ el.classList.toggle('on',on); el.textContent=on?'ON':'OFF'; }
+  });
+});
 document.getElementById('t_quit').addEventListener('pointerdown',function(e){
   e.stopPropagation(); panel.classList.remove('on'); softReset(); });
+/* 設定の自動保存・復元(localStorage)。次回訪問時も前回の調整を覚えている。
+   保存対象は上のスライダー/トグルの実際のDOM状態そのもの。復元時は値をセットして
+   input/pointerdownイベントを本物のように発火させ、各設定固有の副作用
+   (layoutPad()やcheckMobileLandscape()等)も含めて既存のハンドラにそのまま
+   やらせることで、復元専用のロジックを別に書かずに済ませている */
+const SETTINGS_SLIDERS=['s_sens','s_stk','s_dz','s_bs','s_res','s_sfxvol','s_bgmvol'];
+const SETTINGS_TOGGLES=['t_edge','t_cam','t_auto','t_left','t_inv','t_vib','t_shadow',
+  't_dust','t_bloom','t_mini','t_snd','t_bgm'];
+function saveSettings(){
+  try{
+    const o={};
+    SETTINGS_SLIDERS.forEach(function(id){ o[id]=document.getElementById(id).value; });
+    SETTINGS_TOGGLES.forEach(function(id){
+      o[id]=document.getElementById(id).classList.contains('on');
+    });
+    localStorage.setItem('hi_settings_v1',JSON.stringify(o));
+  }catch(e){}
+}
+function loadSettings(){
+  try{
+    const raw=localStorage.getItem('hi_settings_v1');
+    if(!raw) return;
+    const o=JSON.parse(raw);
+    SETTINGS_SLIDERS.forEach(function(id){
+      if(o[id]===undefined) return;
+      const el=document.getElementById(id);
+      el.value=o[id];
+      el.dispatchEvent(new Event('input'));
+    });
+    SETTINGS_TOGGLES.forEach(function(id){
+      if(o[id]===undefined) return;
+      const el=document.getElementById(id);
+      if(el.classList.contains('on')!==!!o[id]) el.dispatchEvent(new Event('pointerdown'));
+    });
+  }catch(e){}
+}
+loadSettings();
 
 /* ===== 移動 ===== */
 const BODY=0.68;
@@ -8854,6 +8922,31 @@ document.getElementById('netPublicToggle').addEventListener('click',function(){
 });
 document.getElementById('netLeaveBtn').addEventListener('click',function(){ netTeardown(); });
 document.getElementById('netWaitLeave').addEventListener('click',function(){ netTeardown(); softReset(); });
+/* 招待リンクのコピー。友達には4桁コードだけでなく、開けば自動でコード欄まで
+   案内してくれるURL(?r=コード)を渡せるようにする */
+function copyText(text,onDone){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(onDone).catch(function(){ copyTextFallback(text,onDone); });
+  } else copyTextFallback(text,onDone);
+}
+function copyTextFallback(text,onDone){
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    if(onDone) onDone();
+  }catch(e){}
+}
+document.getElementById('netCodeCopy').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  const code=document.getElementById('netCodeShow').textContent;
+  if(!code||code==='----') return;
+  const url=location.origin+location.pathname+'?r='+code;
+  /* toast()の#msgはタイトル画面(z-index高)の下に隠れて見えないため、
+     ここでは#tinfo配下にありタイトル画面でも確実に見えるnetSetStatus()を使う */
+  copyText(url,function(){ netSetStatus('招待リンクをコピーした'); beep(700,0.08,'sine',0.06); });
+});
 
 /* ===== 開始・終了 ===== */
 function finish(t,esc){
@@ -9515,6 +9608,24 @@ try{ checkMobileLandscape(); }catch(err){ try{ layoutPad(); }catch(e2){} }
 setInterval(netLobbySync,5000);   /* サーバー検索の公開ハートビート（非公開時はほぼ何もしない） */
 addEventListener('orientationchange',function(){ setTimeout(function(){
   try{ checkMobileLandscape(); }catch(e){} },200); });
+/* 招待URL(?r=コード)で開いた場合、オンライン画面のコード入力欄まで自動で案内する
+   （実際に入室するにはユーザー自身が「入室する」を押す必要があり、勝手には繋がない） */
+(function(){
+  try{
+    const q=new URLSearchParams(location.search);
+    const r=(q.get('r')||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
+    if(!r) return;
+    const railBtn=document.querySelector('#rail .rbtn[data-pane="p_net"]');
+    if(railBtn) railBtn.click();
+    const joinBtn=document.getElementById('netJoinBtn');
+    if(joinBtn) joinBtn.click();
+    const inp=document.getElementById('netCodeInput');
+    if(inp) inp.value=r;
+    /* toast()は#msgがタイトル画面(#title、z-index:20)の下に隠れて見えない
+       (2026-08-14に判明済みの制約)ので、ここでは使わない。オンライン画面が開いて
+       コードが入力欄に入っていること自体が視覚的なフィードバックになる */
+  }catch(e){}
+})();
 
 /* ===== 管理者(デバッグ)モード =====
    合言葉は tama4678。画面上に常設のボタンは一切出さない。
@@ -9526,9 +9637,15 @@ addEventListener('orientationchange',function(){ setTimeout(function(){
    注意（フェアネス）：この管理者モードはワープ・無敵・攻撃速度/移動速度変更を
    含み、PeerJSオンライン対戦中もローカルで有効になる（他プレイヤーに気付かれず
    使えてしまう＝いわゆるチート状態になり得る）。開発者本人のデバッグ用途としては
-   問題ないが、フレンドとのオンライン対戦を「隠れて有利に進める」目的で常用しない。 */
+   問題ないが、フレンドとのオンライン対戦を「隠れて有利に進める」目的で常用しない。
+
+   2026-08-23追記：一度パスワードが通った端末は localStorage
+   （hi_admin_unlocked_v1）に解除フラグを保存し、次回訪問時もコナミコマンドの
+   入力は不要にした。解除済みの状態なら F2 キー単体で管理者パネルの開閉ができる
+   （未解除の端末では F2 は何もしない＝これまで通りコナミコマンド→パスワードが必要）。 */
 let adminUnlocked=false, adminSpeedMul=1, adminAtkSpeedMul=1,
     adminWallhack=false, adminHitboxViz=false, adminGod=false, adminExtraHp=0;
+try{ adminUnlocked=(localStorage.getItem('hi_admin_unlocked_v1')==='1'); }catch(e){}
 const ADMIN_SEQ=['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight',
   'ArrowLeft','ArrowRight','KeyB','KeyA'];
 let adminSeqBuf=[];
@@ -9537,6 +9654,9 @@ const elAdminLogin=document.getElementById('adminLogin'),
       elAdminPanel=document.getElementById('adminPanel');
 addEventListener('keydown',function(e){
   if(isTyping(e)) return;
+  if(e.code==='F2'&&adminUnlocked){
+    elAdminPanel.classList.toggle('on'); e.preventDefault(); return;
+  }
   adminSeqBuf.push(e.code);
   if(adminSeqBuf.length>ADMIN_SEQ.length) adminSeqBuf.shift();
   if(adminSeqBuf.length===ADMIN_SEQ.length&&
@@ -9550,6 +9670,7 @@ function adminTryLogin(){
   if(elAdminPass.value==='tama4678'){
     adminUnlocked=true; elAdminLogin.classList.remove('on'); elAdminPass.value='';
     elAdminPanel.classList.add('on');
+    try{ localStorage.setItem('hi_admin_unlocked_v1','1'); }catch(e){}
   } else {
     elAdminPass.value='';
     elAdminLogin.classList.add('shake');
