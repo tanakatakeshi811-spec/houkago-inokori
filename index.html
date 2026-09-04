@@ -105,6 +105,15 @@ canvas{display:block}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
 #stam.low i{background:var(--alert)}
 
+/* 持参アイテムのHUD（名前とバッテリー/使用回数バー）。生徒がアイテムを
+   持っている時だけ表示（itemhud.js側のupdItemHud()がクラスをトグル） */
+#itemhud{position:absolute;top:9%;left:50%;transform:translateX(-50%);display:none;
+  text-align:center;font-size:10.5px;letter-spacing:.05em;text-shadow:0 1px 4px #000}
+#itemhud.on{display:block}
+#itemhudBarWrap{width:120px;height:6px;background:#ffffff22;border:1px solid #ffffff55;
+  border-radius:3px;overflow:hidden;margin:3px auto 0}
+#itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
+
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
    スタミナや進捗(0〜1)を --ringpct に、色を --ringcolor に入れて更新する */
 /* 位置(left/right/bottom)はlayoutPad()側で操作ボタン群のすぐ近くに
@@ -436,6 +445,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="wig"><i></i></div>
   <div id="mashn"></div>
   <div id="stam"><i></i></div>
+  <div id="itemhud" class="pe"><div id="itemhudName">—</div>
+    <div id="itemhudBarWrap"><div id="itemhudBar"></div></div></div>
   <div id="actring"><div class="ring"></div><div class="core">
     <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
     <div class="lbl" id="ringlbl"></div></div></div>
@@ -501,6 +512,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="rail">
     <div class="rbtn sel" data-pane="p_char"><i>&#128100;</i>キャラ</div>
     <div class="rbtn" data-pane="p_wep"><i>&#9876;</i>武器</div>
+    <div class="rbtn" data-pane="p_item"><i>&#128161;</i>持ち物</div>
+    <div class="rbtn" data-pane="p_perk"><i>&#11088;</i>特性</div>
     <div class="rbtn" data-pane="p_stage"><i>&#128506;</i>ステージ</div>
     <div class="rbtn" data-pane="p_diff"><i>&#9881;</i>難易度</div>
     <div class="rbtn" data-pane="p_net"><i>&#127760;</i>オンライン</div>
@@ -525,6 +538,20 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         <p class="lbl">武器の見た目</p>
         <div class="seg small wrap" id="wepsel"></div>
       </div>
+    </div>
+    <div class="pane" id="p_item">
+      <p class="lbl" id="itemwraplbl">持参するアイテム（コインで購入。先生役では使えない）</p>
+      <div class="seg small wrap" id="itemsel"></div>
+      <div id="addonwrap">
+        <p class="lbl">アドオン（最大2つ、追加でコイン購入）</p>
+        <div class="seg small wrap" id="addonsel"></div>
+      </div>
+      <p class="hint" id="itemcost" style="text-align:center;margin-top:8px"></p>
+      <p class="hint">マップ上の「アイテムボックス」からも無料で拾えることがある</p>
+    </div>
+    <div class="pane" id="p_perk">
+      <p class="lbl" id="perkwraplbl">特性（最大4つ。役割ごとに別プール）</p>
+      <div class="seg small wrap" id="perksel" style="max-height:280px"></div>
     </div>
     <div class="pane" id="p_stage">
       <p class="lbl">ステージ</p>
@@ -1728,7 +1755,7 @@ for(const et of exitTiles){
 let tasks=[];
 function pickTasks(){
   desks.forEach(function(d){
-    d.prog=0; d.mesh.material=M.desk;
+    d.prog=0; d.mesh.material=M.desk; d.lockT=0; d.discT=0;
     if(d.sheet){ scene.remove(d.sheet); d.sheet=null; }
   });
   const pool=desks.filter(function(d){ return inStage(d.c); });
@@ -2274,6 +2301,66 @@ function updSpears(dt){
       teacher.spears=1; toast('槍を補充した'); beep(600,0.15,'triangle',0.09);
     }
   }
+}
+/* アイテムボックス：ライト・注射器などの持ち物がマップ上にランダムで置かれる。
+   spawnAll()の度にrollItemBoxes()で中身を再抽選する(一定確率で空)。
+   ITEMS配列に足すだけで抽選対象が自動的に増える拡張前提の構造 */
+const itemBoxes=[];
+(function(){
+  const spots=[[14,20],[26,10],[40,22],[70,14],[90,20],
+    [110,20],[130,14],[150,20],[170,14],[190,20],
+    [210,14],[230,20],[250,14],[270,20],[290,14],
+    [310,20],[330,14],[350,20],[370,14],[390,20],[410,14],[430,20]];
+  for(const sp of spots){
+    let best=null,bd=1e9;
+    for(const w of walkable){ const d=Math.abs(w[0]-sp[0])+Math.abs(w[1]-sp[1]);
+      if(d<bd){ bd=d; best=w; } }
+    if(!best||bd>4) continue;
+    const p=center(best[0],best[1]);
+    const g=new THREE.Group(); g.position.set(p.x,0,p.z);
+    const b=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.8,0.8),LM(0x7a5a3a)); b.position.y=0.4; g.add(b);
+    const lid=new THREE.Mesh(new THREE.BoxGeometry(1.15,0.16,0.85),LM(0xe8c547));
+    lid.position.y=0.86; g.add(lid);
+    g.visible=false; scene.add(g);
+    itemBoxes.push({x:p.x,z:p.z,g:g,item:'',taken:false});
+  }
+})();
+/* 試合開始時(host)：各箱ごとに40%の確率でITEMSからランダムに1つ入れる */
+function rollItemBoxes(){
+  itemBoxes.forEach(function(b){
+    b.taken=false;
+    b.item=(Math.random()<0.4)?ITEMS[(Math.random()*ITEMS.length)|0].key:'';
+    b.g.visible=!!b.item;
+  });
+}
+/* 参加者側：ホストが抽選した結果をそのまま反映する(乱数がズレるため) */
+function applyItemBoxRoll(arr){
+  if(!arr) return;
+  itemBoxes.forEach(function(b,i){
+    b.item=arr[i]||''; b.taken=!b.item; b.g.visible=!!b.item;
+  });
+}
+function itemAmmoMax(s){
+  if(s.item==='flashlight') return 100*itemAddonVal(s,'battMul');
+  if(s.item==='syringe') return 2+itemAddonAdd(s,'usesAdd');
+  return 0;
+}
+function updItemBoxes(dt){
+  itemBoxes.forEach(function(b){
+    if(!b.item||b.taken) return;
+    b.g.rotation.y+=dt*0.6;
+    for(const s of students){
+      if(s.state!=='free'||s.hide||s.item) continue;
+      if(Math.hypot(s.x-b.x,s.z-b.z)<2.2){
+        b.taken=true; b.g.visible=false;
+        s.item=b.item; s.itemAmmo=itemAmmoMax(s); s.itemAddons=[];
+        toast(s.name+'が「'+itemOf(b.item).name+'」を拾った');
+        beep(700,0.2,'triangle',0.1);
+        if(netMode==='host') netDirtyBoxes.push(itemBoxes.indexOf(b));
+        break;
+      }
+    }
+  });
 }
 /* 化学トラップ */
 const chemTraps=[];
@@ -3355,6 +3442,105 @@ const WEAPONS=[
  {k:'umbrella',n:'傘'}
 ];
 let weaponPick='';
+
+/* ===== 持ち物（アイテム／アドオン／特性） =====
+   Dead by Daylightの「アイテム持参＋アドオン」「役割別パーク最大4」の
+   仕組み自体（ルール）を参考にしたが、名前・数値・説明文は独自に作成した。
+   アイコン画像は無く、名前のテキスト表示のみ（差し替えやすいようキー方式にしてある）。
+   ITEMS配列に足すだけで新しいアイテムを追加できる拡張前提の構造。 */
+const ITEMS=[
+ {key:'flashlight',name:'懐中電灯',cost:70,
+  desc:'先生に向けて光を当て続けると目をくらませて動きを乱せる。担がれている仲間に当てれば振りほどける。バッテリー残量には限りがある',
+  addons:['fl_batt','fl_narrow','fl_wide','fl_quick','fl_long']},
+ {key:'syringe',name:'注射器',cost:55,
+  desc:'その場に留まって注射すると自分の傷を手当てできる。中身がなくなるまで複数回使える',
+  addons:['sy_extra','sy_fast','sy_share','sy_quiet']}
+];
+function itemOf(key){ return ITEMS.filter(function(i){return i.key===key;})[0]; }
+const ADDONS={
+ flashlight:[
+  {key:'fl_batt',  name:'予備バッテリーパック',cost:20,desc:'バッテリー容量が50%増える',battMul:1.5},
+  {key:'fl_narrow',name:'集光レンズ',        cost:25,desc:'届く距離が伸びるが、狙える幅は狭くなる',rangeMul:1.35,coneMul:0.7},
+  {key:'fl_wide',  name:'拡散フィルター',    cost:20,desc:'狙える幅が広がるが、届く距離は縮む',rangeMul:0.75,coneMul:1.45},
+  {key:'fl_quick', name:'即応スイッチ',      cost:30,desc:'目をくらませるまでの時間が短くなるが、バッテリー消費が早い',chargeMul:0.7,drainMul:1.3},
+  {key:'fl_long',  name:'延長怯みばね',      cost:30,desc:'目をくらませた効果時間が伸びるが、バッテリー消費が早い',blindMul:1.4,drainMul:1.2}
+ ],
+ syringe:[
+  {key:'sy_extra', name:'増量アンプル',   cost:25,desc:'使える回数が1回増える',usesAdd:1},
+  {key:'sy_fast',  name:'速効性の薬液',   cost:20,desc:'手当てにかかる時間が短くなる',timeMul:0.6},
+  {key:'sy_share', name:'共有キット',     cost:30,desc:'2.5m以内にいる仲間にも同時に効果が及ぶが、使える回数が1回減る',share:true,usesAdd:-1},
+  {key:'sy_quiet', name:'消音キャップ',   cost:15,desc:'使用中に鳴る物音が小さくなる',quiet:true}
+ ]
+};
+function addonOf(itemKey,key){
+  return (ADDONS[itemKey]||[]).filter(function(a){return a.key===key;})[0];
+}
+/* 生徒の持ち物の状態。s.item(キー)/s.itemAmmo(バッテリー%または使用回数)/
+   s.itemAddons(最大2つのキー配列)をspawnAll()で初期化する */
+function itemAddonVal(s,field){
+  let v=1;
+  (s.itemAddons||[]).forEach(function(k){
+    const a=addonOf(s.item,k); if(a&&a[field]!==undefined) v*=a[field];
+  });
+  return v;
+}
+function itemAddonAdd(s,field){
+  let v=0;
+  (s.itemAddons||[]).forEach(function(k){
+    const a=addonOf(s.item,k); if(a&&a[field]!==undefined) v+=a[field];
+  });
+  return v;
+}
+function itemHasAddonFlag(s,field){
+  return (s.itemAddons||[]).some(function(k){ const a=addonOf(s.item,k); return a&&a[field]; });
+}
+
+/* ===== 特性(パーク) ===== 生徒用/先生用、それぞれ15個・別プールで最大4個まで装備。
+   Dead by Daylightの実際のパークの「効果の傾向」を参考にしたが、名前・数値・
+   説明文はすべて独自に変更している。効果は既存の各種倍率計算に薄く差し込む
+   形で実装し、一部は専用の小さなロジックを追加した(下の各所のtraitXxx参照)。 */
+const PERKS_STUDENT=[
+ {key:'perseverance',name:'不屈の一念',desc:'試合に1回だけ、ダウンしてから4秒後に自力で起き上がれる'},
+ {key:'boilover',    name:'踏ん張り',  desc:'先生に担がれている間、もがきゲージの溜まりが20%速い'},
+ {key:'ironwill',    name:'隠密の足音',desc:'負傷している間、物音が伝わる範囲が大きく狭くなる'},
+ {key:'pathfinder',  name:'非常口の勘',desc:'試合開始時、すべての出口の場所が8秒間見える'},
+ {key:'hope',        name:'希望の残り火',desc:'出口が開いてから、自分の移動速度が8%上がる'},
+ {key:'botany',      name:'手当ての心得',desc:'自分にも仲間にも、治療の速度が35%速くなる'},
+ {key:'stakeout',    name:'迅速な作業', desc:'課題を進める速度が8%速くなる'},
+ {key:'distortion',  name:'秘匿の気配', desc:'先生の索敵系の特性から、試合中3回まで見つからずに済む'},
+ {key:'kindred',     name:'デジャヴ',   desc:'誰かが反省椅子に座らされた瞬間、8秒間 先生の位置がわかる'},
+ {key:'deliverance', name:'決死の覚悟', desc:'反省椅子に座らされてから居残り確定までの猶予が20%延びる'},
+ {key:'secondwind',  name:'息の長さ',   desc:'スタミナの回復速度が25%速くなる'},
+ {key:'fixated',     name:'身のこなし', desc:'窓や板を乗り越える動作が15%速くなる'},
+ {key:'selfcare',    name:'自己治療の心得',desc:'仲間がいなくても、その場に留まればゆっくり自分の傷を手当てできる'},
+ {key:'wemakeit',    name:'救助の後押し',desc:'仲間を助けた直後8秒間、自分の治療速度が2倍になる'},
+ {key:'calmspirit',  name:'平静の心得', desc:'課題やスキルチェックに失敗した時に響く物音が抑えられる'}
+];
+const PERKS_TEACHER=[
+ {key:'bbq',         name:'見えざる視線',desc:'生徒を反省椅子に座らせた直後4秒間、他の生徒全員の位置がわかる'},
+ {key:'nurse_calling',name:'血の匂い',  desc:'仲間の治療をしている生徒の位置が常にわかる'},
+ {key:'discordance',  name:'共同作業感知',desc:'2人以上が同じ課題を一緒に進めていると、その机の位置がわかる'},
+ {key:'corrupt',      name:'手はず狂わせ',desc:'試合開始時、課題机のうち2枚が60秒間ロックされて進められなくなる'},
+ {key:'save_best',    name:'反省の連鎖',desc:'同じ生徒に続けて攻撃を当てるたびに、次の攻撃までの隙が短くなる（最大25%、対象が変わるとリセット）'},
+ {key:'bloodhound',   name:'執念の追跡',desc:'生徒の立てる物音に気づける範囲が25%広がる'},
+ {key:'enduring',     name:'力の余韻',  desc:'板や受け流しでよろける時間が35%短くなる'},
+ {key:'bamboozle',    name:'逃走遮断',  desc:'窓や板を乗り越える動作が20%速くなる'},
+ {key:'unnerving',    name:'威圧感',    desc:'生徒のスキルチェックの成功ゾーンが15%狭くなる'},
+ {key:'whispers',     name:'見張りの目',desc:'生徒が12m以内に近づくと気配で知らせてくれる'},
+ {key:'sloppy',       name:'授業態度の悪化',desc:'攻撃を当てた生徒は、その後20秒間 治療速度が大きく落ちる'},
+ {key:'no_way_out',   name:'逃げ場なし',desc:'出口が開いてから昇降口が完全に閉まるまでの時間が40秒延びる'},
+ {key:'stridor',      name:'気配鋭敏',  desc:'負傷している生徒の位置が距離に関わらず常にわかる'},
+ {key:'fireup',       name:'授業再開',  desc:'試合の経過時間が長いほど、攻撃後の隙が徐々に短くなる（最大15%）'},
+ {key:'rancor',       name:'有終の美',  desc:'生存している生徒が残り1人になると、その生徒の速度が下がり、物音に気づける範囲も広がる'}
+];
+function perkOf(role2,key){
+  return (role2==='teacher'?PERKS_TEACHER:PERKS_STUDENT).filter(function(p){return p.key===key;})[0];
+}
+/* 装備中の特性を持っているか(最大4つの配列を毎回indexOfで見るだけの軽い判定) */
+function hasTrait(e,k){ return !!(e&&e.traits&&e.traits.indexOf(k)>=0); }
+let itemPick='',addon1Pick='',addon2Pick='';
+let studentPerksPick=[],teacherPerksPick=[];
+
 const LOOK={
   pe   :{body:'human',hairStyle:'short',acc:'band',weapon:'ruler',accent:0x8a2f28},
   math :{body:'human',hairStyle:'short',acc:'glasses',weapon:'triangle',accent:0x3f6ab2},
@@ -3542,7 +3728,9 @@ function spawnAll(){
       sleep:0,weak:0,forget:0,snareCd:0,guard:0,tackle:0,drone:0,deaf:0,blind:0,dmg:0,mark:0,
       spikes:0,dull:0,colors:null,runCd:0,
       downT:0,seatT:0,stam:1,path:[],pathT:0,rescueT:0,hide:null,vault:0,
-      vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0,toppleFxT:0};
+      vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0,toppleFxT:0,
+      item:'',itemAmmo:0,itemAddons:[],itemHoldInput:false,flCharge:0,syT:0,
+      traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0};
   });
   const far=spots.filter(function(w){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
@@ -3572,7 +3760,7 @@ function spawnAll(){
     invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
     dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
     dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0,
-    dnBreak:0,dnBreakTarget:null};
+    dnBreak:0,dnBreakTarget:null,traits:[],comboStacks:0,lastHitTarget:null,whisperNear:false};
   if(teacherKind==='darknode'){
     /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
        teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
@@ -3652,11 +3840,11 @@ function fartFx(s){
   m.position.set(s.x-Math.sin(s.yaw)*0.9,0.9,s.z-Math.cos(s.yaw)*0.9);
   scene.add(m); fxs.push({m:m,t:0,life:1.3,kind:'fart'});
 }
-function mark(x,z,color){
+function mark(x,z,color,life){
   const m=new THREE.Mesh(new THREE.PlaneGeometry(1.1,1.1),
     new THREE.MeshBasicMaterial({color:color||0xc7452f,transparent:true,opacity:0.75}));
   m.rotation.x=-Math.PI/2; m.position.set(x,0.09,z); scene.add(m);
-  fxs.push({m:m,t:0,life:5,kind:'mark'});
+  fxs.push({m:m,t:0,life:life||5,kind:'mark'});
 }
 function updFx(dt){
   for(let i=fxs.length-1;i>=0;i--){
@@ -3688,7 +3876,8 @@ function updFx(dt){
 /* ===== 入力 ===== */
 const keys={}, input={mx:0,mz:0,run:false,act:false,actEdge:false,altEdge:false,
                       abEdge:false,abHold:false,tap:false,mash:false,altHold:false,
-                      ab2Edge:false,stopEdge:false,aim:false,fireEdge:false,aimHold:false};
+                      ab2Edge:false,stopEdge:false,aim:false,fireEdge:false,aimHold:false,
+                      itemHold:false};
 let camYaw=0,pitch=0;
 let sens=1.1,stkSens=1.0,deadZone=0.14,btnScale=1.0;
 let invert=false,holdRun=false,runToggle=false,autoCam=true,autoAct=true,leftHand=false;
@@ -3701,6 +3890,7 @@ addEventListener('keydown',function(e){
     if(e.code==='KeyQ'){ input.abEdge=true; input.abHold=true; }
     if(e.code==='KeyR') input.ab2Edge=true;
     if(e.code==='KeyV') input.stopEdge=true;
+    if(e.code==='KeyC') input.itemHold=true;
     if(e.code==='KeyF'||e.code==='KeyJ') input.mash=true;
     if(e.code==='Space'){ input.tap=true; e.preventDefault(); }
   }
@@ -3712,6 +3902,7 @@ addEventListener('keyup',function(e){
   if(e.code==='KeyE') input.act=false;
   if(e.code==='KeyF') input.altHold=false;
   if(e.code==='KeyQ') input.abHold=false;
+  if(e.code==='KeyC') input.itemHold=false;
 });
 addEventListener('gesturestart',function(e){ e.preventDefault(); });
 addEventListener('dblclick',function(e){ e.preventDefault(); });
@@ -3866,6 +4057,10 @@ bindBtn(elAlt,function(){input.altEdge=true;input.altHold=true;},function(){inpu
 bindBtn(elAb,function(){input.abEdge=true;input.abHold=true;},function(){input.abHold=false;});
 bindBtn(elAb2,function(){input.ab2Edge=true;},null);
 document.getElementById('skill').addEventListener('pointerdown',function(e){e.stopPropagation();input.tap=true;});
+/* 持参アイテムのHUD自体をタップ/長押しでアイテム使用ボタンにする（専用ボタンを
+   #padのグリッドに追加すると既存のレイアウト計算を全部触る必要が出るため、
+   アイテムを持っている時しか出ないitemhudをそのまま流用した） */
+bindBtn(document.getElementById('itemhud'),function(){input.itemHold=true;},function(){input.itemHold=false;});
 
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
@@ -4128,6 +4323,7 @@ function tryVault(e){
   if(e.perk==='foot') dur*=0.7;
   if(e.perk==='slug') dur*=0.7;
   if(e.perk==='dash2') dur*=0.85;
+  dur*=traitVaultMul(e);
   e.vault=dur; e.vaultMax=dur; e.vaultK=0;
   e.vFrom={x:e.x,z:e.z}; e.vTo={x:p.x,z:p.z};
   e.yaw=Math.atan2(dc,dr);
@@ -4190,10 +4386,20 @@ function toast(s){
   elMsg.textContent=s; elMsg.classList.add('on'); msgT=1.9;
   if(netMode==='host'){ netLastToast=s; netToastId=(netToastId||0)+1; }
 }
+/* 執念の追跡(bloodhound)・有終の美(rancor、生存者が残り1人の時)を持つ先生は
+   物音に気づける範囲が広がる */
+function teacherHearMul(){
+  let m=hasTrait(teacher,'bloodhound')?1.25:1;
+  if(hasTrait(teacher,'rancor')){
+    const alive=students.filter(function(s){return s.state!=='out'&&s.state!=='escaped';});
+    if(alive.length===1) m*=1.2;
+  }
+  return m;
+}
 function noise(x,z,radius){
   if(!teacher) return;
   if(inWater(x,z)) radius*=0.4;   /* 水の中は足音が消える */
-  if(Math.hypot(teacher.x-x,teacher.z-z)<radius*4) teacher.alert={x:x,z:z,t:6};
+  if(Math.hypot(teacher.x-x,teacher.z-z)<radius*4*teacherHearMul()) teacher.alert={x:x,z:z,t:6};
   /* 静かな生徒は範囲が狭い（呼び出し側で調整） */
   mark(x,z,0xe8c547);
 }
@@ -4227,7 +4433,35 @@ function updPallets(dt){
     }
   }
 }
-function stunMul(){ return (teacher&&teacher.kindKey==='teke')?3.0:1; }
+function stunMul(){
+  return ((teacher&&teacher.kindKey==='teke')?3.0:1)*(hasTrait(teacher,'enduring')?0.65:1);
+}
+/* ===== 特性(パーク)の汎用倍率ヘルパー ===== 既存の各種計算式に薄く1項掛けるだけの
+   ものはここにまとめる。専用ロジックが要るもの(不屈・自己治療・アイテムボックスなど)は
+   それぞれの関数の近くに直接書いている */
+function traitTaskMul(s){ return hasTrait(s,'stakeout')?1.08:1; }
+function traitHealMul(s){
+  let m=hasTrait(s,'botany')?1.35:1;
+  if(hasTrait(s,'wemakeit')&&(s.healBoostT||0)>0) m*=2.0;
+  return m;
+}
+function traitVaultMul(e){
+  let m=hasTrait(e,'fixated')?0.85:1;
+  if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?0.8:1;
+  return m;
+}
+function traitCdMul(t){
+  let m=1;
+  if(hasTrait(t,'fireup')) m*=Math.max(0.85,1-elapsed*0.00125);
+  if(hasTrait(t,'save_best')) m*=Math.max(0.75,1-(t.comboStacks||0)*0.05);
+  return m;
+}
+/* 教師トレイトによる「生徒の位置を見せる」系のmark()呼び出しをまとめたもの。
+   distortion(秘匿の気配)を持つ生徒は試合中3回だけこれを無効化できる */
+function teacherRevealStudent(s,color){
+  if(hasTrait(s,'distortion')&&(s.distortLeft||0)>0){ s.distortLeft--; return; }
+  mark(s.x,s.z,color||0xff6a5a);
+}
 function dropPallet(p,dropper){
   if(p.state!=='up') return;
   p.state='down';
@@ -4270,10 +4504,14 @@ function breakPallet(p,dt){
 const elSkill=document.getElementById('skill'),elZone=document.getElementById('zone'),
       elNeedle=document.getElementById('needle'),elSkillTxt=document.getElementById('skilltxt');
 let scActive=false,scAng=0,scZone=0,scSpeed=300,scNext=3,scTarget=null;
+let scZoneW=0;
 function scStart(task){
   scActive=true; scAng=0; scZone=55+Math.random()*240; scTarget=task;
   scSpeed=240+Math.random()*110;
-  const w=DIFF.zone;
+  /* 威圧感(unnerving)を持つ先生は成功ゾーンが狭くなる。scEnd側の判定も
+     このscZoneWを見て一致させる(DIFF.zoneを直接使うとズレる) */
+  scZoneW=DIFF.zone*(hasTrait(teacher,'unnerving')?0.85:1);
+  const w=scZoneW;
   elZone.style.background='conic-gradient(from '+scZone+'deg, var(--ok) 0deg 12deg, '+
     'rgba(232,197,71,.55) 12deg '+w+'deg, transparent '+w+'deg)';
   elSkill.classList.add('on'); elSkillTxt.textContent='画面のどこでもタップ';
@@ -4305,7 +4543,7 @@ function scUpdate(dt,working){
       input.tap=false; input.stopEdge=false; input.fireEdge=false;
       const rel=((scAng-scZone)%360+360)%360;
       if(rel<12) scEnd('great');
-      else if(rel<DIFF.zone) scEnd('good');
+      else if(rel<scZoneW) scEnd('good');
       else scEnd('bad');
       return;
     }
@@ -4356,7 +4594,7 @@ function flash(){ elFlash.style.opacity='0.35'; setTimeout(function(){ elFlash.s
 
 /* ===== 生徒 ===== */
 function nearTask(s){ return tasks.filter(function(t){
-  return t.prog<1&&Math.hypot(t.x-s.x,t.z-s.z)<4.4&&los(s.x,s.z,t.x,t.z); })[0]; }
+  return t.prog<1&&!(t.lockT>0)&&Math.hypot(t.x-s.x,t.z-s.z)<4.4&&los(s.x,s.z,t.x,t.z); })[0]; }
 function nearAlly(s){ return students.filter(function(o){
   return o!==s&&(o.state==='seated'||o.state==='downed')&&Math.hypot(o.x-s.x,o.z-s.z)<3.4; })[0]; }
 function nearHurt(s){
@@ -4365,6 +4603,62 @@ function nearHurt(s){
            Math.hypot(o.x-s.x,o.z-s.z)<2.7; })[0];
 }
 function wakeUp(o){ o.sleep=0; o.awakeT=0; }
+/* ===== 持参アイテムの使用(懐中電灯／注射器) =====
+   ホスト権威の共有タイマーループ（tick()内の「--- タイマー ---」ループ）から
+   全生徒ぶん毎フレーム呼ばれる。s.itemHoldInput は
+   ローカル操作(tick())／リモート参加者(netApplyStudentInput)のどちらでも
+   同じ形でセットしているので、ここは1箇所書くだけで両方に効く。
+   狙い判定は既存の「牽制の一矢」「フラッシュ」スキルと同じ
+   s.yaw(体の向き)基準の円錐判定を流用している(このゲームは三人称の
+   キャラ向き＝移動方向で、狙う時はその方向を向く操作感が既に定着している) */
+function updItemUse(s,dt){
+  if(!s.item||s.state!=='free'||s.hide){ s.flCharge=0; return; }
+  const holding=!!s.itemHoldInput;
+  if(s.item==='flashlight'){
+    if(!holding||s.itemAmmo<=0){ s.flCharge=Math.max(0,(s.flCharge||0)-dt*2); return; }
+    const drain=9*itemAddonVal(s,'drainMul');
+    s.itemAmmo=Math.max(0,s.itemAmmo-drain*dt);
+    const range=13*itemAddonVal(s,'rangeMul');
+    const halfCone=0.34*itemAddonVal(s,'coneMul');
+    const dx=teacher.x-s.x,dz=teacher.z-s.z,d=Math.hypot(dx,dz);
+    let aimed=false;
+    if(d<range&&los(s.x,s.z,teacher.x,teacher.z)){
+      const ang=Math.atan2(dx,dz);
+      const diff=Math.abs(((ang-s.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+      if(diff<halfCone) aimed=true;
+    }
+    if(aimed){
+      s.flCharge=(s.flCharge||0)+dt;
+      const need=1.3*itemAddonVal(s,'chargeMul');
+      if(s.flCharge>=need){
+        s.flCharge=0;
+        const dur=3.0*itemAddonVal(s,'blindMul');
+        teacher.blind=Math.max(teacher.blind||0,dur); teacher.alert=null;
+        if(teacher.carrying) escapeCarry(teacher.carrying);
+        beep(1400,0.14,'square',0.13); bigNoise(0.18,0.4);
+        toast(s.name+'の懐中電灯が先生の目をくらませた！');
+      }
+    } else s.flCharge=Math.max(0,(s.flCharge||0)-dt*1.5);
+  } else if(s.item==='syringe'){
+    if(!holding||!s.hurt||s.itemAmmo<=0){ s.syT=0; return; }
+    const mv=Math.hypot(s.x-(s.syhpx===undefined?s.x:s.syhpx),s.z-(s.syhpz===undefined?s.z:s.syhpz));
+    s.syhpx=s.x; s.syhpz=s.z;
+    if(mv>0.02){ if((s.syT||0)>0.2&&s===me) toast('動いたので注射が中断した'); s.syT=0; return; }
+    s.syT=(s.syT||0)+dt;
+    const need=3.6*itemAddonVal(s,'timeMul');
+    if(!itemHasAddonFlag(s,'quiet')&&Math.random()<dt*0.6) noise(s.x,s.z,noiseR(s,7));
+    if(s.syT>=need){
+      s.syT=0; s.itemAmmo=Math.max(0,s.itemAmmo-1);
+      healDone(s,s);
+      if(itemHasAddonFlag(s,'share')){
+        students.forEach(function(o){
+          if(o!==s&&o.hurt&&o.state==='free'&&!o.hide&&Math.hypot(o.x-s.x,o.z-s.z)<2.5) healDone(o,s);
+        });
+      }
+      if(s.itemAmmo<=0&&s===me) toast('注射器を使い切った');
+    }
+  }
+}
 function healDone(o,by){
   wakeUp(o);
   o.hurt=false; o.dmg=0; paperLook(o); o.dropT=0;
@@ -4374,6 +4668,7 @@ function healDone(o,by){
 }
 function noiseR(s,r){
   if(!s) return r;
+  if(hasTrait(s,'ironwill')&&s.hurt) return r*0.3;
   if(s.perk==='quiet') return r*0.55;
   if(s.perk==='sound') return r*0.45;
   if(s.perk==='nine') return r*0.5;
@@ -4709,8 +5004,17 @@ function workTask(s,d,dt){
   d.prog=Math.min(1,d.prog+dt*DIFF.work*(s===me?1:0.8)*
     (s.perk==='work'?1.12:(s.perk==='read'?1.10:(s.perk==='proto'?5.0:
       ((s.perk==='focus'||s.perk==='read2')?1.10:1))))*
-    (spotlightOn(s)?1.25:1));
+    (spotlightOn(s)?1.25:1)*traitTaskMul(s));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
+  /* 共同作業感知(discordance)：2人以上が同じ机で一緒に作業していると位置がわかる */
+  if(hasTrait(teacher,'discordance')){
+    const workers=students.filter(function(o){
+      return o.state==='free'&&!o.hide&&Math.hypot(o.x-d.x,o.z-d.z)<4.4; }).length;
+    if(workers>=2){
+      d.discT=(d.discT||0)-dt;
+      if(d.discT<=0){ d.discT=1.0; mark(d.x,d.z,0x63d6ff); }
+    }
+  }
   if(d.prog>=1){
     d.mesh.material=M.deskDone; if(d.sheet) d.sheet.visible=false;
     bigNoise(0.34,1.4);
@@ -4729,11 +5033,16 @@ function workTask(s,d,dt){
     });
     if(tasksDone()>=TASK_N&&!gateOpen){
       gateOpen=true; exits.forEach(function(e){ e.mesh.material=M.exitOn; });
-      endTimer=120;
+      endTimer=120+(hasTrait(teacher,'no_way_out')?40:0);
       say('通信','課題が全部終わった！昇降口へ！（残り120秒）','sys');
       toast('昇降口が開いた'); beep(523,0.3,'triangle',0.12);
     }
   }
+}
+/* 手はず狂わせ(corrupt)で試合開始時にロックした課題机のタイマー消化。
+   host権威で1箇所だけ呼べばよい(nearTask()が!(t.lockT>0)で参照側を弾く) */
+function updTaskLocks(dt){
+  for(const t of tasks) if(t.lockT>0) t.lockT=Math.max(0,t.lockT-dt);
 }
 function studentAct(s,dt,manual){
   if(s.hide){ s.hide=null; s.mesh.visible=true; return 'out'; }
@@ -4741,6 +5050,7 @@ function studentAct(s,dt,manual){
   if(a){
     s.rescueT+=dt*(s.perk==='heal'?1.3:(s.perk==='aed'?1.15:1));
     if(s.rescueT>2.4){ freeStudent(a); s.rescueT=0; beep(700,0.2,'sine',0.09);
+      if(hasTrait(s,'wemakeit')) s.healBoostT=8.0;
       if(manual) toast(a.name+'を助けた'); }
     return 'rescue';
   }
@@ -4772,8 +5082,24 @@ function studentAct(s,dt,manual){
       if(o!==s&&o!==hv&&o.state==='free'&&Math.hypot(o.x-hv.x,o.z-hv.z)<2.7) helpers++;
     s.healT=(s.healT||0)+dt*(s.perk==='heal'?1.3:(s.perk==='medic'?1.7:1))*
       (spotlightOn(s)?1.25:1)*(s.perk==='cook'?1.2:1)*((s.dull>0)?0.55:1)*
-      (helpers>1?1.8:1);
+      (helpers>1?1.8:1)*traitHealMul(s);
+    /* 血の匂い(nurse_calling)：治療中の生徒の位置が先生に常にわかる(1秒おきに表示) */
+    if(hasTrait(teacher,'nurse_calling')){
+      hv.nmT=(hv.nmT||0)-dt;
+      if(hv.nmT<=0){ hv.nmT=1.0; teacherRevealStudent(hv,0xff6a5a); }
+    }
     if(s.healT>10.5){ s.healT=0; healDone(hv,s); }
+    return 'heal';
+  }
+  /* 自己治療の心得(selfcare)：仲間がいなくても、その場に留まればゆっくり
+     自分の傷を手当てできる(注射器より遅い。既存のhealT/healDone()を再利用) */
+  if(s.hurt&&hasTrait(s,'selfcare')){
+    s.rescueT=0;
+    const mv2=Math.hypot(s.x-(s.hpx===undefined?s.x:s.hpx),s.z-(s.hpz===undefined?s.z:s.hpz));
+    s.hpx=s.x; s.hpz=s.z;
+    if(mv2>0.02){ s.healT=0; return 'heal'; }
+    s.healT=(s.healT||0)+dt*0.42*traitHealMul(s)*((s.dull>0)?0.55:1);
+    if(s.healT>10.5){ s.healT=0; healDone(s,s); }
     return 'heal';
   }
   s.healT=0;
@@ -4860,6 +5186,14 @@ function damage(s,amt,heavy){
     else if(s.dmg>=1) toast(s.name+'の背中に課題が命中');
     else toast(s.name+'に課題の切れ端が刺さった（0.5）');
   }
+  /* 授業態度の悪化(sloppy)：攻撃を当てた生徒はしばらく治療速度が大きく落ちる
+     (既存のs.dullフィールドをそのまま再利用) */
+  if(hasTrait(teacher,'sloppy')) s.dull=Math.max(s.dull||0,20);
+  /* 反省の連鎖(save_best)：同じ生徒を続けて攻撃するほど次の攻撃までの隙が短くなる */
+  if(hasTrait(teacher,'save_best')){
+    teacher.comboStacks=(teacher.lastHitTarget===s)?Math.min(5,(teacher.comboStacks||0)+1):1;
+    teacher.lastHitTarget=s;
+  }
   if(s===me){ flash(); vib([50,50,80]); }
   return true;
 }
@@ -4875,15 +5209,24 @@ function seat(s,ch){
             （ただし1回目のQTEゾーンに入った後に救助されていた場合は、
               2回目の猶予なしで即座に居残り確定＝実質3回目相当の扱い）
      3回目以降: 常に即座に居残り確定 */
+  s.campT=0; s.campBroke=false;   /* キャンプ対策メーターは座り直すたびリセット */
   if(s.seatCount>=3||(s.seatCount>=2&&s.lastSeatDanger)){
     ch.taken=null; out(s,'居残り確定'); checkEnd(); return;
   }
+  /* 決死の覚悟(deliverance)：反省椅子の猶予が20%延びる */
+  const delivMul=hasTrait(s,'deliverance')?1.2:1;
   if(s.seatCount>=2){
-    s.seatLimit=32; s.seatQteAt=0; s.seatT=0; s.qteWait=0;
+    s.seatLimit=32*delivMul; s.seatQteAt=0; s.seatT=0; s.qteWait=0;
     s.qte={t:3,n:0};   /* 2回目は待たずに即QTE発生 */
   } else {
-    s.seatLimit=62; s.seatQteAt=30; s.seatT=0; s.qteWait=0; s.qte=null;
+    s.seatLimit=62*delivMul; s.seatQteAt=30; s.seatT=0; s.qteWait=0; s.qte=null;
   }
+  /* 見えざる視線(bbq)：座らせた直後、他の生徒全員の位置がわかる */
+  if(hasTrait(teacher,'bbq')){
+    students.forEach(function(o){ if(o!==s&&o.state==='free') teacherRevealStudent(o,0xff9a5a); });
+  }
+  /* デジャヴ(kindred)：誰かが座らされた瞬間、装備している生徒には先生の位置がわかる */
+  if(hasTrait(students[0],'kindred')){ setAura(teacher,'reveal',8.0); teacher.revealT=8.0; }
   checkEnd();
 }
 function out(s,why){ say(s.name,why,'warn'); s.state='out'; s.mesh.visible=false; toast(s.name+' — '+why); checkEnd(); }
@@ -5439,8 +5782,9 @@ function swingLand(){
   const fr=(teacher.kindKey==='model')?(1-0.3*Math.min(1,teacher.frenzy||0)):1;
   const tk=(teacher.kindKey==='teke')?6.0:1;   /* テケテケは振り払いが極端に長い */
   const atkSpdDiv=(role==='teacher'?adminAtkSpeedMul:1);   /* 管理者モード：攻撃速度倍率 */
-  teacher.wipe=3.64*fr*tk/atkSpdDiv;
-  teacher.cool=3.64*fr*tk/atkSpdDiv;
+  const cd=3.64*fr*tk/atkSpdDiv*traitCdMul(teacher);
+  teacher.wipe=cd;
+  teacher.cool=cd;
   if(role==='teacher'){ teacher.lunge=0.16; vib(30); }
 }
 function swingMiss(){
@@ -6478,6 +6822,28 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
       elHeart=document.getElementById('heart'),elStam=document.querySelector('#stam i'),
       elStamBox=document.getElementById('stam'),elActLabel=document.getElementById('actlabel'),
       elHold=document.getElementById('hold');
+const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
+      elItemHudBar=document.getElementById('itemhudBar');
+/* 持参アイテムのHUD。ホールド中は懐中電灯の狙い進捗、それ以外はバッテリー/
+   使用回数を表示する。生徒がアイテムを持っている時だけ表示される */
+function updItemHud(){
+  if(role!=='student'||!me||!me.item){ elItemHud.classList.remove('on'); return; }
+  elItemHud.classList.add('on');
+  const it=itemOf(me.item);
+  if(me.item==='flashlight'){
+    const need=1.3*itemAddonVal(me,'chargeMul');
+    const aiming=(me.flCharge||0)>0;
+    elItemHudName.textContent=(it?it.name:me.item)+(aiming?'　狙い中…':'')+
+      '　残り'+Math.round(me.itemAmmo||0)+'%';
+    elItemHudBar.style.width=(aiming?Math.min(100,(me.flCharge||0)/need*100):(me.itemAmmo||0))+'%';
+    elItemHudBar.style.background=aiming?'#7fd4a2':'var(--yellow)';
+  } else if(me.item==='syringe'){
+    elItemHudName.textContent=(it?it.name:me.item)+'　残り'+Math.round(me.itemAmmo||0)+'回';
+    const need=3.6*itemAddonVal(me,'timeMul');
+    elItemHudBar.style.width=Math.min(100,(me.syT||0)/need*100)+'%';
+    elItemHudBar.style.background='#7fd4a2';
+  }
+}
 /* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
    CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
    板を倒す動作だけはちょうど良い絵文字が無いので簡単な線画SVGを自作した */
@@ -6841,7 +7207,7 @@ function tick(now){
       if(role!=='teacher'&&Math.random()<0.12&&!inWater(me.x,me.z)&&
          me.perk!=='nine'&&teacher.kindKey!=='chalk') mark(me.x,me.z);
     } else {
-      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1));
+      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?1.25:1));
       if(me.exh&&me.stam>0.65) me.exh=false;
     }
     if(role==='teacher'&&teacher.carrying) sp*=0.72;
@@ -7147,6 +7513,7 @@ function tick(now){
   } else elMashN.classList.remove('on');
   elWig.style.display=(role==='student'&&me.state==='carried')?'block':'none';
   if(role==='student'&&me.state==='carried') elWigI.style.width=((me.wig||0)*100)+'%';
+  updItemHud();
 
   /* --- AI --- */
   if(role!=='teacher'&&!(puppet===teacher||possessT>0&&possessor)) aiTeacher(dt);
@@ -7165,7 +7532,9 @@ function tick(now){
   if(netMode==='host') netHostBroadcastSnapshot(dt);
 
   /* --- タイマー --- */
+  const whisperWas=teacher.whisperNear; teacher.whisperNear=false;
   for(const s of students){
+    if(s===me&&role==='student') s.itemHoldInput=!!input.itemHold;
     if(s.slow>0) s.slow-=dt;
     if(s.rush>0) s.rush-=dt;
     if(s.abCd>0) s.abCd-=dt;
@@ -7241,22 +7610,40 @@ function tick(now){
       if(s.fxT2>0.35){ s.fxT2=0; fartFx(s); }
     }
     if(s.tiredT>0) s.tiredT-=dt;
+    const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
+      return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
             (s.sprintT>0?1.55:1)*(s.tiredT>0?0.85:1)*
             (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
+            (hasTrait(s,'hope')&&gateOpen?1.08:1)*
+            ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?0.94:1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
       if(s.dropT>(s.perk==='sound'?6:3)){ s.dropT=0; dropPaper(s.x,s.z);
         if(s.perk!=='sound') noise(s.x,s.z,4); }
     }
+    updItemUse(s,dt);
+    /* 授業態度の悪化(sloppy)で治療速度を落とすデバフの持続時間だけ減っていく */
+    if(s.healBoostT>0) s.healBoostT-=dt;
+    /* 気配鋭敏(stridor)：負傷している生徒の位置が距離に関わらず常にわかる */
+    if(hasTrait(teacher,'stridor')&&s.hurt&&s.state==='free'&&!s.hide){
+      s.strT=(s.strT||0)-dt;
+      if(s.strT<=0){ s.strT=1.2; teacherRevealStudent(s,0xff6a5a); }
+    }
+    /* 見張りの目(whispers)：生徒が12m以内に近づくと気配で知らせる */
+    if(hasTrait(teacher,'whispers')&&s.state==='free'&&!s.hide&&
+       Math.hypot(s.x-teacher.x,s.z-teacher.z)<12){
+      teacher.whisperNear=true;
+    }
     if(s.parry>0) s.parry-=dt;
     if(s.state==='downed'){
       s.downT+=dt;
-      if(s.perk==='nine'&&!s.usedNine&&s.downT>4){
+      if((s.perk==='nine'||hasTrait(s,'perseverance'))&&!s.usedNine&&s.downT>4){
         s.usedNine=true; s.state='free'; s.hurt=true; s.dmg=1; s.downT=0;
         paperLook(s); s.rush=3.0;
-        toast(s.name+'は九死に一生で起き上がった'); beep(900,0.3,'triangle',0.11);
+        toast(s.name+(hasTrait(s,'perseverance')&&s.perk!=='nine'?'は不屈の一念で自力で起き上がった':'は九死に一生で起き上がった'));
+        beep(900,0.3,'triangle',0.11);
       }
       if(s.downT>(s.perk==='kendo'?48:32)) out(s,'力尽きた'); }
     if(s.state==='seated'){
@@ -7284,20 +7671,41 @@ function tick(now){
         }
       }
       if(s.seatT>limit) out(s,'居残り確定');
+      /* ===== キャンプ対策(アンチキャンプ) =====
+         Dead by Daylightの「キャンプ対策メーター」のルール(見張られている
+         対象だけに見える猶予→メーターが溜まると自力脱出＋一時的な優遇)を
+         参考にした独自実装。座らされてから6秒の猶予(グレースピリオド)の後、
+         先生が9m以内に居続けると溜まり、26秒分溜まると誰の助けも無しに
+         自力で抜け出せる(抜け出した直後は少しの間 減速無効＋加速) */
+      if(s.state==='seated'){
+        const camping=s.seatT>6&&Math.hypot(teacher.x-s.x,teacher.z-s.z)<9;
+        s.campT=Math.max(0,(s.campT||0)+(camping?dt:-dt*1.5));
+        if(s.campT>26&&!s.campBroke){
+          s.campBroke=true;
+          freeStudent(s);
+          s.painFree=6.0; s.rush=4.0; s.campT=0;
+          toast(s.name+'が見張られている隙に自力で抜け出した！（キャンプ対策発動）');
+          beep(880,0.3,'triangle',0.12); vib([40,50,80]);
+        }
+      }
     } else { s.qte=null; s.qteWait=0; }
     if(s.state==='carried'){
       s.x=teacher.x; s.z=teacher.z;
       const isMe=(s===me&&role==='student');
       const isNet=(netMode==='host'&&s.netSlot!==undefined);
-      s.wig=(s.wig||0)+dt*((isMe||isNet)?0.0165:0.0125);
-      if(isMe&&input.mash){ s.wig+=0.0121*(s.perk==='wig'?1.35:1); input.mash=false;
+      const boilMul=hasTrait(s,'boilover')?1.2:1;
+      s.wig=(s.wig||0)+dt*((isMe||isNet)?0.0165:0.0125)*boilMul;
+      if(isMe&&input.mash){ s.wig+=0.0121*(s.perk==='wig'?1.35:1)*boilMul; input.mash=false;
         beep(300+Math.random()*160,0.05,'square',0.05); }
       else if(isNet){
         const n=netMashN(s);
-        if(n){ s.wig+=n*0.0121*(s.perk==='wig'?1.35:1); beep(300+Math.random()*160,0.05,'square',0.05); }
+        if(n){ s.wig+=n*0.0121*(s.perk==='wig'?1.35:1)*boilMul; beep(300+Math.random()*160,0.05,'square',0.05); }
       }
       if(s.wig>=1) escapeCarry(s);
     }
+  }
+  if(teacher.whisperNear&&!whisperWas&&role==='teacher'){
+    toast('近くに誰かの気配がする'); beep(500,0.12,'sine',0.06);
   }
   if(role!=='teacher'&&teacher.cool<=0&&teacher.stun<=0){
     for(const s of students){
@@ -7506,6 +7914,8 @@ function tick(now){
   updPallets(dt);
   updDrops(dt);
   updWalls(dt);
+  updTaskLocks(dt);
+  updItemBoxes(dt);
   for(const s of students) updAura(s,dt);
   updHearts(dt);
   /* 反省椅子の光り方：
@@ -7866,6 +8276,7 @@ let netClientSlot=-1;         // client: 自分が操作するstudentsの添字
 let netInputs={};             // host: slot -> 直近の入力パケット
 let netEvents=[];             // host: 次のスナップショットで流すイベント
 let netDirtyPallets=[];       // host: 直近に状態が変わった板 [idx,state]
+let netDirtyBoxes=[];         // host: 直近に中身が取られたアイテムボックスのidx
 let netSendT=0;               // host: スナップショット送信タイマー
 let netMashCount=0;           // client: 前回送信からの連打回数
 let netLastSnap=null;         // client: 直近に受け取ったスナップショット
@@ -8164,7 +8575,7 @@ function netBroadcast(obj){
 function netOpenHost(){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
-  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[];
+  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[];
   const code=netPickCode();
   netRoomCode=code;
   netSetStatus('部屋を作っています…',true);
@@ -8335,6 +8746,7 @@ function netClientOnStart(payload){
   netClientSlot=payload.mySlot;
   spawnAll(); buildRoster();
   netApplyTaskDesks(payload.taskDesks);
+  applyItemBoxRoll(payload.itemBoxRoll);
   role='student'; me=students[netClientSlot];
   netPrevGateOpen=false; netLastSnap=null; netSeenToastId=0;
   document.getElementById('netwait').classList.remove('on');
@@ -8498,6 +8910,7 @@ function netMashN(s){
   const n=inp.mashN; inp.mashN=0; return n;
 }
 function netApplyStudentInput(s,inp,dt){
+  s.itemHoldInput=!!(inp&&inp.itemHold);
   const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0));
   if(updVault(s,dt)){ /* 乗り越え中 */ }
   else if(inp&&inp.mag>0.02&&canMove){
@@ -8508,7 +8921,7 @@ function netApplyStudentInput(s,inp,dt){
       sp*=1.45; s.stam=Math.max(0,s.stam-dt*0.30*(s.perk==='stam'?0.75:(s.perk==='proto'?2.2:1)));
       if(s.stam<=0) s.exh=true;
     } else {
-      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1));
+      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1)*(hasTrait(s,'secondwind')?1.25:1));
       if(s.exh&&s.stam>0.65) s.exh=false;
     }
     move(s,inp.dx*sp,inp.dz*sp,dt);
@@ -8586,7 +8999,7 @@ function netHostBroadcastSnapshot(dt){
         vault:s.vault||0, vaultMax:s.vaultMax||1, vaultK:s.vaultK||0, seatCount:s.seatCount,
         knockT:s.knockT||0, knockDX:s.knockDX||0, knockDZ:s.knockDZ||0,
         qte: s.qte?{t:s.qte.t,n:s.qte.n}:null, abCd:s.abCd, abUses:s.abUses, lock:s.lock,
-        painFree:s.painFree } };
+        painFree:s.painFree, item:s.item||'', itemAmmo:Math.round(s.itemAmmo||0) } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -8594,6 +9007,7 @@ function netHostBroadcastSnapshot(dt){
     ev: netEvents
   };
   if(netDirtyPallets.length){ snap.pal=netDirtyPallets; netDirtyPallets=[]; }
+  if(netDirtyBoxes.length){ snap.box=netDirtyBoxes; netDirtyBoxes=[]; }
   netEvents=[];
   netBroadcast(snap);
 }
@@ -8611,6 +9025,10 @@ function netApplyPalletDirty(idx,state){
     p.mesh.material=M.pallet; p.mesh.rotation.set(0,p.ang,0);
     p.mesh.position.set(p.x,1.75,p.z); p.fall=0;
   }
+}
+function netApplyBoxDirty(idx){
+  const b=itemBoxes[idx]; if(!b) return;
+  b.taken=true; b.g.visible=false;
 }
 function netInterpolate(dt){
   const snap=netLastSnap; if(!snap) return;
@@ -8649,6 +9067,7 @@ function netInterpolate(dt){
     else { d.mesh.material=M.deskOn; if(d.sheet) d.sheet.visible=true; }
   });
   if(snap.pal) snap.pal.forEach(function(pr){ netApplyPalletDirty(pr[0],pr[1]); });
+  if(snap.box) snap.box.forEach(function(i){ netApplyBoxDirty(i); });
   gateOpen=snap.gateOpen; endTimer=snap.endTimer;
   if(gateOpen&&!netPrevGateOpen) exits.forEach(function(e){ e.mesh.material=M.exitOn; });
   netPrevGateOpen=gateOpen;
@@ -8698,7 +9117,7 @@ function netClientTick(dt){
     const canRun=running&&!me.exh&&me.stam>0;
     if(canRun){ sp*=1.45; me.stam=Math.max(0,me.stam-dt*0.30*(me.perk==='stam'?0.75:(me.perk==='proto'?2.2:1)));
       if(me.stam<=0) me.exh=true; }
-    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1));
+    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?1.25:1));
       if(me.exh&&me.stam>0.65) me.exh=false; }
     move(me,dx*sp,dz*sp,dt);
     me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*13));
@@ -8747,13 +9166,14 @@ function netClientTick(dt){
     netSendT=1/18;
     netSend(netHostConn,{t:'inp',dx:mdx,dz:mdz,mag:mmag,run:running,
       act:!!input.act, altEdge:!!input.altEdge, abEdge:!!input.abEdge, ab2Edge:!!input.ab2Edge,
-      mashN:netMashCount});
+      itemHold:!!input.itemHold, mashN:netMashCount});
     netMashCount=0;
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false; input.mash=false;
 
   elChatBtn.style.display='flex';
+  updItemHud();
   elActLabel.textContent=label; elActKey.textContent=(me.state==='carried')?'F / J 連打':'E';
   elAct.classList.toggle('hot',hot);
   elAltLabel.textContent=altLabel; elAlt.classList.toggle('hot',altHot);
@@ -9239,7 +9659,15 @@ let PID=(function(){
   const p=String(100000+Math.floor(Math.random()*899999));
   try{ localStorage.setItem('hi_pid_v1',p); }catch(e){}
   return p;
-})(), SCORE=0, COINS=0;
+})();
+/* スコア・コインは端末にlocalStorage保存し、次回訪問時も引き継ぐ
+   (refreshStats()を呼ぶたびに保存する。稼いだ分がリセットされないように) */
+let SCORE=0, COINS=0;
+try{
+  const savedSC=JSON.parse(localStorage.getItem('hi_wallet_v1')||'null');
+  if(savedSC){ SCORE=savedSC.sc||0; COINS=savedSC.co||0; }
+}catch(e){}
+function saveWallet(){ try{ localStorage.setItem('hi_wallet_v1',JSON.stringify({sc:SCORE,co:COINS})); }catch(e){} }
 
 function cssHex(c){ let h=c.toString(16); while(h.length<6) h='0'+h; return '#'+h; }
 function drawChar(g,W,H,o){
@@ -9293,6 +9721,8 @@ const elList=document.getElementById('tlist'),elPort=document.getElementById('tp
 const pg=elPort.getContext('2d');
 function refreshStats(){
   elHudId.textContent=PID; elHudScore.textContent=SCORE; elHudCoin.textContent=COINS;
+  saveWallet();
+  try{ renderItemPane(); }catch(e){}
 }
 function buildList(){
   elList.innerHTML='';
@@ -9337,6 +9767,7 @@ function showStage(){
     elTDesc.innerHTML='【'+KINDS[o.key].ability+'】'+o.desc+
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
+  try{ renderItemPane(); renderPerkPane(); }catch(e){}
 }
 Array.prototype.forEach.call(document.querySelectorAll('#trole div'),function(d){
   d.addEventListener('click',function(){
@@ -9407,6 +9838,75 @@ WEAPONS.forEach(function(w){
   });
   elWep.appendChild(d);
 });
+/* 持参アイテム＋アドオン選択（生徒のみ。先生役ではパネルごと隠す） */
+const elItemPane=document.getElementById('p_item'),elItemSel=document.getElementById('itemsel'),
+      elAddonWrap=document.getElementById('addonwrap'),elAddonSel=document.getElementById('addonsel'),
+      elItemCost=document.getElementById('itemcost');
+function renderItemPane(){
+  if(!elItemPane) return;
+  const disabled=(role==='teacher');
+  elItemPane.style.opacity=disabled?'0.4':'1';
+  elItemPane.style.pointerEvents=disabled?'none':'auto';
+  elItemSel.innerHTML='';
+  const none=document.createElement('div');
+  none.textContent='持たない'; none.className=itemPick?'':'sel';
+  none.addEventListener('click',function(){ itemPick=''; addon1Pick=''; addon2Pick=''; renderItemPane(); });
+  elItemSel.appendChild(none);
+  ITEMS.forEach(function(it){
+    const d=document.createElement('div');
+    d.textContent=it.name+'（'+it.cost+'）'; if(it.key===itemPick) d.className='sel';
+    d.title=it.desc;
+    d.addEventListener('click',function(){
+      itemPick=it.key; addon1Pick=''; addon2Pick=''; renderItemPane();
+    });
+    elItemSel.appendChild(d);
+  });
+  elAddonWrap.style.display=itemPick?'block':'none';
+  elAddonSel.innerHTML='';
+  if(itemPick){
+    (ADDONS[itemPick]||[]).forEach(function(a){
+      const d=document.createElement('div');
+      const on=(addon1Pick===a.key||addon2Pick===a.key);
+      d.textContent=a.name+'（+'+a.cost+'）'; if(on) d.className='sel';
+      d.title=a.desc;
+      d.addEventListener('click',function(){
+        if(addon1Pick===a.key) addon1Pick='';
+        else if(addon2Pick===a.key) addon2Pick='';
+        else if(!addon1Pick) addon1Pick=a.key;
+        else if(!addon2Pick) addon2Pick=a.key;
+        else toast('アドオンは最大2つまで');
+        renderItemPane();
+      });
+      elAddonSel.appendChild(d);
+    });
+  }
+  const cost=itemLoadoutCost();
+  elItemCost.textContent=itemPick?('合計 '+cost+' コイン（所持 '+COINS+' コイン）'+
+    (cost>COINS?'　※コインが足りない':'')):'';
+}
+/* 特性(パーク)選択：役割ごとに別プール、最大4つまで */
+const elPerkSel=document.getElementById('perksel');
+function currentPerkPick(){ return (role==='teacher')?teacherPerksPick:studentPerksPick; }
+function renderPerkPane(){
+  if(!elPerkSel) return;
+  const pool=(role==='teacher')?PERKS_TEACHER:PERKS_STUDENT;
+  const pick=currentPerkPick();
+  elPerkSel.innerHTML='';
+  pool.forEach(function(p){
+    const d=document.createElement('div');
+    const on=pick.indexOf(p.key)>=0;
+    d.textContent=p.name+(on?'　✓':''); if(on) d.className='sel';
+    d.title=p.desc;
+    d.addEventListener('click',function(){
+      const idx=pick.indexOf(p.key);
+      if(idx>=0) pick.splice(idx,1);
+      else if(pick.length>=4) toast('特性は最大4つまで');
+      else pick.push(p.key);
+      renderPerkPane();
+    });
+    elPerkSel.appendChild(d);
+  });
+}
 /* 3Dプレビュー */
 let pvOn=false,pvRenderer=null,pvScene=null,pvCam=null,pvMesh=null;
 const elPv=document.getElementById('tport3d');
@@ -9462,6 +9962,46 @@ Array.prototype.forEach.call(document.querySelectorAll('#diff div'),function(d){
     if(k==='hard')   DIFF={name:k,tSpeed:7.6,work:0.055,checkGap:[2.4,4.2],zone:34};
   });
 });
+/* 持参アイテム＋アドオンの合計コイン価格 */
+function itemLoadoutCost(){
+  let c=0;
+  if(!itemPick) return 0;
+  const it=itemOf(itemPick); if(!it) return 0;
+  c+=it.cost;
+  [addon1Pick,addon2Pick].forEach(function(k){
+    if(!k) return; const a=addonOf(itemPick,k); if(a) c+=a.cost;
+  });
+  return c;
+}
+/* 試合開始時、自分のキャラに持参アイテム／特性を反映する。
+   オンライン対戦では今のところホスト自身のキャラだけが対象
+   (参加者は現状ロビーで持ち物を選ぶ手段が無いため、マップの
+   アイテムボックスから拾うことでアイテムを使える) */
+function applyLoadout(){
+  if(role==='student'){
+    const meS=students[0];
+    meS.traits=studentPerksPick.slice(0,4);
+    if(hasTrait(meS,'distortion')) meS.distortLeft=3;
+    if(itemPick){
+      const cost=itemLoadoutCost();
+      if(COINS>=cost){
+        COINS=Math.max(0,COINS-cost); refreshStats();
+        meS.item=itemPick;
+        meS.itemAddons=[addon1Pick,addon2Pick].filter(Boolean);
+        meS.itemAmmo=itemAmmoMax(meS);
+      } else { toast('コインが足りず持参できなかった'); }
+    }
+    if(hasTrait(meS,'pathfinder')) exits.forEach(function(e){ mark(e.x,e.z,0x7fd4a2,8); });
+  } else {
+    teacher.traits=teacherPerksPick.slice(0,4);
+    teacher.comboStacks=0; teacher.lastHitTarget=null;
+    /* 手はず狂わせ(corrupt)：試合開始時、課題机のうち2枚を60秒ロックする */
+    if(hasTrait(teacher,'corrupt')){
+      tasks.slice().sort(function(){ return Math.random()-0.5; }).slice(0,2)
+        .forEach(function(t){ t.lockT=60; });
+    }
+  }
+}
 function startMatch(){
   if(curStage==='random') curStage=STAGES[(Math.random()*STAGES.length)|0].key;
   if(role==='student'){
@@ -9474,18 +10014,21 @@ function startMatch(){
   others.sort(function(){ return Math.random()-0.5; });
   rosterPick=[myIndex,others[0],others[1],others[2]];
   spawnAll();
+  rollItemBoxes();
+  applyLoadout();
   buildRoster();
   if(netMode==='host'){
     netConns.forEach(function(c){
       const idx=netStudentIndexForSlot(c.slot);
       if(students[idx]) students[idx].netSlot=c.slot;
     });
-    netInputs={}; netEvents=[]; netDirtyPallets=[]; netSendT=0;
+    netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netSendT=0;
     const taskDesks=tasks.map(function(d){ return {c:d.c,r:d.r}; });
+    const itemBoxRoll=itemBoxes.map(function(b){ return b.item; });
     netConns.forEach(function(c){
       netSend(c.conn,{t:'start', stage:curStage, teacherKind:teacherKind, diff:DIFF,
         rosterPick:rosterPick, weaponPick:weaponPick, taskDesks:taskDesks,
-        mySlot:netStudentIndexForSlot(c.slot)});
+        itemBoxRoll:itemBoxRoll, mySlot:netStudentIndexForSlot(c.slot)});
     });
     netBroadcastVoiceRoster();
   }
@@ -9573,6 +10116,7 @@ function softReset(keepNet){
   dashWarn.visible=false;
   scActive=false; scTarget=null; scNext=3; elSkill.classList.remove('on');
   elMashN.classList.remove('on'); elStun.classList.remove('on'); elWig.style.display='none';
+  elItemHud.classList.remove('on');
   elActRing.classList.remove('on'); ringMode=null;
   Object.keys(stats).forEach(function(k){ stats[k]=0; });
   endTimer=0;
