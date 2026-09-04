@@ -203,6 +203,15 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   #tname{font-size:15px}
   #tdesc{font-size:8.5px;line-height:1.5}
   #go{padding:8px 26px;font-size:12px}
+  /* 横画面スマホは幅が足りないので、ツールチップは右に逃がさず
+     パネル下部にバー状に出す（要素は#panelboxの子ではないので
+     left/rightで画面基準の帯として配置） */
+  #dbdTip{left:52px;right:8px;top:auto;bottom:calc(env(safe-area-inset-bottom) + 6px);
+    transform:none;width:auto;max-height:34vh}
+}
+@media (max-width:900px){
+  #dbdTip{left:12px;right:12px;top:auto;bottom:calc(env(safe-area-inset-bottom) + 8px);
+    transform:none;width:auto;max-height:30vh}
 }
 
 #warp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:270px;
@@ -291,7 +300,16 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .slot canvas{width:32px;height:42px;border-radius:2px;background:#00000030}
 .slot .sn{font-size:10.5px;line-height:1.4}
 .slot .sn i{display:block;font-style:normal;font-size:8.5px;opacity:.45;margin-top:2px}
-#tport,#tport3d,#pvtoggle{display:none}
+#tport3d,#pvtoggle{display:none}
+/* ホーム画面を「キャラクターを中心にした構成」にするため、右側に大きな
+   立ち絵ポートレートを常設（DBDのホーム画面の構図を参考に、キャラの
+   後ろにだけ淡い光を置く。canvasは背景を塗りつぶさない設計なので、
+   CSSのradial-gradientがキャラの輪郭の外側にそのまま透けて見える） */
+#tport{display:block;position:absolute;right:calc(env(safe-area-inset-right) + 30px);
+  top:50%;transform:translateY(-50%);width:300px;height:404px;z-index:2;
+  background:radial-gradient(circle at 50% 40%,#e8c54724 0%,transparent 60%);
+  filter:drop-shadow(0 22px 36px #000c);pointer-events:none}
+@media (max-width:900px){ #tport{display:none} }
 #tinfo{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 12px);
   z-index:3;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;
   pointer-events:none}
@@ -311,6 +329,26 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #go{padding:11px 40px;border:1px solid var(--yellow);color:var(--yellow);
   background:#0b120ecc;font-size:15px;letter-spacing:.3em;font-family:inherit;border-radius:2px}
 .hint{font-size:8.5px;opacity:.34;line-height:1.7;text-align:center}
+
+/* DBD風：パーク/アイテム/アドオンにマウスを乗せるだけ（クリック不要）で
+   性能・説明が読める浮き出しツールチップ。#panelboxの右側、キャラ立ち絵の
+   手前あたりに固定表示する（要素ごとの位置追従はせず、常に同じ場所に出す
+   ことで「毎回同じ場所を見れば説明が読める」という覚えやすさを優先した） */
+#dbdTip{position:absolute;left:300px;top:50%;transform:translateY(-50%);z-index:4;
+  width:230px;max-height:60vh;overflow-y:auto;padding:12px 14px;border-radius:5px;
+  background:#070c09f2;border:1px solid var(--yellow);font-size:11px;line-height:1.7;
+  color:var(--chalk);pointer-events:none;display:none;box-shadow:0 10px 26px #000a}
+#dbdTip.on{display:block}
+#dbdTip b{display:block;color:var(--yellow);font-size:12.5px;margin-bottom:6px;letter-spacing:.05em}
+
+/* 装備中スロット表示（DBDのパーク4枠・アイテム/アドオン枠の情報設計を
+   参考にした「今何を持っているか一目で分かる」列）。中身は名前のみの
+   テキスト表示（画像アセットは使わない） */
+.loadoutSlots{display:flex;gap:6px;margin-bottom:10px}
+.lslot{flex:1;min-height:40px;border:1px solid #ffffff2a;border-radius:3px;background:#ffffff08;
+  display:flex;align-items:center;justify-content:center;font-size:8.5px;text-align:center;
+  line-height:1.3;padding:3px;opacity:.5}
+.lslot.filled{border-color:var(--yellow);background:#e8c5471a;color:var(--yellow);opacity:1}
 #result{position:fixed;inset:0;z-index:21;background:#0b120ef5;display:none;
   flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px}
 #result h1{font-size:24px;letter-spacing:.3em}
@@ -323,9 +361,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #fatal{position:fixed;left:12px;right:12px;top:12px;z-index:99;display:none;
   background:#1a0c0c;border:2px solid #c7452f;border-radius:5px;padding:14px;
   font-size:12px;line-height:1.7;color:#f2d5d0;max-height:60vh;overflow:auto}
-#fatal b{display:block;color:#ff7a68;font-size:14px;margin-bottom:6px}
+#fatal b{display:block;color:#ff7a68;font-size:14px;margin-bottom:6px;padding-right:26px}
 #fatal span{display:block;word-break:break-all;background:#00000060;padding:8px;border-radius:3px}
 #fatal small{display:block;margin-top:8px;opacity:.6}
+#fatalClose{position:absolute;top:10px;right:10px;width:22px;height:22px;line-height:20px;
+  text-align:center;border:1px solid #c7452f;border-radius:3px;background:transparent;
+  color:#f2d5d0;font-size:14px;cursor:pointer;padding:0}
 #loading{position:fixed;inset:0;z-index:30;background:#0b120e;display:flex;
   flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#f2efe4}
 #loading .bar{width:180px;height:4px;background:#ffffff22;border-radius:2px;overflow:hidden}
@@ -387,8 +428,9 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 </style>
 </head>
 <body>
-<div id="fatal"><b>エラーが発生しました</b><span id="fatalmsg"></span>
-  <small>この文章をそのまま伝えてもらえれば直します</small></div>
+<div id="fatal"><button id="fatalClose" type="button" aria-label="閉じる">×</button>
+  <b>エラーが発生しました</b><span id="fatalmsg"></span>
+  <small>この文章をそのまま伝えてもらえれば直します（5秒で自動的に消えます）</small></div>
 <div id="loading"><div style="font-size:15px;letter-spacing:.2em">読み込み中…</div>
   <div class="bar"><i></i></div>
   <div style="font-size:10px;opacity:.5">3Dの校舎とキャラを組み立てています</div></div>
@@ -540,6 +582,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       </div>
     </div>
     <div class="pane" id="p_item">
+      <p class="lbl">装備中</p>
+      <div class="loadoutSlots" id="itemSlots"></div>
       <p class="lbl" id="itemwraplbl">持参するアイテム（コインで購入。先生役では使えない）</p>
       <div class="seg small wrap" id="itemsel"></div>
       <div id="addonwrap">
@@ -547,11 +591,15 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         <div class="seg small wrap" id="addonsel"></div>
       </div>
       <p class="hint" id="itemcost" style="text-align:center;margin-top:8px"></p>
-      <p class="hint">マップ上の「アイテムボックス」からも無料で拾えることがある</p>
+      <p class="hint">マップ上の「アイテムボックス」からも無料で拾えることがある<br>
+        マウスを乗せると性能が見られる</p>
     </div>
     <div class="pane" id="p_perk">
-      <p class="lbl" id="perkwraplbl">特性（最大4つ。役割ごとに別プール）</p>
+      <p class="lbl">装備中（最大4つ）</p>
+      <div class="loadoutSlots" id="perkSlots"></div>
+      <p class="lbl" id="perkwraplbl">特性（役割ごとに別プール）</p>
       <div class="seg small wrap" id="perksel" style="max-height:280px"></div>
+      <p class="hint" style="margin-top:6px">マウスを乗せると効果が見られる</p>
     </div>
     <div class="pane" id="p_stage">
       <p class="lbl">ステージ</p>
@@ -612,9 +660,10 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     </div>
   </div>
 
-  <canvas id="tport" width="224" height="300"></canvas>
+  <canvas id="tport" width="300" height="404"></canvas>
   <canvas id="tport3d" width="224" height="300"></canvas>
   <div id="pvtoggle">3Dで見る</div>
+  <div id="dbdTip"><b id="dbdTipName"></b><span id="dbdTipDesc"></span></div>
 
   <div id="tinfo">
     <div id="tname">—</div>
@@ -638,14 +687,32 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 </div>
 
 <script>
+/* エラー表示は5秒で自動的に消える（他のプロジェクトの通知バナーと同じ挙動）。
+   手動で閉じるボタンも残す。連続でエラーが起きた場合は表示のたびにタイマーを
+   延長し直す（消えた直後に次のエラーが来ても、最後のエラーから5秒は見える） */
+window.__errHideTimer=null;
 window.__err=function(m){
   try{
     var f=document.getElementById('fatal'), g=document.getElementById('fatalmsg'),
         l=document.getElementById('loading');
     if(l) l.style.display='none';
-    if(f&&g){ f.style.display='block'; g.textContent=String(m); }
+    if(f&&g){
+      f.style.display='block'; g.textContent=String(m);
+      if(window.__errHideTimer) clearTimeout(window.__errHideTimer);
+      window.__errHideTimer=setTimeout(function(){ f.style.display='none'; },5000);
+    }
   }catch(e){}
 };
+addEventListener('DOMContentLoaded',function(){
+  try{
+    var c=document.getElementById('fatalClose'), f=document.getElementById('fatal');
+    if(c&&f) c.addEventListener('pointerdown',function(e){
+      e.stopPropagation();
+      if(window.__errHideTimer) clearTimeout(window.__errHideTimer);
+      f.style.display='none';
+    });
+  }catch(e){}
+});
 window.addEventListener('error',function(e){
   window.__err((e.message||'不明なエラー')+'  ['+((e.filename||'').split('/').pop())+
     ' '+(e.lineno||'?')+':'+(e.colno||'?')+']');
@@ -4062,6 +4129,33 @@ document.getElementById('skill').addEventListener('pointerdown',function(e){e.st
    アイテムを持っている時しか出ないitemhudをそのまま流用した） */
 bindBtn(document.getElementById('itemhud'),function(){input.itemHold=true;},function(){input.itemHold=false;});
 
+/* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
+   CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
+   板を倒す動作だけはちょうど良い絵文字が無いので簡単な線画SVGを自作した。
+   （※loadSettings()が下のスライダー復元時にlayoutPad()を同期呼び出しするため、
+   elActRingはlayoutPad()より前・loadSettings()より前に必ず宣言しておくこと） */
+const elActRing=document.getElementById('actring'),elRingIcon=document.getElementById('ringicon'),
+      elRingPct=document.getElementById('ringpct'),elRingLbl=document.getElementById('ringlbl');
+const RING_ICON={
+  run:'🏃',
+  climb:'🧗',
+  topple:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '+
+    'stroke-linecap="round" stroke-linejoin="round"><circle cx="6.4" cy="4.6" r="1.8" fill="currentColor" stroke="none"/>'+
+    '<path d="M6.4 6.7v5.2M6.4 8.3l3.8-1.3M6.4 11.9l-1.7 4.8M6.4 11.9l2.8 4.4"/>'+
+    '<rect x="12" y="2.6" width="7" height="12.6" rx="0.6" transform="rotate(11 15.5 8.9)"/></svg>'
+};
+const RING_LABEL={run:'RUN 走る',climb:'CLIMB 乗り越え',topple:'TOPPLE 倒す'};
+let ringMode=null;
+function updActionRing(mode,pct,color){
+  if(!mode){ if(ringMode){ elActRing.classList.remove('on'); ringMode=null; } return; }
+  if(!elActRing.classList.contains('on')) elActRing.classList.add('on');
+  if(ringMode!==mode){ ringMode=mode; elRingIcon.innerHTML=RING_ICON[mode]; elRingLbl.textContent=RING_LABEL[mode]; }
+  const p=Math.max(0,Math.min(1,pct||0));
+  elActRing.style.setProperty('--ringpct',p);
+  elActRing.style.setProperty('--ringcolor',color||'#e8c547');
+  elRingPct.textContent=Math.round(p*100)+'%';
+}
+
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
   const s=btnScale;
@@ -6843,30 +6937,6 @@ function updItemHud(){
     elItemHudBar.style.width=Math.min(100,(me.syT||0)/need*100)+'%';
     elItemHudBar.style.background='#7fd4a2';
   }
-}
-/* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
-   CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
-   板を倒す動作だけはちょうど良い絵文字が無いので簡単な線画SVGを自作した */
-const elActRing=document.getElementById('actring'),elRingIcon=document.getElementById('ringicon'),
-      elRingPct=document.getElementById('ringpct'),elRingLbl=document.getElementById('ringlbl');
-const RING_ICON={
-  run:'🏃',
-  climb:'🧗',
-  topple:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '+
-    'stroke-linecap="round" stroke-linejoin="round"><circle cx="6.4" cy="4.6" r="1.8" fill="currentColor" stroke="none"/>'+
-    '<path d="M6.4 6.7v5.2M6.4 8.3l3.8-1.3M6.4 11.9l-1.7 4.8M6.4 11.9l2.8 4.4"/>'+
-    '<rect x="12" y="2.6" width="7" height="12.6" rx="0.6" transform="rotate(11 15.5 8.9)"/></svg>'
-};
-const RING_LABEL={run:'RUN 走る',climb:'CLIMB 乗り越え',topple:'TOPPLE 倒す'};
-let ringMode=null;
-function updActionRing(mode,pct,color){
-  if(!mode){ if(ringMode){ elActRing.classList.remove('on'); ringMode=null; } return; }
-  if(!elActRing.classList.contains('on')) elActRing.classList.add('on');
-  if(ringMode!==mode){ ringMode=mode; elRingIcon.innerHTML=RING_ICON[mode]; elRingLbl.textContent=RING_LABEL[mode]; }
-  const p=Math.max(0,Math.min(1,pct||0));
-  elActRing.style.setProperty('--ringpct',p);
-  elActRing.style.setProperty('--ringcolor',color||'#e8c547');
-  elRingPct.textContent=Math.round(p*100)+'%';
 }
 for(let i=0;i<TASK_N;i++) elTasks.innerHTML+='<div class="sheet" id="sh'+i+'"><i></i><b>'+(i+1)+'</b></div>';
 const mg=mini.getContext('2d');
@@ -9838,10 +9908,49 @@ WEAPONS.forEach(function(w){
   });
   elWep.appendChild(d);
 });
+/* DBD風ホバーツールチップ：マウスを乗せるだけ（クリック不要）で
+   パーク/アイテム/アドオンの性能が読める。タッチ操作にはhoverが無いため、
+   代わりにpointerdown（タップした瞬間）でも一瞬表示する妥協案にしてある
+   （2026-09-04時点の「今後の課題」に挙げていたスマホでの説明の読みにくさを
+   ここで一部解消）。ネイティブのtitle属性（ブラウザ標準ツールチップ）は
+   二重表示で見た目が煩くなるため、この用途では使わないようにした */
+const elDbdTip=document.getElementById('dbdTip'),elDbdTipName=document.getElementById('dbdTipName'),
+      elDbdTipDesc=document.getElementById('dbdTipDesc');
+let dbdTipTouchTimer=null;
+function dbdTipShow(name,desc){
+  elDbdTipName.textContent=name; elDbdTipDesc.textContent=desc;
+  elDbdTip.classList.add('on');
+}
+function dbdTipHide(){ elDbdTip.classList.remove('on'); }
+function bindTip(el,name,desc){
+  el.addEventListener('pointerenter',function(e){ if(e.pointerType==='mouse') dbdTipShow(name,desc); });
+  el.addEventListener('pointerleave',function(e){ if(e.pointerType==='mouse') dbdTipHide(); });
+  el.addEventListener('pointerdown',function(e){
+    if(e.pointerType==='mouse') return;
+    dbdTipShow(name,desc);
+    if(dbdTipTouchTimer) clearTimeout(dbdTipTouchTimer);
+    dbdTipTouchTimer=setTimeout(dbdTipHide,2200);
+  });
+}
 /* 持参アイテム＋アドオン選択（生徒のみ。先生役ではパネルごと隠す） */
 const elItemPane=document.getElementById('p_item'),elItemSel=document.getElementById('itemsel'),
       elAddonWrap=document.getElementById('addonwrap'),elAddonSel=document.getElementById('addonsel'),
-      elItemCost=document.getElementById('itemcost');
+      elItemCost=document.getElementById('itemcost'),elItemSlots=document.getElementById('itemSlots');
+function renderItemSlots(){
+  if(!elItemSlots) return;
+  elItemSlots.innerHTML='';
+  const it=itemPick?ITEMS.find(function(x){return x.key===itemPick;}):null;
+  const addons=[addon1Pick,addon2Pick].map(function(k){
+    if(!k||!itemPick) return null;
+    return (ADDONS[itemPick]||[]).find(function(x){return x.key===k;});
+  });
+  [it,addons[0],addons[1]].forEach(function(x,i){
+    const d=document.createElement('div');
+    d.className='lslot'+(x?' filled':'');
+    d.textContent=x?x.name:(i===0?'持ち物':'アドオン');
+    elItemSlots.appendChild(d);
+  });
+}
 function renderItemPane(){
   if(!elItemPane) return;
   const disabled=(role==='teacher');
@@ -9855,7 +9964,7 @@ function renderItemPane(){
   ITEMS.forEach(function(it){
     const d=document.createElement('div');
     d.textContent=it.name+'（'+it.cost+'）'; if(it.key===itemPick) d.className='sel';
-    d.title=it.desc;
+    bindTip(d,it.name,it.desc);
     d.addEventListener('click',function(){
       itemPick=it.key; addon1Pick=''; addon2Pick=''; renderItemPane();
     });
@@ -9868,7 +9977,7 @@ function renderItemPane(){
       const d=document.createElement('div');
       const on=(addon1Pick===a.key||addon2Pick===a.key);
       d.textContent=a.name+'（+'+a.cost+'）'; if(on) d.className='sel';
-      d.title=a.desc;
+      bindTip(d,a.name,a.desc);
       d.addEventListener('click',function(){
         if(addon1Pick===a.key) addon1Pick='';
         else if(addon2Pick===a.key) addon2Pick='';
@@ -9883,10 +9992,26 @@ function renderItemPane(){
   const cost=itemLoadoutCost();
   elItemCost.textContent=itemPick?('合計 '+cost+' コイン（所持 '+COINS+' コイン）'+
     (cost>COINS?'　※コインが足りない':'')):'';
+  renderItemSlots();
 }
 /* 特性(パーク)選択：役割ごとに別プール、最大4つまで */
-const elPerkSel=document.getElementById('perksel');
+const elPerkSel=document.getElementById('perksel'),elPerkSlots=document.getElementById('perkSlots');
 function currentPerkPick(){ return (role==='teacher')?teacherPerksPick:studentPerksPick; }
+function renderPerkSlots(){
+  if(!elPerkSlots) return;
+  const pool=(role==='teacher')?PERKS_TEACHER:PERKS_STUDENT;
+  const pick=currentPerkPick();
+  elPerkSlots.innerHTML='';
+  for(let i=0;i<4;i++){
+    const key=pick[i];
+    const p=key?pool.find(function(x){return x.key===key;}):null;
+    const d=document.createElement('div');
+    d.className='lslot'+(p?' filled':'');
+    d.textContent=p?p.name:'空き';
+    if(p) bindTip(d,p.name,p.desc);
+    elPerkSlots.appendChild(d);
+  }
+}
 function renderPerkPane(){
   if(!elPerkSel) return;
   const pool=(role==='teacher')?PERKS_TEACHER:PERKS_STUDENT;
@@ -9896,7 +10021,7 @@ function renderPerkPane(){
     const d=document.createElement('div');
     const on=pick.indexOf(p.key)>=0;
     d.textContent=p.name+(on?'　✓':''); if(on) d.className='sel';
-    d.title=p.desc;
+    bindTip(d,p.name,p.desc);
     d.addEventListener('click',function(){
       const idx=pick.indexOf(p.key);
       if(idx>=0) pick.splice(idx,1);
@@ -9906,6 +10031,7 @@ function renderPerkPane(){
     });
     elPerkSel.appendChild(d);
   });
+  renderPerkSlots();
 }
 /* 3Dプレビュー */
 let pvOn=false,pvRenderer=null,pvScene=null,pvCam=null,pvMesh=null;
