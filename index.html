@@ -108,10 +108,14 @@ canvas{display:block}
 /* 持参アイテムのHUD（名前とバッテリー/使用回数バー）。生徒がアイテムを
    持っている時だけ表示（itemhud.js側のupdItemHud()がクラスをトグル） */
 #itemhud{position:absolute;top:9%;left:50%;transform:translateX(-50%);display:none;
-  text-align:center;font-size:10.5px;letter-spacing:.05em;text-shadow:0 1px 4px #000}
+  text-align:center;font-size:12.5px;letter-spacing:.05em;text-shadow:0 1px 4px #000;
+  background:#0b120eb0;border:2px solid var(--yellow);border-radius:14px;
+  padding:8px 18px;cursor:pointer;user-select:none;touch-action:none}
 #itemhud.on{display:block}
-#itemhudBarWrap{width:120px;height:6px;background:#ffffff22;border:1px solid #ffffff55;
-  border-radius:3px;overflow:hidden;margin:3px auto 0}
+#itemhud.press{background:#e8c54733;transform:translateX(-50%) scale(0.96)}
+#itemhudIcon{font-size:20px;display:block;margin-bottom:2px}
+#itemhudBarWrap{width:150px;height:8px;background:#ffffff22;border:1px solid #ffffff55;
+  border-radius:4px;overflow:hidden;margin:4px auto 0}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
@@ -324,6 +328,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .seg div{padding:6px 12px;border:1px solid #ffffff2e;border-radius:2px;font-size:11px;
   background:#0b120e99}
 .seg div.sel{border-color:var(--yellow);color:var(--yellow)}
+.seg div.locked{opacity:0.62;border-style:dashed}
 .seg.small div{padding:5px 9px;font-size:10px}
 .seg.small.wrap{max-height:170px;overflow-y:auto;touch-action:pan-y}
 #go{padding:11px 40px;border:1px solid var(--yellow);color:var(--yellow);
@@ -487,7 +492,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="wig"><i></i></div>
   <div id="mashn"></div>
   <div id="stam"><i></i></div>
-  <div id="itemhud" class="pe"><div id="itemhudName">—</div>
+  <div id="itemhud" class="pe"><div id="itemhudIcon">🎒</div><div id="itemhudName">—</div>
     <div id="itemhudBarWrap"><div id="itemhudBar"></div></div></div>
   <div id="actring"><div class="ring"></div><div class="core">
     <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
@@ -600,6 +605,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <p class="lbl" id="perkwraplbl">特性（役割ごとに別プール）</p>
       <div class="seg small wrap" id="perksel" style="max-height:280px"></div>
       <p class="hint" style="margin-top:6px">マウスを乗せると効果が見られる</p>
+      <div id="photoAddonWrap" style="display:none">
+        <p class="lbl">写真部顧問の専用アドオン（最大2つ、購入すれば以後ずっと使える）</p>
+        <div class="loadoutSlots" id="photoAddonSlots"></div>
+        <div class="seg small wrap" id="photoAddonSel"></div>
+      </div>
     </div>
     <div class="pane" id="p_stage">
       <p class="lbl">ステージ</p>
@@ -2374,10 +2384,20 @@ function updSpears(dt){
    ITEMS配列に足すだけで抽選対象が自動的に増える拡張前提の構造 */
 const itemBoxes=[];
 (function(){
-  const spots=[[14,20],[26,10],[40,22],[70,14],[90,20],
-    [110,20],[130,14],[150,20],[170,14],[190,20],
-    [210,14],[230,20],[250,14],[270,20],[290,14],
-    [310,20],[330,14],[350,20],[370,14],[390,20],[410,14],[430,20]];
+  /* 各ステージ最低3箇所は入るよう均等配置(以前は1〜3箇所しかなく、
+     出現率40%と掛け合わさるとステージによっては1試合通して1つも
+     出ないことがあった。しゅんりさんの実機報告を受けて2026-09-06に増設) */
+  const spots=[[14,20],[26,10],[40,22],
+    [64,14],[76,20],[88,10],
+    [105,20],[116,14],[127,20],
+    [144,14],[155,20],[166,10],
+    [183,20],[194,14],[205,20],
+    [222,14],[233,20],[244,10],
+    [261,20],[272,14],[283,20],
+    [300,14],[311,20],[322,10],
+    [339,20],[350,14],[361,20],
+    [378,14],[389,20],[400,10],
+    [417,20],[428,14],[439,20]];
   for(const sp of spots){
     let best=null,bd=1e9;
     for(const w of walkable){ const d=Math.abs(w[0]-sp[0])+Math.abs(w[1]-sp[1]);
@@ -2396,7 +2416,9 @@ const itemBoxes=[];
 function rollItemBoxes(){
   itemBoxes.forEach(function(b){
     b.taken=false;
-    b.item=(Math.random()<0.4)?ITEMS[(Math.random()*ITEMS.length)|0].key:'';
+    /* 40%→55%に引き上げ(スポット増設と合わせて、1ステージ通して
+       1つも出ないケースをほぼ無くすための調整) */
+    b.item=(Math.random()<0.55)?ITEMS[(Math.random()*ITEMS.length)|0].key:'';
     b.g.visible=!!b.item;
   });
 }
@@ -2950,6 +2972,14 @@ function makeWeapon(kind,S){
       bx(g,LM(0xc9c24a),0.14*S,0.06*S,0.08*S,(-0.16+i*0.16)*S,0.12*S,1.3*S);
     }
     bx(g,LM(0x2f6b8c),0.2*S,0.14*S,0.14*S,0,0.18*S,0.45*S);
+  } else if(kind==='flashlight'){
+    /* 持参アイテムの「懐中電灯」を手に持たせる用の簡易モデル(参考写真は
+       あくまで見た目の参考にとどめ、テクスチャ等は使わずローポリ自作) */
+    bx(g,LM(0x2a2e32),0.22*S,0.22*S,1.0*S,0,0,0.5*S);
+    bx(g,LM(0xd8d2c0),0.27*S,0.27*S,0.2*S,0,0,1.05*S);
+    const lens=new THREE.Mesh(new THREE.CircleGeometry(0.14*S,10),
+      new THREE.MeshBasicMaterial({color:0xfff2c0}));
+    lens.position.set(0,0,1.16*S); g.add(lens);
   } else if(kind==='sword'){
     bx(g,LM(0xdfe6ea),0.09*S,0.36*S,3.2*S,0,0.1*S,1.9*S);
     bx(g,LM(0x24272b),0.15*S,0.15*S,0.9*S,0,0,0.35*S);
@@ -3537,6 +3567,26 @@ const ADDONS={
   {key:'sy_fast',  name:'速効性の薬液',   cost:20,desc:'手当てにかかる時間が短くなる',timeMul:0.6},
   {key:'sy_share', name:'共有キット',     cost:30,desc:'2.5m以内にいる仲間にも同時に効果が及ぶが、使える回数が1回減る',share:true,usesAdd:-1},
   {key:'sy_quiet', name:'消音キャップ',   cost:15,desc:'使用中に鳴る物音が小さくなる',quiet:true}
+ ],
+ /* 写真部顧問(photo)専用の「アドオン」＝キャラクター固有能力の強化パーツ。
+    上のflashlight/syringeは持ち物(アイテム)のアドオンだが、こちらはキャラの
+    能力そのものを強化するもの(DBDの「キラーのパワー用アドオン」の仕組みを
+    参考にしたが、名称・数値は独自)。購入・アンロックの仕組みは持ち物用と
+    共用(isAddonUnlocked/unlockAddonにitemKey='photo_power'として渡すだけ) */
+ photo_power:[
+  {key:'pp_zoom',  name:'望遠ズームレンズ', cost:30,desc:'観察できる距離が伸びる（32m→40m）',obsRangeMul:1.25},
+  {key:'pp_wide',  name:'広角レンズ',       cost:25,desc:'観察できる距離は縮むが、ゲージが速く貯まる',obsRangeMul:0.7,obsGaugeRateMul:1.3},
+  {key:'pp_paper', name:'感光紙',           cost:25,desc:'観察ゲージの下げ止まりラインが65%まで上がる',gaugeFloorAdd:0.7},
+  {key:'pp_shoes', name:'静音シューズ',     cost:20,desc:'暗室モードの歩行速度がわずかに上がる',stealthSpeedAdd:0.04},
+  {key:'pp_tripod',name:'使い込まれた三脚', cost:20,desc:'暗室⇔現像モードの切替クールダウンが1秒短くなる',switchCdAdd:-1},
+  {key:'pp_shutter',name:'速射シャッター',  cost:30,desc:'焼き付けの溜めが速くなるが、持続時間が短くなる',finisherChargeRateMul:1.3,finisherDurMul:0.85},
+  {key:'pp_flash', name:'望遠フラッシュ',   cost:30,desc:'焼き付けの持続時間が伸びるが、溜めが遅くなる',finisherDurMul:1.2,finisherChargeRateMul:0.8},
+  {key:'pp_film_hi',name:'増感フィルム',    cost:35,desc:'決定的瞬間の間、気配が伝わる範囲がさらに広がる',awakenRangeAdd:8},
+  {key:'pp_film_lo',name:'減感フィルム',    cost:35,desc:'決定的瞬間の持続時間が延びるが、気配が伝わる範囲は縮む',awakenDurAdd:15,awakenRangeAdd:-8},
+  {key:'pp_negative',name:'記念のネガ',     cost:25,desc:'決定的瞬間が時間切れで終わると、観察ゲージの一部が戻ってくる',awakenGaugeRefund:0.15},
+  {key:'pp_solvent',name:'現像液の残り香',  cost:20,desc:'板や扉を破壊する動作が速くなる',breakSpeedMul:1.1},
+  {key:'pp_grain', name:'銀塩の粒子',       cost:20,desc:'よろける時間が短くなる',stunMulVal:0.9},
+  {key:'pp_strap', name:'望遠鏡のストラップ',cost:25,desc:'焼き付けの間合いが少し伸びる',finisherRangeAdd:0.4}
  ]
 };
 function addonOf(itemKey,key){
@@ -3598,7 +3648,13 @@ const PERKS_TEACHER=[
  {key:'no_way_out',   name:'逃げ場なし',desc:'出口が開いてから昇降口が完全に閉まるまでの時間が40秒延びる'},
  {key:'stridor',      name:'気配鋭敏',  desc:'負傷している生徒の位置が距離に関わらず常にわかる'},
  {key:'fireup',       name:'授業再開',  desc:'試合の経過時間が長いほど、攻撃後の隙が徐々に短くなる（最大15%）'},
- {key:'rancor',       name:'有終の美',  desc:'生存している生徒が残り1人になると、その生徒の速度が下がり、物音に気づける範囲も広がる'}
+ {key:'rancor',       name:'有終の美',  desc:'生存している生徒が残り1人になると、その生徒の速度が下がり、物音に気づける範囲も広がる'},
+ /* 写真部顧問の専用パーク3種。装備すると試合開始時に生徒1人が「本命の被写体」に
+    ランダム指定される(pdMuseIdx)。DBDの「オブセッション」の仕組みを参考にしたが、
+    ロア・名称は一切引き継いでいない(2026-09-06追加、著作権配慮の詳細はナレッジ参照) */
+ {key:'yakuyakugari', name:'脇役狩り',  desc:'本命の被写体以外を攻撃するたびトークンが貯まり、次の攻撃までの隙が短くなる（最大25%）。本命を攻撃するとトークンを失う'},
+ {key:'jirashiasobi', name:'じらし遊び',desc:'本命の被写体を追い詰めていながら自分から距離を取って見送ると、少しの間だけ移動速度が上がる'},
+ {key:'misesime',     name:'見せしめ',  desc:'本命の被写体以外をダウンさせるたびトークンが貯まり、本命が脱出していない限り、他の生徒全員の作業・治療・乗り越え速度が落ちる（最大30%）'}
 ];
 function perkOf(role2,key){
   return (role2==='teacher'?PERKS_TEACHER:PERKS_STUDENT).filter(function(p){return p.key===key;})[0];
@@ -3607,6 +3663,20 @@ function perkOf(role2,key){
 function hasTrait(e,k){ return !!(e&&e.traits&&e.traits.indexOf(k)>=0); }
 let itemPick='',addon1Pick='',addon2Pick='';
 let studentPerksPick=[],teacherPerksPick=[];
+/* 写真部顧問(photo)専用アドオンの選択状態(最大2つ)。持ち物用アドオンとは
+   別枠。購入・アンロックの永続化はisAddonUnlocked/unlockAddonを
+   itemKey='photo_power'で共用する */
+let photoAddonPick=[];
+function pdAddonVal(field){
+  let v=1;
+  photoAddonPick.forEach(function(k){ const a=addonOf('photo_power',k); if(a&&a[field]!==undefined) v*=a[field]; });
+  return v;
+}
+function pdAddonAdd(field){
+  let v=0;
+  photoAddonPick.forEach(function(k){ const a=addonOf('photo_power',k); if(a&&a[field]!==undefined) v+=a[field]; });
+  return v;
+}
 
 const LOOK={
   pe   :{body:'human',hairStyle:'short',acc:'band',weapon:'ruler',accent:0x8a2f28},
@@ -3652,7 +3722,8 @@ const LOOK={
   magnet:{body:'human',hairStyle:'wild',acc:'glasses',weapon:'hammer',accent:0x5a4a6b},
   band  :{body:'human',hairStyle:'short',acc:'',weapon:'baton',accent:0x2a2a3a},
   darknode:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'claw',accent:0x241a2e,
-         hair:0x14101a,skin:0x3a3040,eye:0xff3b2e}
+         hair:0x14101a,skin:0x3a3040,eye:0xff3b2e},
+  photo:{body:'human',hairStyle:'short',acc:'glasses',weapon:'camera',accent:0x2c2836}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -3716,7 +3787,8 @@ const KINDS={
   garden:{name:'花壇の見回り先生', ability:'スプリンクラー放水', color:0x4a6b3a, cd:11},
   magnet:{name:'地学部顧問',       ability:'磁力探知',         color:0x5a4a6b, cd:16},
   band  :{name:'吹奏楽部顧問',     ability:'指揮棒一閃',       color:0x2a2a3a, cd:13},
-  darknode:{name:'ダークノード',   ability:'人間／狼／コウモリの3形態', color:0x241a2e, cd:9}
+  darknode:{name:'ダークノード',   ability:'人間／狼／コウモリの3形態', color:0x241a2e, cd:9},
+  photo:{name:'写真部顧問', ability:'暗室／現像モード切替・望遠観察', color:0x2c2836, cd:4}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -3749,7 +3821,8 @@ const TCH=[
  {key:'garden',desc:'スプリンクラー放水｜半径10m以内の生徒に水をかけて3秒減速させる'},
  {key:'magnet',desc:'磁力探知｜進行中の課題プリントの位置をマップに感知する'},
  {key:'band',desc:'指揮棒一閃｜2.5秒加速しつつ、見えている生徒の気配をマップに示す'},
- {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜爪の一撃、能力1を1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は0.5秒溜めての組み付き突進(7m、板も破壊できるが失敗するとスタン)、外すと1秒以内にもう一度、連続で外すとスタン／コウモリ形態｜三人称・速度3倍で浮遊し椅子や窓へ好きな場所へワープできる偵察専用形態。攻撃はできない代わりに、先生側からは生徒が直接見えず生徒の足跡だけが緑色に見える（生徒側からはコウモリの姿は普通に見える）'}
+ {key:'darknode',desc:'能力2で3つの姿を切り替える怪人。人間形態｜爪の一撃、能力1を1秒溜めて前方5m幅の火線（壁を貫通）／狼形態｜三人称・速度+10%、生徒の足跡の匂いを踏むとさらに加速。通常攻撃は0.5秒溜めての組み付き突進(7m、板も破壊できるが失敗するとスタン)、外すと1秒以内にもう一度、連続で外すとスタン／コウモリ形態｜三人称・速度3倍で浮遊し椅子や窓へ好きな場所へワープできる偵察専用形態。攻撃はできない代わりに、先生側からは生徒が直接見えず生徒の足跡だけが緑色に見える（生徒側からはコウモリの姿は普通に見える）'},
+ {key:'photo',desc:'暗室モード｜気配が0になる代わりやや遅い。能力1を押しっぱなしで望遠観察（さらに減速し、2.5〜32mの生徒が光って見える。最も近い1人からゲージが貯まり、5貯まると「決定的瞬間」に入れる）／現像モード｜通常速度・気配16m・攻撃/破壊/スタン回復/間合いが強化。能力2でモード切替（3秒CD）／決定的瞬間｜60秒だけ気配32m・現像モードの強化を維持したまま、攻撃ボタン長押しの「焼き付け」（離すと突進、命中で一撃行動不能・板も破壊できる）が使える。拘束2回の生徒に近づいて行動キーで「記念撮影」＝即脱落'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -3797,7 +3870,7 @@ function spawnAll(){
       downT:0,seatT:0,stam:1,path:[],pathT:0,rescueT:0,hide:null,vault:0,
       vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0,toppleFxT:0,
       item:'',itemAmmo:0,itemAddons:[],itemHoldInput:false,flCharge:0,syT:0,
-      traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0};
+      traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0,pdDownCount:0};
   });
   const far=spots.filter(function(w){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
@@ -3810,7 +3883,7 @@ function spawnAll(){
              clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
              dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
              fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
-             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0};
+             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0};
   teacher={kind:'teacher',name:K.name,
     mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
     x:gp.x,z:gp.z,yaw:0,speed:DIFF.tSpeed*(SPD[teacherKind]||1),
@@ -3827,7 +3900,15 @@ function spawnAll(){
     invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
     dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
     dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0,
-    dnBreak:0,dnBreakTarget:null,traits:[],comboStacks:0,lastHitTarget:null,whisperNear:false};
+    dnBreak:0,dnBreakTarget:null,traits:[],comboStacks:0,lastHitTarget:null,whisperNear:false,
+    /* 写真部顧問(photo)専用フィールド。pdMode:0=暗室/1=現像、
+       pdGauge:0〜5の観察(シャッターチャンス)ゲージ、pdAwakeT>0で
+       「決定的瞬間」中、charge/pdFinisherTは焼き付け(必殺技)の溜め・
+       持続に既存のteacher.chargeを流用 */
+    pdMode:0,pdGauge:0,pdSwitchCd:0,pdObsHold:false,pdObsIdleT:0,pdSoundFired:false,
+    pdAwakeCastT:0,pdAwakeT:0,pdFinisherT:0,pdFinisherHit:[],pdChargeYaw0:0,
+    pdBreakSlowT:0,pdExtendUsed:false,pdMuseIdx:-1,
+    pdTokensA:0,pdTokensB:0,pdTokensC:0,pdMuseNearT:0,pdMuseFarT:0,pdRushB:0};
   if(teacherKind==='darknode'){
     /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
        teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
@@ -4035,7 +4116,13 @@ addEventListener('pointerdown',function(e){
   if(e.pointerType==='mouse'){
     input.tap=true; input.mash=true; mouseHeld=(e.button===0);
     mouseX=e.clientX; mouseY=e.clientY;
-    if(e.button===2){ input.fireEdge=true; input.aimHold=true; }
+    if(e.button===2){
+      input.fireEdge=true; input.aimHold=true;
+      /* 生徒の持参アイテム(懐中電灯/注射器)使用は右クリック長押し
+         (2026-09-06追加。先生のハンティン先生の照準にしか使われて
+         いなかったaimHoldとは別に、生徒専用でitemHoldも一緒に立てる) */
+      if(role==='student') input.itemHold=true;
+    }
     if(e.button===0) input.actEdge=true;   /* 実際の行動はループ側で処理する */
     if(renderer.domElement.requestPointerLock&&document.pointerLockElement!==renderer.domElement){
       try{ renderer.domElement.requestPointerLock(); }catch(err){}
@@ -4089,7 +4176,7 @@ addEventListener('pointermove',function(e){
   }
 });
 function endPtr(e){
-  if(e.pointerType==='mouse'){ mouseHeld=false; input.aimHold=false; }
+  if(e.pointerType==='mouse'){ mouseHeld=false; input.aimHold=false; if(role==='student') input.itemHold=false; }
   if(e.pointerId===stickPid){
     stickPid=null; input.mx=0; input.mz=0;
     elStick.classList.remove('on');
@@ -4417,6 +4504,12 @@ function tryVault(e){
   if(e.perk==='foot') dur*=0.7;
   if(e.perk==='slug') dur*=0.7;
   if(e.perk==='dash2') dur*=0.85;
+  /* 写真部顧問：暗室モードは乗り越えがやや遅い(元ネタ比1.7/1.42)、
+     現像モード/決定的瞬間は逆に速い(-20%程度) */
+  if(isT&&e.kindKey==='photo'){
+    if(e.pdMode===0&&e.pdAwakeT<=0) dur*=1.21;
+    else if(pdActiveBoost()) dur*=0.83;
+  }
   dur*=traitVaultMul(e);
   e.vault=dur; e.vaultMax=dur; e.vaultK=0;
   e.vFrom={x:e.x,z:e.z}; e.vTo={x:p.x,z:p.z};
@@ -4527,27 +4620,49 @@ function updPallets(dt){
     }
   }
 }
+/* 写真部顧問(photo)専用ヘルパー群。現像モード／決定的瞬間の間は攻撃・破壊・
+   スタン回復・間合いが強化される、という共通の判定をpdActiveBoost()に集約 */
+function pdActiveBoost(){
+  return !!(teacher&&teacher.kindKey==='photo'&&(teacher.pdMode===1||teacher.pdAwakeT>0));
+}
+function pdMuse(){
+  if(!teacher||teacher.pdMuseIdx===undefined||teacher.pdMuseIdx<0) return null;
+  return students[teacher.pdMuseIdx]||null;
+}
+/* 見せしめ(misesime)：本命の被写体以外をダウンさせるたびに溜まるトークン分、
+   本命以外の生徒全員の各種アクション速度が落ちる(本命が脱出済みなら解除) */
+function pdMisesimePenalty(s){
+  if(!teacher||!hasTrait(teacher,'misesime')) return 1;
+  const muse=pdMuse();
+  if(muse&&muse.state==='escaped') return 1;
+  if(muse&&s===muse) return 1;
+  return Math.max(0.7,1-(teacher.pdTokensC||0)*0.1);
+}
 function stunMul(){
-  return ((teacher&&teacher.kindKey==='teke')?3.0:1)*(hasTrait(teacher,'enduring')?0.65:1);
+  return ((teacher&&teacher.kindKey==='teke')?3.0:1)*(hasTrait(teacher,'enduring')?0.65:1)*
+    (pdActiveBoost()?0.8:1)*((teacher&&teacher.kindKey==='photo')?pdAddonVal('stunMulVal'):1);
 }
 /* ===== 特性(パーク)の汎用倍率ヘルパー ===== 既存の各種計算式に薄く1項掛けるだけの
    ものはここにまとめる。専用ロジックが要るもの(不屈・自己治療・アイテムボックスなど)は
    それぞれの関数の近くに直接書いている */
-function traitTaskMul(s){ return hasTrait(s,'stakeout')?1.08:1; }
+function traitTaskMul(s){ return (hasTrait(s,'stakeout')?1.08:1)*pdMisesimePenalty(s); }
 function traitHealMul(s){
   let m=hasTrait(s,'botany')?1.35:1;
   if(hasTrait(s,'wemakeit')&&(s.healBoostT||0)>0) m*=2.0;
+  m*=pdMisesimePenalty(s);
   return m;
 }
 function traitVaultMul(e){
   let m=hasTrait(e,'fixated')?0.85:1;
   if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?0.8:1;
+  if(e.kind==='student') m*=pdMisesimePenalty(e);
   return m;
 }
 function traitCdMul(t){
   let m=1;
   if(hasTrait(t,'fireup')) m*=Math.max(0.85,1-elapsed*0.00125);
   if(hasTrait(t,'save_best')) m*=Math.max(0.75,1-(t.comboStacks||0)*0.05);
+  if(hasTrait(t,'yakuyakugari')) m*=Math.max(0.75,1-(t.pdTokensA||0)*0.05);
   return m;
 }
 /* 教師トレイトによる「生徒の位置を見せる」系のmark()呼び出しをまとめたもの。
@@ -4705,15 +4820,55 @@ function wakeUp(o){ o.sleep=0; o.awakeT=0; }
    狙い判定は既存の「牽制の一矢」「フラッシュ」スキルと同じ
    s.yaw(体の向き)基準の円錐判定を流用している(このゲームは三人称の
    キャラ向き＝移動方向で、狙う時はその方向を向く操作感が既に定着している) */
+/* 持参アイテムを片手(右腕)に持たせる見た目。s.itemが変わった時だけ
+   作り直す軽い処理なので、host/シングルプレイのタイマーループと
+   参加者側netInterpolate()の両方から毎フレーム呼んでも重くならない。
+   参考にした実物写真はテクスチャとしては使わず、見た目だけ翻訳した
+   自作のローポリ形状にしている(2026-09-06追加) */
+/* 懐中電灯を狙っている間だけ見える光の筋(ビーム)。円錐状に先端(手元)は
+   細く、先端(遠く)は太くなるようジオメトリの回転をベイクしてから
+   rotation.yだけで向きを制御できるようにしている。試合終了時は
+   flBeamsをまとめてscene.removeして片付ける(2026-09-06追加) */
+const flBeams=[];
+function makeFlBeam(){
+  const geo=new THREE.CylinderGeometry(0.7,0.06,1,12,1,true);
+  geo.translate(0,0.5,0); geo.rotateX(Math.PI/2);
+  const mat=new THREE.MeshBasicMaterial({color:0xfff2c0,transparent:true,opacity:0.26,
+    depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
+  const m=new THREE.Mesh(geo,mat); m.visible=false; m.renderOrder=980; scene.add(m);
+  flBeams.push(m);
+  return m;
+}
+function updFlBeam(s,visible,range){
+  if(!visible){ if(s.flBeam) s.flBeam.visible=false; return; }
+  if(!s.flBeam) s.flBeam=makeFlBeam();
+  const m=s.flBeam;
+  m.position.set(s.x+Math.sin(s.yaw)*0.35,1.35,s.z+Math.cos(s.yaw)*0.35);
+  m.rotation.y=s.yaw; m.scale.set(1,1,range);
+  m.visible=true;
+}
+function updItemMesh(s){
+  const want=s.item||'';
+  if(s.itemMeshKind===want) return;
+  const armR=s.mesh&&s.mesh.userData&&s.mesh.userData.armR;
+  if(s.itemMesh&&armR){ armR.remove(s.itemMesh); }
+  s.itemMesh=null; s.itemMeshKind=want;
+  if(!want||!armR) return;
+  const w=makeWeapon(want==='flashlight'?'flashlight':'syringe',0.62);
+  w.position.set(0,-0.68,0.22);
+  armR.add(w); s.itemMesh=w;
+}
 function updItemUse(s,dt){
-  if(!s.item||s.state!=='free'||s.hide){ s.flCharge=0; return; }
+  if(!s.item||s.state!=='free'||s.hide){ s.flCharge=0; updFlBeam(s,false); return; }
   const holding=!!s.itemHoldInput;
+  if(s.item!=='flashlight') updFlBeam(s,false);
   if(s.item==='flashlight'){
-    if(!holding||s.itemAmmo<=0){ s.flCharge=Math.max(0,(s.flCharge||0)-dt*2); return; }
+    if(!holding||s.itemAmmo<=0){ s.flCharge=Math.max(0,(s.flCharge||0)-dt*2); updFlBeam(s,false); return; }
     const drain=9*itemAddonVal(s,'drainMul');
     s.itemAmmo=Math.max(0,s.itemAmmo-drain*dt);
     const range=13*itemAddonVal(s,'rangeMul');
     const halfCone=0.34*itemAddonVal(s,'coneMul');
+    updFlBeam(s,true,range);
     const dx=teacher.x-s.x,dz=teacher.z-s.z,d=Math.hypot(dx,dz);
     let aimed=false;
     if(d<range&&los(s.x,s.z,teacher.x,teacher.z)){
@@ -5272,6 +5427,14 @@ function damage(s,amt,heavy){
   if(heavy) s.dmg=dmgCap;
   if(s.dmg>=dmgCap){
     s.dmg=dmgCap; s.hurt=true; s.state='downed'; s.path=[]; stats.downs++;
+    /* 写真部顧問の「記念撮影」判定用。誰がダウンさせたかは問わず、単純に
+       この生徒が何回ダウンしたかを数えるだけの軽いカウンタ(他の先生には無関係) */
+    s.pdDownCount=(s.pdDownCount||0)+1;
+    /* 見せしめ(misesime)：本命以外がダウンするたびトークンが貯まる */
+    if(hasTrait(teacher,'misesime')){
+      const muse=pdMuse();
+      if(!muse||s!==muse) teacher.pdTokensC=Math.min(3,(teacher.pdTokensC||0)+1);
+    }
     paperLook(s); toast(s.name+'がダウン');
   } else {
     s.hurt=(s.dmg>=1);
@@ -5287,6 +5450,13 @@ function damage(s,amt,heavy){
   if(hasTrait(teacher,'save_best')){
     teacher.comboStacks=(teacher.lastHitTarget===s)?Math.min(5,(teacher.comboStacks||0)+1):1;
     teacher.lastHitTarget=s;
+  }
+  /* 脇役狩り(yakuyakugari)：本命の被写体以外を攻撃するとトークンが貯まり、
+     本命を攻撃すると失う */
+  if(hasTrait(teacher,'yakuyakugari')){
+    const muse=pdMuse();
+    if(muse&&s===muse) teacher.pdTokensA=0;
+    else teacher.pdTokensA=Math.min(5,(teacher.pdTokensA||0)+1);
   }
   if(s===me){ flash(); vib([50,50,80]); }
   return true;
@@ -5751,6 +5921,141 @@ function updDarkNode(dt){
     dnFootprints.forEach(function(f){ scene.remove(f.m); }); dnFootprints.length=0;
   }
 }
+/* ===== 写真部顧問(photo) =====
+   潜伏(暗室)⇔追跡(現像)の2モード切替＋上位モード「決定的瞬間」を持つ先生。
+   Dead by Daylightのマイケル・マイヤーズの仕組み(2モード切替・観察して
+   溜めるゲージ・上位モードでの必殺技・処刑)を参考にしたが、名称・世界観は
+   完全に独自(ハロウィン映画に関する設定は一切引き継いでいない。詳細は
+   ナレッジ参照)。ホスト専用(先生役は常にホストのみ)なので、ダークノードと
+   同じくこの1関数に全ロジックを集約できる */
+function pdSpeedMul(t){
+  if(t.kindKey!=='photo') return 1;
+  if(t.pdAwakeCastT>0) return 0.15;          /* 発動モーション中はほぼ動けない */
+  let m=1;
+  if(t.pdFinisherT>0) return 7.5/4.6;  /* 焼き付け中は基準速度比+63%(元ネタ4.6→7.5の比率) */
+  if(t.pdMode===0) m=0.913+pdAddonAdd('stealthSpeedAdd');    /* 暗室：4.2/4.6相当 */
+  if(t.pdMode===0&&t.pdObsHold) m*=0.6;      /* 観察中はさらに60%に低下 */
+  if(t.charge>0&&t.pdAwakeT>0) m*=0.55;      /* 焼き付けの溜め中は動きが重くなる */
+  if(t.pdBreakSlowT>0) m*=0.6;               /* 障害物を壊した直後の一時減速 */
+  if(t.pdRushB>0) m*=1.15+Math.min(0.15,(t.pdTokensB||0)*0.05);  /* じらし遊び */
+  return m;
+}
+function terrorRadius(s){
+  if(teacher&&teacher.kindKey==='photo'){
+    if(teacher.pdAwakeT>0) return 32+pdAddonAdd('awakenRangeAdd');
+    return teacher.pdMode===1?16:0;
+  }
+  return (s&&s.perk==='star')?32:((s&&s.perk==='bug')?40:24);
+}
+function netEmitObserved(s){
+  if(netMode==='host'&&s.netSlot!==undefined) netEvents.push({k:'obs',i:netStuIdx(s)});
+}
+function pdStartFinisher(charge){
+  const t=teacher;
+  const dur=(0.5+charge*1.0)*pdAddonVal('finisherDurMul');
+  t.pdFinisherT=dur; t.pdFinisherMax=dur; t.pdFinisherHit=[];
+  t.abCd=4;
+  beep(200,0.3,'sawtooth',0.15); beep(600,0.15,'square',0.1); noise(t.x,t.z,14);
+  toast('焼き付け！');
+}
+function pdExecute(s){
+  toast(s.name+'は「記念撮影」で連れ去られた…');
+  beep(200,0.5,'sawtooth',0.14); beep(80,0.7,'sine',0.12); bigNoise(0.3,1.0);
+  out(s,'記念撮影で連れ去られた');
+}
+function updPhoto(dt){
+  const t=teacher;
+  if(t.kindKey!=='photo') return;
+  if(t.pdSwitchCd>0) t.pdSwitchCd=Math.max(0,t.pdSwitchCd-dt);
+  if(t.pdBreakSlowT>0) t.pdBreakSlowT=Math.max(0,t.pdBreakSlowT-dt);
+  if(t.pdRushB>0) t.pdRushB=Math.max(0,t.pdRushB-dt);
+  /* 発動モーション(2秒)→決定的瞬間(60秒、アドオンで延長可) */
+  if(t.pdAwakeCastT>0){
+    t.pdAwakeCastT-=dt;
+    if(t.pdAwakeCastT<=0){
+      t.pdAwakeCastT=0; t.pdAwakeT=60+pdAddonAdd('awakenDurAdd'); t.pdExtendUsed=false;
+      toast('決定的瞬間、発動！'); beep(140,0.6,'sawtooth',0.18); bigNoise(0.3,1.2);
+    }
+  }
+  if(t.pdAwakeT>0){
+    t.pdAwakeT-=dt;
+    if(t.pdAwakeT<=0){
+      if(t.charge>0&&!t.pdExtendUsed){ t.pdExtendUsed=true; t.pdAwakeT=3; }
+      else {
+        t.pdAwakeT=0; t.pdMode=1; t.charge=0;
+        /* 記念のネガ：時間切れで終わるとゲージの一部が戻る */
+        t.pdGauge=5*pdAddonAdd('awakenGaugeRefund');
+        toast('決定的瞬間が終わった');
+      }
+    }
+  }
+  /* 焼き付け(必殺技)の実行中：直進しながら命中判定・板破壊 */
+  if(t.pdFinisherT>0){
+    t.pdFinisherT-=dt;
+    move(t,Math.sin(t.yaw)*t.speed,Math.cos(t.yaw)*t.speed,dt);
+    for(const s2 of students){
+      if(s2.state!=='free'||s2.hide) continue;
+      if(t.pdFinisherHit.indexOf(s2)>=0) continue;
+      if(Math.hypot(s2.x-t.x,s2.z-t.z)<2.4+pdAddonAdd('finisherRangeAdd')){
+        t.pdFinisherHit.push(s2); damage(s2,1,true);
+        toast(s2.name+'が焼き付けで行動不能に！');
+      }
+    }
+    for(const pl of pallets){
+      if(pl.state!=='down') continue;
+      if(Math.hypot(pl.x-t.x,pl.z-t.z)<3.2+pdAddonAdd('finisherRangeAdd')){
+        pl.breakT=3; breakPallet(pl,0); t.pdBreakSlowT=1.2;
+      }
+    }
+    if(t.pdFinisherT<=0){ t.pdFinisherT=0; t.pdFinisherHit=[]; }
+  }
+  /* 観察(暗室モード限定、能力1ホールド)：最も近い1人だけからゲージが貯まる。
+     静止中1/秒・移動中0.75/秒。20秒対象なしでゲージが1/秒で減るが、
+     51%(2.55)より下には下げ止まる。51%到達の瞬間、観察されている本人にも
+     聞こえる専用サウンドを鳴らす(元ネタの良い配慮点をそのまま踏襲) */
+  t.pdObsHold=(t.pdMode===0&&t.pdSwitchCd<=0&&t.pdAwakeT<=0&&t.pdAwakeCastT<=0&&!!input.abHold);
+  let near=null;
+  if(t.pdObsHold){
+    const range=32*pdAddonVal('obsRangeMul');
+    const cands=students.filter(function(s){
+      const d=Math.hypot(s.x-t.x,s.z-t.z);
+      return s.state==='free'&&!s.hide&&d>=2.5&&d<=range&&los(t.x,t.z,s.x,s.z);
+    }).sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); });
+    cands.forEach(function(s){ setAura(s,'reveal',0.3); });
+    near=cands[0]||null;
+    if(near){
+      const moved=Math.hypot(t.x-(t.px||t.x),t.z-(t.pz||t.z))>0.02;
+      const rate=(moved?0.75:1.0)*pdAddonVal('obsGaugeRateMul');
+      t.pdGauge=Math.min(5,(t.pdGauge||0)+rate*dt);
+      t.pdObsIdleT=0;
+    } else t.pdObsIdleT=(t.pdObsIdleT||0)+dt;
+  } else t.pdObsIdleT=(t.pdObsIdleT||0)+dt;
+  const floor=2.55+pdAddonAdd('gaugeFloorAdd');
+  if(t.pdObsIdleT>20&&t.pdGauge>floor) t.pdGauge=Math.max(floor,t.pdGauge-dt);
+  if(t.pdGauge>=2.55&&!t.pdSoundFired){
+    t.pdSoundFired=true;
+    beep(300,0.4,'sine',0.12);
+    if(near){
+      if(near===me){ toast('見られている気配がする…'); beep(300,0.4,'sine',0.12); }
+      netEmitObserved(near);
+    }
+  } else if(t.pdGauge<2.55){ t.pdSoundFired=false; }
+  /* じらし遊び(jirashiasobi)：本命を追い詰めていながら自分から見送ると加速 */
+  if(hasTrait(t,'jirashiasobi')){
+    const ms=pdMuse();
+    const nearMuse=!!(ms&&ms.state==='free'&&!ms.hide&&
+      Math.hypot(ms.x-t.x,ms.z-t.z)<14&&los(t.x,t.z,ms.x,ms.z));
+    if(nearMuse){ t.pdMuseNearT=(t.pdMuseNearT||0)+dt; t.pdMuseFarT=0; }
+    else if((t.pdMuseNearT||0)>1.0){
+      t.pdMuseFarT=(t.pdMuseFarT||0)+dt;
+      if(t.pdMuseFarT>1.5){
+        t.pdMuseNearT=0; t.pdMuseFarT=0;
+        t.pdTokensB=Math.min(3,(t.pdTokensB||0)+1); t.pdRushB=4.0;
+        toast('じらし遊び：追跡を切り上げて加速！'); beep(500,0.2,'triangle',0.1);
+      }
+    } else { t.pdMuseNearT=0; t.pdMuseFarT=0; }
+  }
+}
 function updRipper(dt){
   const t=teacher;
   if(t.kindKey!=='ripper'){ t.cloak=0; return; }
@@ -5853,7 +6158,9 @@ function swing(force){
 /* 定規の当たり判定。当たったら true */
 function swingHits(force){
   let landed=false;
-  const R=force?5.4:5.0;               /* 届く距離（1マス=4） */
+  /* 写真部顧問：現像モード／決定的瞬間中は間合いが+20%（元ネタの
+     「突進攻撃の最大リーチ+20%」を、このゲームの通常攻撃の間合いに翻訳） */
+  const R=(force?5.4:5.0)*(pdActiveBoost()?1.2:1);   /* 届く距離（1マス=4） */
   const A=force?1.45:1.30;             /* 振り幅（左右それぞれ約75度） */
   for(const s of students){
     if(s.state!=='free'||s.hide) continue;
@@ -5912,13 +6219,22 @@ function doAction(){
   if(teacher.kindKey==='darknode'&&teacher.dnForm===1&&!teacher.carrying&&
      !students.filter(function(s){ return s.state==='downed'&&
        Math.hypot(s.x-teacher.x,s.z-teacher.z)<3.2; }).length) return;
+  if(teacher.kindKey==='photo'&&teacher.pdAwakeT>0&&!teacher.carrying&&
+     !students.filter(function(s){ return s.state==='downed'&&
+       Math.hypot(s.x-teacher.x,s.z-teacher.z)<3.2; }).length) return;
   if(teacher.carrying){
     const ch=chairs.filter(function(c){ return !c.taken&&Math.hypot(c.x-teacher.x,c.z-teacher.z)<3.6; })[0];
     if(ch){ const s=teacher.carrying; teacher.carrying=null; seat(s,ch); }
     return;
   }
   const d=students.filter(function(s){ return s.state==='downed'&&Math.hypot(s.x-teacher.x,s.z-teacher.z)<3.2; })[0];
-  if(d){ teacher.carrying=d; d.state='carried'; d.wig=0; beep(240,0.2,'sine',0.08); return; }
+  if(d){
+    /* 記念撮影(処刑)：決定的瞬間中、拘束(ダウン)を2回以上経験した生徒に
+       近づいて行動キーを押すと、担がずに即座に脱落させる */
+    if(teacher.kindKey==='photo'&&teacher.pdAwakeT>0&&(d.pdDownCount||0)>=2&&
+       los(teacher.x,teacher.z,d.x,d.z)){ pdExecute(d); return; }
+    teacher.carrying=d; d.state='carried'; d.wig=0; beep(240,0.2,'sine',0.08); return;
+  }
   /* コウモリ形態は偵察専用で、生徒にダメージを与える手段を持たない */
   if(teacher.kindKey==='darknode'&&teacher.dnForm===2) return;
   swing(false);
@@ -5935,7 +6251,7 @@ const AB2={
   cat:'鳴き真似', monk:'投石', wheel:'戯言（刺を飛ばす）', clown:'色替え／分身',
   mask:'やり投げ', dream:'夢渡り', anima:'警備室ワープ', fallen:'無念の一閃',
   beet:'運命の旋律', chalk:'チョーク粉塵', kok:'狐憑き', vice:'監視の目',
-  seitokai:'取り憑き突進', darknode:'形態変化',
+  seitokai:'取り憑き突進', darknode:'形態変化', photo:'暗室⇔現像',
   model:'', pe:'', math:'', jan:'', teke:'', garden:'', magnet:'', band:'',
   oni:'', ripper:'', dogman:'', nurse:'', wolf:''
 };
@@ -6094,6 +6410,21 @@ function useAbility2(){
     }
     toast(DN_FORM_NAMES[t.dnForm]+'に変身した');
     beep(t.dnForm===1?260:(t.dnForm===2?760:420),0.3,'sawtooth',0.12);
+  } else if(k==='photo'){
+    /* ゲージが満タン(5)なら「決定的瞬間」の発動モーションへ、そうでなければ
+       暗室⇔現像モードの通常切り替え(3秒CD、アドオンで短縮可) */
+    if(t.pdAwakeT>0||t.pdAwakeCastT>0) return;
+    if(t.pdGauge>=5){
+      t.pdAwakeCastT=2.0; t.pdGauge=0; t.pdObsHold=false;
+      beep(220,0.5,'sine',0.12); toast('決定的瞬間……！');
+    } else {
+      if(t.pdSwitchCd>0) return;
+      t.pdMode=t.pdMode===0?1:0;
+      t.pdSwitchCd=Math.max(1,3.0+pdAddonAdd('switchCdAdd'));
+      t.pdObsHold=false;
+      toast(t.pdMode===1?'現像モードに切り替えた':'暗室モードに切り替えた');
+      beep(t.pdMode===1?520:260,0.25,'triangle',0.1);
+    }
   }
 }
 function useAbility(){
@@ -6667,6 +6998,12 @@ function aiTeacher(dt){
           t.yaw=Math.atan2(tgt.x-t.x,tgt.z-t.z); dnWolfPounce();
         }
       }
+      else if(t.kindKey==='photo'&&t.pdMode===0&&t.pdSwitchCd<=0){
+        /* AIは暗室モード(観察・決定的瞬間)を使わず、常に現像モードで戦う
+           （望遠観察・焼き付け・記念撮影はプレイヤー専用、ダークノードのAI
+           制限と同じ考え方） */
+        t.pdMode=1; t.pdSwitchCd=3.0;
+      }
     }
     if(d<3.8) swing(t.dash>0);
     /* 相手の進行方向を読んで先回り */
@@ -6917,22 +7254,27 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
       elStamBox=document.getElementById('stam'),elActLabel=document.getElementById('actlabel'),
       elHold=document.getElementById('hold');
 const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
-      elItemHudBar=document.getElementById('itemhudBar');
-/* 持参アイテムのHUD。ホールド中は懐中電灯の狙い進捗、それ以外はバッテリー/
-   使用回数を表示する。生徒がアイテムを持っている時だけ表示される */
+      elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon');
+/* 持参アイテムのHUD兼「使用ボタン」。ホールド中は懐中電灯の狙い進捗、
+   それ以外はバッテリー/使用回数を表示する。生徒がアイテムを持っている時
+   だけ表示される。PCは右クリック長押し、スマホ/タッチはこのHUD自体を
+   長押しするとアイテムを使う(2026-09-06、押しても何も起きないという
+   報告を受けて見た目をボタンらしく大きく作り直した) */
 function updItemHud(){
   if(role!=='student'||!me||!me.item){ elItemHud.classList.remove('on'); return; }
   elItemHud.classList.add('on');
   const it=itemOf(me.item);
   if(me.item==='flashlight'){
+    elItemHudIcon.textContent='💡';
     const need=1.3*itemAddonVal(me,'chargeMul');
     const aiming=(me.flCharge||0)>0;
-    elItemHudName.textContent=(it?it.name:me.item)+(aiming?'　狙い中…':'')+
+    elItemHudName.textContent=(it?it.name:me.item)+(aiming?'　狙い中…':'　長押しで狙う')+
       '　残り'+Math.round(me.itemAmmo||0)+'%';
     elItemHudBar.style.width=(aiming?Math.min(100,(me.flCharge||0)/need*100):(me.itemAmmo||0))+'%';
     elItemHudBar.style.background=aiming?'#7fd4a2':'var(--yellow)';
   } else if(me.item==='syringe'){
-    elItemHudName.textContent=(it?it.name:me.item)+'　残り'+Math.round(me.itemAmmo||0)+'回';
+    elItemHudIcon.textContent='💉';
+    elItemHudName.textContent=(it?it.name:me.item)+'　長押しで使用　残り'+Math.round(me.itemAmmo||0)+'回';
     const need=3.6*itemAddonVal(me,'timeMul');
     elItemHudBar.style.width=Math.min(100,(me.syT||0)/need*100)+'%';
     elItemHudBar.style.background='#7fd4a2';
@@ -7065,7 +7407,7 @@ function updHearts(dt){
        s.forget>0||teacher.shadow>0||teacher.invis>0||teacher.cloak>0){
       u.heart.visible=false; u.hglow.visible=false; continue;
     }
-    const RNG=(s.perk==='star')?32:((s.perk==='bug')?40:24);
+    const RNG=terrorRadius(s);
     const d=Math.hypot(teacher.x-s.x,teacher.z-s.z);
     if(d>RNG){ u.heart.visible=false; u.hglow.visible=false; continue; }
     const t=1-Math.min(1,d/RNG);
@@ -7177,7 +7519,7 @@ function hud(dt){
   updRoster();
   const d=(role==='teacher')?99:Math.hypot(teacher.x-me.x,teacher.z-me.z);
   elHeart.style.display='none';
-  if(role!=='teacher'&&d<24&&teacher.stealth<=0) heartbeat(d,dt);
+  if(role!=='teacher'&&d<terrorRadius(me)&&teacher.stealth<=0) heartbeat(d,dt);
   elHeart.classList.remove('on');
   elVig.style.opacity=(role!=='teacher'&&me.hurt&&me.state==='free')?'1':'0';
   const st=(me.stam===undefined)?1:me.stam;
@@ -7245,7 +7587,7 @@ function tick(now){
   const mover=puppet||me;
   const canMove=(role==='teacher')?(teacher.stun<=0&&teacher.wipe<=0&&teacher.dive<=0&&
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0&&
-                teacher.dnLeap<=0&&teacher.dnBreak<=0)
+                teacher.dnLeap<=0&&teacher.dnBreak<=0&&(teacher.pdFinisherT||0)<=0)
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
                   !(me.drone>0)&&!(me.tackle>0));
 
@@ -7387,6 +7729,29 @@ function tick(now){
         abLabel=(t.charge>=1)?'組み付き（離して発動）':'溜め中 '+Math.round(t.charge*100)+'%';
       } else if(t.charge>=1&&t.dnLeap<=0){ dnWolfPounce(); t.charge=0; }
       else t.charge=0;
+    } else if(t.kindKey==='photo'){
+      if(t.pdAwakeCastT>0){
+        abLabel='決定的瞬間、発動準備中…'; abDim=true;
+      } else if(t.pdAwakeT>0){
+        /* 決定的瞬間：攻撃ボタン長押しで「焼き付け」を溜め、離すと突進。
+           溜め中は旋回角度が左右160°までに制限される（元ネタ通り） */
+        if(t.pdFinisherT>0){ abLabel='焼き付け中！'; }
+        else if((input.act||input.abHold)&&t.abCd<=0&&t.stun<=0&&t.wipe<=0){
+          if(t.charge<=0) t.pdChargeYaw0=t.yaw;
+          t.charge=Math.min(1,t.charge+dt*1.3*pdAddonVal('finisherChargeRateMul'));
+          hp=t.charge; abLabel='焼き付け '+Math.round(t.charge*100)+'%（離して発動）';
+          const maxRel=160*Math.PI/180;
+          const rel=((t.yaw-t.pdChargeYaw0+Math.PI*3)%(Math.PI*2))-Math.PI;
+          if(rel>maxRel) t.yaw=t.pdChargeYaw0+maxRel;
+          else if(rel<-maxRel) t.yaw=t.pdChargeYaw0-maxRel;
+        } else if(t.charge>0.08){ pdStartFinisher(t.charge); t.charge=0; }
+        else t.charge=0;
+      } else {
+        abLabel=(t.pdMode===1)?'観察は暗室モードのみ':
+          (t.pdObsHold?'観察中…（ホールド）':'望遠観察（ホールド）');
+        abDim=(t.pdMode===1); abHot=(t.pdMode===0);
+        hp=(t.pdMode===0)?(t.pdGauge||0)/5:0;
+      }
     } else if(input.abEdge) useAbility();
     if(input.ab2Edge&&AB2[t.kindKey]) useAbility2();
 
@@ -7406,7 +7771,9 @@ function tick(now){
       label=t.dnBreak>0?'噛み砕いている…':'噛み砕く（スタンの代償）'; hot=t.dnBreak<=0;
     } else if(dp&&!foe){
       label='蹴破る'; hot=true;
-      if(input.act){ hp=dp.breakT/2.2; if(breakPallet(dp,dt)) hp=0; }
+      /* 写真部顧問：現像モード/決定的瞬間+20%、アドオンでさらに調整可 */
+      const bdt=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1);
+      if(input.act){ hp=dp.breakT/2.2; if(breakPallet(dp,bdt)) hp=0; }
       else if(!input.altHold) dp.breakT=Math.max(0,dp.breakT-dt*0.8);
     } else { label='定規を振る'; hot=t.cool<=0; }
     if(dp){ altLabel='蹴破る'; altHot=true; } else { altLabel='乗り越え'; altHot=true; }
@@ -7423,7 +7790,8 @@ function tick(now){
     }
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
       hp=Math.max(hp,dp.breakT/2.2);
-      if(breakPallet(dp,dt)) hp=0;
+      const bdt2=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1);
+      if(breakPallet(dp,bdt2)) hp=0;
     } else if(input.altEdge) tryVault(teacher);
     if(!dp&&!input.act) { pallets.forEach(function(p){ if(p.state==='down') p.breakT=Math.max(0,p.breakT-dt*0.8); }); }
   } else {
@@ -7520,12 +7888,19 @@ function tick(now){
   const ab2name=(role==='teacher')?
     (teacher.kindKey==='darknode'?
       ('今:'+DN_FORM_NAMES[teacher.dnForm]+' →'+DN_FORM_NAMES[(teacher.dnForm+1)%3]):
+     teacher.kindKey==='photo'?
+      ((teacher.pdAwakeT>0||teacher.pdAwakeCastT>0)?'決定的瞬間 発動中':
+       (teacher.pdGauge>=5?'決定的瞬間、発動！':(teacher.pdMode===1?'暗室モードに戻す':'現像モードに切替'))):
       AB2[teacher.kindKey])
     :SAB2[me.perk];
   elAb2.style.display=ab2name?'flex':'none';
   if(ab2name){
-    const cd2=(role==='teacher')?teacher.ab2Cd:(me.ab2Cd||0);
-    elAb2Label.textContent=cd2>0?Math.ceil(cd2)+'秒':ab2name;
+    const cd2=(role==='teacher')?
+      (teacher.kindKey==='photo'?
+        ((teacher.pdAwakeT>0||teacher.pdAwakeCastT>0)?999:(teacher.pdGauge>=5?0:teacher.pdSwitchCd)):
+        teacher.ab2Cd)
+      :(me.ab2Cd||0);
+    elAb2Label.textContent=cd2>0?(cd2>900?'—':Math.ceil(cd2)+'秒'):ab2name;
     elAb2.classList.toggle('hot',cd2<=0);
     elAb2.classList.toggle('dim',cd2>0);
   }
@@ -7694,6 +8069,7 @@ function tick(now){
         if(s.perk!=='sound') noise(s.x,s.z,4); }
     }
     updItemUse(s,dt);
+    updItemMesh(s);
     /* 授業態度の悪化(sloppy)で治療速度を落とすデバフの持続時間だけ減っていく */
     if(s.healBoostT>0) s.healBoostT-=dt;
     /* 気配鋭敏(stridor)：負傷している生徒の位置が距離に関わらず常にわかる */
@@ -7812,6 +8188,7 @@ function tick(now){
   updWheel(dt);
   updInk(dt);
   updDarkNode(dt);
+  updPhoto(dt);
   /* 巻き戻し用の位置履歴 */
   teacher.histT=(teacher.histT||0)+dt;
   if(teacher.histT>0.25){
@@ -7855,6 +8232,7 @@ function tick(now){
     (teacher.crawl>0?1.6:1)*(teacher.phase>0?1.5:1)*
     dnSpeedMul(teacher)*
     ((teacher.kindKey==='darknode'&&teacher.dnForm!==2&&teacher.charge>0)?0.3:1)*
+    pdSpeedMul(teacher)*
     (role==='teacher'?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
   updWarp(dt);
   updShots(dt);
@@ -9058,6 +9436,7 @@ function netHostBroadcastSnapshot(dt){
       blind:teacher.blind, kindKey:teacher.kindKey, dnForm:teacher.dnForm||0,
       dnLeap:teacher.dnLeap||0, dnLeapMax:teacher.dnLeapMax||0.35, dnBreak:teacher.dnBreak||0,
       carrying: teacher.carrying?netStuIdx(teacher.carrying):-1,
+      pdMode:teacher.pdMode||0, pdAwakeT:teacher.pdAwakeT||0, pdAwakeCastT:teacher.pdAwakeCastT||0,
       vault:teacher.vault||0, vaultMax:teacher.vaultMax||1, vaultK:teacher.vaultK||0 } },
     stu: students.map(function(s){
       return { x:s.x, z:s.z, yaw:s.yaw, f:{
@@ -9069,7 +9448,8 @@ function netHostBroadcastSnapshot(dt){
         vault:s.vault||0, vaultMax:s.vaultMax||1, vaultK:s.vaultK||0, seatCount:s.seatCount,
         knockT:s.knockT||0, knockDX:s.knockDX||0, knockDZ:s.knockDZ||0,
         qte: s.qte?{t:s.qte.t,n:s.qte.n}:null, abCd:s.abCd, abUses:s.abUses, lock:s.lock,
-        painFree:s.painFree, item:s.item||'', itemAmmo:Math.round(s.itemAmmo||0) } };
+        painFree:s.painFree, item:s.item||'', itemAmmo:Math.round(s.itemAmmo||0),
+        fl:(s.item==='flashlight'&&!!s.itemHoldInput&&s.itemAmmo>0) } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -9107,6 +9487,11 @@ function netInterpolate(dt){
     const s=students[i], tgt=snap.stu&&snap.stu[i]; if(!tgt) continue;
     Object.assign(s,tgt.f);
     s.mesh.visible=!tgt.f.hide;
+    updItemMesh(s);
+    /* 参加者(クライアント)側は自分でupdItemUse()を回さないため、
+       懐中電灯ビームの見た目はホストのスナップショット(f.fl)に
+       乗せてもらう簡易版(アドオン無しの基本射程13mで固定表示) */
+    updFlBeam(s,!!tgt.f.fl,13);
     if(i===netClientSlot){
       const err=Math.hypot(s.x-tgt.x,s.z-tgt.z);
       if(err>1.6){ s.x=tgt.x; s.z=tgt.z; }
@@ -9155,6 +9540,9 @@ function netInterpolate(dt){
     if(ev.k==='hit'){
       beep(190,0.09,'square',0.16); setTimeout(function(){ beep(85,0.22,'sawtooth',0.13); },70);
       if(ev.i===netClientSlot){ flash(); vib([50,50,80]); }
+    }
+    if(ev.k==='obs'&&ev.i===netClientSlot){
+      beep(300,0.4,'sine',0.12); toast('見られている気配がする…');
     }
   });
 }
@@ -9739,6 +10127,39 @@ try{
 }catch(e){}
 function saveWallet(){ try{ localStorage.setItem('hi_wallet_v1',JSON.stringify({sc:SCORE,co:COINS})); }catch(e){} }
 
+/* 持ち物(アイテム/アドオン)の購入は「毎試合消費」ではなく「一度買ったら
+   永久にアンロック」方式(2026-09-06変更)。unlockedItems=キー配列、
+   unlockedAddons={itemKey:[key,...]}をhi_unlocks_v1にJSON保存する */
+let unlockedItems=[], unlockedAddons={};
+try{
+  const savedU=JSON.parse(localStorage.getItem('hi_unlocks_v1')||'null');
+  if(savedU){ unlockedItems=savedU.items||[]; unlockedAddons=savedU.addons||{}; }
+}catch(e){}
+function saveUnlocks(){
+  try{ localStorage.setItem('hi_unlocks_v1',JSON.stringify({items:unlockedItems,addons:unlockedAddons})); }catch(e){}
+}
+function isItemUnlocked(key){ return unlockedItems.indexOf(key)>=0; }
+function isAddonUnlocked(itemKey,key){ return (unlockedAddons[itemKey]||[]).indexOf(key)>=0; }
+/* 購入(=アンロック)。成功したらtrueを返す。既に持っていれば即true(無料) */
+function unlockItem(key){
+  if(isItemUnlocked(key)) return true;
+  const it=itemOf(key); if(!it) return false;
+  if(COINS<it.cost){ toast('コインが足りない（あと'+(it.cost-COINS)+'）'); return false; }
+  COINS-=it.cost; unlockedItems.push(key); saveWallet(); saveUnlocks(); refreshStats();
+  toast(it.name+'を購入した（以後の試合は無料で持参できる）'); beep(700,0.18,'square',0.09);
+  return true;
+}
+function unlockAddon(itemKey,key){
+  if(isAddonUnlocked(itemKey,key)) return true;
+  const a=addonOf(itemKey,key); if(!a) return false;
+  if(COINS<a.cost){ toast('コインが足りない（あと'+(a.cost-COINS)+'）'); return false; }
+  COINS-=a.cost;
+  if(!unlockedAddons[itemKey]) unlockedAddons[itemKey]=[];
+  unlockedAddons[itemKey].push(key); saveWallet(); saveUnlocks(); refreshStats();
+  toast(a.name+'を購入した（以後の試合は無料で装着できる）'); beep(700,0.18,'square',0.09);
+  return true;
+}
+
 function cssHex(c){ let h=c.toString(16); while(h.length<6) h='0'+h; return '#'+h; }
 function drawChar(g,W,H,o){
   g.clearRect(0,0,W,H);
@@ -9837,7 +10258,7 @@ function showStage(){
     elTDesc.innerHTML='【'+KINDS[o.key].ability+'】'+o.desc+
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
-  try{ renderItemPane(); renderPerkPane(); }catch(e){}
+  try{ renderItemPane(); renderPerkPane(); renderPhotoAddonPane(); }catch(e){}
 }
 Array.prototype.forEach.call(document.querySelectorAll('#trole div'),function(d){
   d.addEventListener('click',function(){
@@ -9963,9 +10384,12 @@ function renderItemPane(){
   elItemSel.appendChild(none);
   ITEMS.forEach(function(it){
     const d=document.createElement('div');
-    d.textContent=it.name+'（'+it.cost+'）'; if(it.key===itemPick) d.className='sel';
-    bindTip(d,it.name,it.desc);
+    const owned=isItemUnlocked(it.key);
+    d.textContent=it.name+(owned?'（所持済み）':'（購入 '+it.cost+'）');
+    d.className=(it.key===itemPick?'sel':'')+(owned?'':' locked');
+    bindTip(d,it.name,it.desc+(owned?'':'　※初回のみコインで購入すると以後ずっと無料で持参できる'));
     d.addEventListener('click',function(){
+      if(!owned){ if(!unlockItem(it.key)) return; }
       itemPick=it.key; addon1Pick=''; addon2Pick=''; renderItemPane();
     });
     elItemSel.appendChild(d);
@@ -9976,9 +10400,12 @@ function renderItemPane(){
     (ADDONS[itemPick]||[]).forEach(function(a){
       const d=document.createElement('div');
       const on=(addon1Pick===a.key||addon2Pick===a.key);
-      d.textContent=a.name+'（+'+a.cost+'）'; if(on) d.className='sel';
-      bindTip(d,a.name,a.desc);
+      const owned=isAddonUnlocked(itemPick,a.key);
+      d.textContent=a.name+(owned?'（所持済み）':'（購入 +'+a.cost+'）');
+      d.className=(on?'sel':'')+(owned?'':' locked');
+      bindTip(d,a.name,a.desc+(owned?'':'　※初回のみコインで購入すると以後ずっと無料で装着できる'));
       d.addEventListener('click',function(){
+        if(!owned){ if(!unlockAddon(itemPick,a.key)) return; }
         if(addon1Pick===a.key) addon1Pick='';
         else if(addon2Pick===a.key) addon2Pick='';
         else if(!addon1Pick) addon1Pick=a.key;
@@ -9989,9 +10416,8 @@ function renderItemPane(){
       elAddonSel.appendChild(d);
     });
   }
-  const cost=itemLoadoutCost();
-  elItemCost.textContent=itemPick?('合計 '+cost+' コイン（所持 '+COINS+' コイン）'+
-    (cost>COINS?'　※コインが足りない':'')):'';
+  elItemCost.textContent=itemPick?
+    '所持コイン '+COINS+'（購入済みの持ち物は毎試合無料で持参できます）':'';
   renderItemSlots();
 }
 /* 特性(パーク)選択：役割ごとに別プール、最大4つまで */
@@ -10032,6 +10458,50 @@ function renderPerkPane(){
     elPerkSel.appendChild(d);
   });
   renderPerkSlots();
+}
+/* 写真部顧問(photo)専用アドオンの選択パネル。役割=先生かつ選択中のキャラが
+   photoの時だけ表示する(#p_perkパネルの下に追加)。購入・アンロックの仕組みは
+   持ち物用アドオンと共通(isAddonUnlocked/unlockAddonをitemKey='photo_power'で共用) */
+const elPhotoAddonWrap=document.getElementById('photoAddonWrap'),
+      elPhotoAddonSlots=document.getElementById('photoAddonSlots'),
+      elPhotoAddonSel=document.getElementById('photoAddonSel');
+function renderPhotoAddonSlots(){
+  if(!elPhotoAddonSlots) return;
+  elPhotoAddonSlots.innerHTML='';
+  for(let i=0;i<2;i++){
+    const key=photoAddonPick[i];
+    const a=key?addonOf('photo_power',key):null;
+    const d=document.createElement('div');
+    d.className='lslot'+(a?' filled':'');
+    d.textContent=a?a.name:'空き';
+    if(a) bindTip(d,a.name,a.desc);
+    elPhotoAddonSlots.appendChild(d);
+  }
+}
+function renderPhotoAddonPane(){
+  if(!elPhotoAddonWrap) return;
+  const show=(role==='teacher'&&teacherKind==='photo');
+  elPhotoAddonWrap.style.display=show?'block':'none';
+  if(!show) return;
+  elPhotoAddonSel.innerHTML='';
+  (ADDONS.photo_power||[]).forEach(function(a){
+    const d=document.createElement('div');
+    const on=photoAddonPick.indexOf(a.key)>=0;
+    const owned=isAddonUnlocked('photo_power',a.key);
+    d.textContent=a.name+(owned?(on?'　✓':'（所持済み）'):'（購入 '+a.cost+'）');
+    d.className=(on?'sel':'')+(owned?'':' locked');
+    bindTip(d,a.name,a.desc+(owned?'':'　※初回のみコインで購入すると以後ずっと無料で装着できる'));
+    d.addEventListener('click',function(){
+      if(!owned){ if(!unlockAddon('photo_power',a.key)) return; }
+      const idx=photoAddonPick.indexOf(a.key);
+      if(idx>=0) photoAddonPick.splice(idx,1);
+      else if(photoAddonPick.length>=2) toast('アドオンは最大2つまで');
+      else photoAddonPick.push(a.key);
+      renderPhotoAddonPane();
+    });
+    elPhotoAddonSel.appendChild(d);
+  });
+  renderPhotoAddonSlots();
 }
 /* 3Dプレビュー */
 let pvOn=false,pvRenderer=null,pvScene=null,pvCam=null,pvMesh=null;
@@ -10108,14 +10578,15 @@ function applyLoadout(){
     const meS=students[0];
     meS.traits=studentPerksPick.slice(0,4);
     if(hasTrait(meS,'distortion')) meS.distortLeft=3;
-    if(itemPick){
-      const cost=itemLoadoutCost();
-      if(COINS>=cost){
-        COINS=Math.max(0,COINS-cost); refreshStats();
-        meS.item=itemPick;
-        meS.itemAddons=[addon1Pick,addon2Pick].filter(Boolean);
-        meS.itemAmmo=itemAmmoMax(meS);
-      } else { toast('コインが足りず持参できなかった'); }
+    /* 2026-09-06〜：持ち物/アドオンは購入時に永久アンロック済みなので、
+       試合開始のたびにコインを消費することはしない。念のため未所持の
+       ものが紛れ込んでいた場合はここで弾く(不正な保存データ対策) */
+    if(itemPick&&isItemUnlocked(itemPick)){
+      meS.item=itemPick;
+      meS.itemAddons=[addon1Pick,addon2Pick].filter(function(k){
+        return k&&isAddonUnlocked(itemPick,k);
+      });
+      meS.itemAmmo=itemAmmoMax(meS);
     }
     if(hasTrait(meS,'pathfinder')) exits.forEach(function(e){ mark(e.x,e.z,0x7fd4a2,8); });
   } else {
@@ -10126,6 +10597,15 @@ function applyLoadout(){
       tasks.slice().sort(function(){ return Math.random()-0.5; }).slice(0,2)
         .forEach(function(t){ t.lockT=60; });
     }
+    /* 写真部顧問の専用パーク(脇役狩り/じらし遊び/見せしめ)のいずれかを
+       装備していたら、試合開始時に生徒1人を「本命の被写体」にランダム指定する
+       (DBDの「オブセッション」の仕組みを参考にした専用フィールド) */
+    if(hasTrait(teacher,'yakuyakugari')||hasTrait(teacher,'jirashiasobi')||hasTrait(teacher,'misesime')){
+      teacher.pdMuseIdx=(Math.random()*students.length)|0;
+    } else teacher.pdMuseIdx=-1;
+    if(teacher.kindKey==='photo') photoAddonPick=(photoAddonPick||[]).filter(function(k){
+      return isAddonUnlocked('photo_power',k);
+    }).slice(0,2);
   }
 }
 function startMatch(){
@@ -10200,6 +10680,7 @@ function softReset(keepNet){
   items.forEach(function(it){ scene.remove(it.g); }); items.length=0;
   inkPools.forEach(function(ip){ scene.remove(ip.m); }); inkPools.length=0;
   scents.forEach(function(c){ scene.remove(c.m); }); scents.length=0;
+  flBeams.forEach(function(m){ scene.remove(m); }); flBeams.length=0;
   dnFireLines.forEach(function(l){
     if(l.pillars) l.pillars.forEach(function(pg){ scene.remove(pg); });
     if(l.mat) l.mat.dispose(); }); dnFireLines.length=0;
