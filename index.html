@@ -1355,7 +1355,44 @@ addEventListener('resize',function(){
   renderer.setSize(innerWidth,innerHeight);
   if(composer) composer.setSize(innerWidth,innerHeight);
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
+  try{ layoutCharPanel(); }catch(e){}
 });
+/* キャラ選択画面：スクロール可能な一覧(#panelbox)と、画面下部に固定表示される
+   選択中キャラの説明パネル(#tinfo)が、キャラ数が増えたこと(先生28種類)で
+   縦に重なって両方とも読めなくなる不具合(2026-09-08、しゅんりさんの
+   スクリーンショット報告)への対応。#panelboxのmax-heightを「今実際に
+   描画されている#tinfoの上端」より確実に上で収まるよう動的にキャップする。
+   要素参照は毎回document.getElementById()で取り直す(この関数はスクリプト
+   前方のresizeハンドラからも呼ばれるため、後方で定義したconstを掴むと
+   elActRing/elItemHudと同じTDZ事故になる) */
+function layoutCharPanel(){
+  requestAnimationFrame(function(){
+    const pb=document.getElementById('panelbox');
+    const info=document.getElementById('tinfo');
+    if(!pb||!info) return;
+    /* #panelboxは元々top:50%+transform:translateY(-50%)で自分の高さを基準に
+       中央寄せしているため、「今の高さ」を読んで「新しい高さ」を決めるやり方
+       (前回の実装)だと、高さを変えるたびtopも動いてしまい計算がループして
+       安定しない(実測したら毎回微妙に違う値になっていた)。まず一旦
+       上書きを外して"素のCSS"での自然な位置・高さを測り、それが#tinfoと
+       重なる場合だけ、高さに依存しない固定アンカー(13vh)に切り替えて
+       安全な範囲へ収める(重ならない場合は元の中央寄せ表示のまま触らない) */
+    pb.style.boxSizing='border-box';
+    pb.style.top=''; pb.style.transform=''; pb.style.maxHeight='';
+    const infoR=info.getBoundingClientRect();
+    const naturalR=pb.getBoundingClientRect();
+    if(!infoR.height||!naturalR.height) return;
+    const gap=16;
+    if(naturalR.bottom<=infoR.top-gap) return;   /* 重ならないので触らない */
+    const topPx=innerHeight*0.13;
+    const avail=infoR.top-gap-topPx;
+    if(avail>80){
+      pb.style.top=topPx+'px';
+      pb.style.transform='none';
+      pb.style.maxHeight=Math.min(avail,innerHeight*0.74)+'px';
+    }
+  });
+}
 function setupPostFX(){
   if(!(THREE.EffectComposer&&THREE.RenderPass&&THREE.ShaderPass&&THREE.UnrealBloomPass)) return;
   try{
@@ -2739,11 +2776,25 @@ function bigNoise(vol,dur){
   }catch(e){}
 }
 function vib(p){ if(vibOn&&navigator.vibrate) try{ navigator.vibrate(p); }catch(e){} }
+/* 心音(ハートビート)SFX。恐怖の半径(terrorRadius)内に先生が入ると鳴り始め、
+   近づくほどテンポが速く・音量が大きくなる。以前から仕組み自体は存在して
+   いたが、音がかなり小さく単発ビープだけだったため「無くなった気がする」と
+   感じられていた(2026-09-08、しゅんりさんの報告を受けて強化)。
+   実際の心臓の音に寄せて「ドッ・ク」の2連打(lub-dub)にし、音量・テンポの
+   幅も広げた。rangeは呼び出し側のterrorRadius()の値をそのまま渡してもらう
+   ことで、写真部顧問のモード別レンジにも自動で追従する */
 let heartT=0;
-function heartbeat(d,dt){
+function heartbeat(d,dt,range){
+  range=range||24;
   heartT+=dt;
-  const rate=0.42+d/26*0.6;
-  if(heartT>rate){ heartT=0; beep(56,0.16,'sine',0.09*(1-d/30)); }
+  const t=Math.max(0,Math.min(1,1-d/range));   /* 0=境界付近、1=真横 */
+  const rate=0.88-t*0.58;                       /* 0.88秒(遠い)〜0.30秒(近い) */
+  if(heartT>rate){
+    heartT=0;
+    const vol=0.16+t*0.26;
+    beep(58,0.15,'sine',vol);
+    setTimeout(function(){ beep(44,0.17,'sine',vol*0.72); },100);
+  }
 }
 
 /* ===== BGM(外部音源を使わず、その場で音を組み立てて鳴らすプロシージャル生成)=====
@@ -4925,6 +4976,10 @@ function updItemUse(s,dt){
     if(aimed){
       s.flCharge=(s.flCharge||0)+dt;
       const need=1.3*itemAddonVal(s,'chargeMul');
+      /* 命中する前から、狙われている時間に応じて段階的に真っ白へ近づける
+         (最初はほぼ透明、当て続けるほど不透明になり、命中の瞬間に真っ白)。
+         複数人に同時に当てられていても一番進んでいる分だけを採用する */
+      teacher.blindBuildK=Math.max(teacher.blindBuildK||0,Math.min(1,s.flCharge/need));
       if(s.flCharge>=need){
         s.flCharge=0;
         /* 2026-09-08仕様調整：「動けなくなる(3秒)」と「視界を妨げる演出(5秒)」は
@@ -6125,7 +6180,10 @@ function updWheel(dt){
   if(t.kindKey!=='wheel'){ if(wheelMesh) wheelMesh.visible=false; return; }
   if(!t.wheelOn){ if(wheelMesh) wheelMesh.visible=false; return; }
   if(wheelMesh){
-    wheelMesh.visible=(role!=='teacher');
+    /* 2026-09-08: 車輪形態は三人称視点にしたので、先生自身の画面でも
+       車輪モデルが見えるよう常時表示に変更(以前は"role!=='teacher'"で
+       操作している本人からは見えないようにしていた) */
+    wheelMesh.visible=true;
     wheelMesh.position.set(t.x,2.2,t.z);
     wheelMesh.rotation.y=t.yaw;
     wheelMesh.rotation.x+=dt*9;
@@ -7599,9 +7657,14 @@ function hud(dt){
   });
   updRoster();
   const d=(role==='teacher')?99:Math.hypot(teacher.x-me.x,teacher.z-me.z);
-  elHeart.style.display='none';
-  if(role!=='teacher'&&d<terrorRadius(me)&&teacher.stealth<=0) heartbeat(d,dt);
-  elHeart.classList.remove('on');
+  const hbRange=terrorRadius(me);
+  const inHbRange=(role!=='teacher'&&d<hbRange&&teacher.stealth<=0);
+  if(inHbRange){
+    elHeart.style.display='flex'; elHeart.classList.add('on');
+    heartbeat(d,dt,hbRange);
+  } else {
+    elHeart.style.display='none'; elHeart.classList.remove('on');
+  }
   elVig.style.opacity=(role!=='teacher'&&me.hurt&&me.state==='free')?'1':'0';
   const st=(me.stam===undefined)?1:me.stam;
   elStam.style.width=(st*100)+'%';
@@ -8297,6 +8360,11 @@ function tick(now){
     toast('怨霊化！20秒間 猛る'); bigNoise(0.3,1.2);
   }
   teacher.blind=Math.max(0,(teacher.blind||0)-dt);
+  /* 懐中電灯を当てられている間、命中前から段階的に真っ白へ近づく演出用の
+     ビルドアップ値。updItemUse()側で狙われている間だけ押し上げられ、
+     ここで毎フレーム減衰させる(誰も当てていない/外れた瞬間から
+     すっと消えていく) */
+  teacher.blindBuildK=Math.max(0,(teacher.blindBuildK||0)-dt*1.6);
   if(teacher.phase>0){
     teacher.phase-=dt;
     if(teacher.phase<=0){ teacher.phase=0; unstick(teacher); toast('壁から出た'); }
@@ -8686,7 +8754,8 @@ function tick(now){
   }
 
   if(role==='teacher'&&!(puppet&&puppet!==teacher)&&
-     !(teacher.kindKey==='darknode'&&teacher.dnForm>0)){
+     !(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
+     !(teacher.kindKey==='wheel'&&teacher.wheelOn)){
     teacher.mesh.visible=false; ruler.visible=true;
     const shake=(teacher.stun>0?Math.sin(elapsed*38)*0.09:0)
                +(teacher.wipe>0?Math.sin(elapsed*9)*0.02:0);
@@ -8739,7 +8808,9 @@ function tick(now){
     } else if(teacher.mesh&&teacher.kindKey==='darknode'){
       teacher.mesh.position.y=0;
     }
-    let dist=7.4;
+    /* 車輪形態(轢車の三兄弟)は爆速で移動するため、通常の三人称距離(7.4)より
+       少し遠めにして見切れにくくする(しゅんりさんの要望「遠すぎず近すぎない」) */
+    let dist=(role==='teacher'&&teacher.kindKey==='wheel'&&teacher.wheelOn)?9.4:7.4;
     const bx=-Math.sin(camYaw),bz=-Math.cos(camYaw);
     for(let d2=1.4;d2<dist;d2+=0.6){
       const p=tileOf(camT.x+bx*d2,camT.z+bz*d2);
@@ -8750,11 +8821,16 @@ function tick(now){
     camera.position.set(camT.x+bx*dist*k,Math.max(1.5,3.7-pitch*5.2),camT.z+bz*dist*k);
     camera.lookAt(camT.x,1.7,camT.z);
   }
-  /* 視界を奪う演出 */
+  /* 視界を奪う演出：懐中電灯を当てられ始めた瞬間からほぼ透明、当て続けるほど
+     徐々に不透明になり、命中の瞬間に真っ白(2026-09-08、しゅんりさんの
+     要望で追加)。命中後の5秒間はteacher.blindの減衰カーブでそのまま
+     自然にフェードアウトする(既存の仕組み) */
   if(role==='teacher'){
     const b=teacher.blind||0;
-    elBlind.className=b>0?'smoke':'';
-    elBlind.style.opacity=b>0?String(Math.min(0.92,b/3*0.92)):'0';
+    const buildK=Math.pow(Math.min(1,teacher.blindBuildK||0),1.4);
+    const op=Math.max(b>0?Math.min(0.95,b/3*0.95):0, buildK*0.95);
+    elBlind.className=op>0?'smoke':'';
+    elBlind.style.opacity=op>0?String(op):'0';
   } else {
     const b=me.blind||0;
     if(b>0){ elBlind.className='chalk'; elBlind.style.opacity=String(Math.min(0.9,b/2.4*0.9)); }
@@ -9595,6 +9671,19 @@ function netInterpolate(dt){
       teacher.mesh=teacher.dnMeshes[teacher.dnForm];
       teacher.mesh.scale.set(1,1,1); teacher.mesh.rotation.x=0; teacher.mesh.position.y=0;
     }
+    /* 車輪形態(轢車の三兄弟)：参加者(観戦者)側の画面でも、通常の人型メッシュを
+       隠して車輪モデル(wheelMesh、見た目専用・当たり判定はホスト権威のまま)を
+       表示する。teacher.wheelOnは既存のスナップショット(tea.f)に元から
+       乗っていたが、参加者側でこの見た目を反映する処理がこれまで無かった */
+    if(teacher.kindKey==='wheel'&&teacher.wheelOn){
+      teacher.mesh.visible=false;
+      if(wheelMesh){
+        wheelMesh.visible=true;
+        wheelMesh.position.set(teacher.x,2.2,teacher.z);
+        wheelMesh.rotation.y=teacher.yaw;
+        wheelMesh.rotation.x+=dt*9;
+      }
+    } else if(wheelMesh) wheelMesh.visible=false;
   }
   if(snap.tasks) snap.tasks.forEach(function(p,i){
     const d=tasks[i]; if(!d) return;
@@ -10371,6 +10460,7 @@ function showStage(){
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
   try{ renderItemPane(); renderPerkPane(); renderPhotoAddonPane(); }catch(e){}
+  try{ layoutCharPanel(); }catch(e){}
 }
 Array.prototype.forEach.call(document.querySelectorAll('#trole div'),function(d){
   d.addEventListener('click',function(){
@@ -10390,6 +10480,7 @@ Array.prototype.forEach.call(document.querySelectorAll('#rail .rbtn'),function(b
     b.classList.add('sel');
     const t=document.getElementById(b.dataset.pane);
     if(t) t.classList.add('on');
+    try{ layoutCharPanel(); }catch(e){}
   });
 });
 /* 相手の先生（BOT）選択 */
