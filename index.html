@@ -105,6 +105,14 @@ canvas{display:block}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
 #stam.low i{background:var(--alert)}
 
+/* 懐中電灯を構えて狙っている間だけ出る緑色のゲージ(画面中央下寄り)。
+   命中までの進捗を表す。2026-09-08、しゅんりさん要望で追加 */
+#flAimGauge{position:absolute;bottom:34%;left:50%;transform:translateX(-50%);
+  width:180px;height:8px;background:#00000060;border:1px solid #4ade8077;
+  border-radius:4px;overflow:hidden;display:none}
+#flAimGauge.on{display:block}
+#flAimGauge i{display:block;height:100%;background:#4ade80;width:0%}
+
 /* 持参アイテムのHUD兼使用ボタン。生徒がアイテムを持っている時だけ表示
    （itemhud.js側のupdItemHud()がクラスをトグル）。位置は固定CSSではなく
    layoutPad()側で動的に合わせる。2026-09-08の1回目の修正では「乗り越え(F)
@@ -115,26 +123,20 @@ canvas{display:block}
    一切触れないので、縦画面/横画面どちらでも追従し、かつボタン群と重ならない
    ことを幾何学的に保証できる */
 #itemhud{position:fixed;display:none;flex-direction:column;align-items:center;justify-content:center;
-  text-align:center;letter-spacing:.02em;text-shadow:0 1px 4px #000;
+  gap:4px;text-align:center;text-shadow:0 1px 4px #000;
   background:#0b120ec2;border:2px solid var(--yellow);border-radius:13px;
   cursor:pointer;user-select:none;touch-action:none;color:var(--chalk);z-index:6;
-  width:158px;padding:7px 4px;overflow:hidden}
+  width:80px;padding:8px 4px;overflow:hidden}
 #itemhud.on{display:flex}
 #itemhud.press{background:#e8c54755;transform:scale(0.95)}
-/* 2026-09-08: 「懐中電灯 長押しで狙う 残り87%」のように1行に詰め込んでいたら、
-   フォントの実際の描画幅(実機はheadless Chromeより広く出ることがある)次第で
-   text-overflow:ellipsisが末尾の"残り87%"から先に削れてしまい、しゅんりさんの
-   実機では%が全く見えない不具合になっていた。パーセンテージ(残量)は
-   電球アイコンの横に独立した表示(#itemhudPct)として切り出し、絶対に
-   ellipsisで消えないようにした。#itemhudNameは補足の説明文だけを持つので
-   仮に省略されても実害がない */
-#itemhudTop{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0}
-#itemhudIcon{font-size:18px;line-height:1;flex:none}
-#itemhudPct{font-size:13px;font-weight:800;color:var(--yellow);flex:none;white-space:nowrap}
-#itemhudName{font-size:10px;opacity:.9;margin-top:2px;padding:0 4px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;max-width:100%;min-width:0}
-#itemhudBarWrap{width:84%;height:5px;background:#ffffff22;border:1px solid #ffffff55;
-  border-radius:2px;overflow:hidden;margin-top:3px}
+/* 2026-09-08: 文言(「懐中電灯 長押しで狙う」等)は全部削除し、絵文字アイコン＋
+   黄色いゲージバー＋パーセンテージだけのシンプルな見た目に変更(しゅんりさんの
+   要望)。以前は「残り87%」が文字列の末尾でellipsisに消される不具合があったが、
+   そもそも文言自体を無くしたことでこの種の事故が起きない構造になった */
+#itemhudIcon{font-size:26px;line-height:1}
+#itemhudPct{font-size:13px;font-weight:800;color:var(--yellow);line-height:1}
+#itemhudBarWrap{width:88%;height:6px;background:#ffffff22;border:1px solid #ffffff55;
+  border-radius:3px;overflow:hidden}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
@@ -511,10 +513,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="wig"><i></i></div>
   <div id="mashn"></div>
   <div id="stam"><i></i></div>
+  <div id="flAimGauge"><i></i></div>
   <div id="itemhud" class="pe">
-    <div id="itemhudTop"><span id="itemhudIcon">🎒</span><span id="itemhudPct"></span></div>
-    <div id="itemhudName">—</div>
+    <div id="itemhudIcon">🎒</div>
     <div id="itemhudBarWrap"><div id="itemhudBar"></div></div>
+    <div id="itemhudPct"></div>
   </div>
   <div id="actring"><div class="ring"></div><div class="core">
     <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
@@ -1355,44 +1358,7 @@ addEventListener('resize',function(){
   renderer.setSize(innerWidth,innerHeight);
   if(composer) composer.setSize(innerWidth,innerHeight);
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
-  try{ layoutCharPanel(); }catch(e){}
 });
-/* キャラ選択画面：スクロール可能な一覧(#panelbox)と、画面下部に固定表示される
-   選択中キャラの説明パネル(#tinfo)が、キャラ数が増えたこと(先生28種類)で
-   縦に重なって両方とも読めなくなる不具合(2026-09-08、しゅんりさんの
-   スクリーンショット報告)への対応。#panelboxのmax-heightを「今実際に
-   描画されている#tinfoの上端」より確実に上で収まるよう動的にキャップする。
-   要素参照は毎回document.getElementById()で取り直す(この関数はスクリプト
-   前方のresizeハンドラからも呼ばれるため、後方で定義したconstを掴むと
-   elActRing/elItemHudと同じTDZ事故になる) */
-function layoutCharPanel(){
-  requestAnimationFrame(function(){
-    const pb=document.getElementById('panelbox');
-    const info=document.getElementById('tinfo');
-    if(!pb||!info) return;
-    /* #panelboxは元々top:50%+transform:translateY(-50%)で自分の高さを基準に
-       中央寄せしているため、「今の高さ」を読んで「新しい高さ」を決めるやり方
-       (前回の実装)だと、高さを変えるたびtopも動いてしまい計算がループして
-       安定しない(実測したら毎回微妙に違う値になっていた)。まず一旦
-       上書きを外して"素のCSS"での自然な位置・高さを測り、それが#tinfoと
-       重なる場合だけ、高さに依存しない固定アンカー(13vh)に切り替えて
-       安全な範囲へ収める(重ならない場合は元の中央寄せ表示のまま触らない) */
-    pb.style.boxSizing='border-box';
-    pb.style.top=''; pb.style.transform=''; pb.style.maxHeight='';
-    const infoR=info.getBoundingClientRect();
-    const naturalR=pb.getBoundingClientRect();
-    if(!infoR.height||!naturalR.height) return;
-    const gap=16;
-    if(naturalR.bottom<=infoR.top-gap) return;   /* 重ならないので触らない */
-    const topPx=innerHeight*0.13;
-    const avail=infoR.top-gap-topPx;
-    if(avail>80){
-      pb.style.top=topPx+'px';
-      pb.style.transform='none';
-      pb.style.maxHeight=Math.min(avail,innerHeight*0.74)+'px';
-    }
-  });
-}
 function setupPostFX(){
   if(!(THREE.EffectComposer&&THREE.RenderPass&&THREE.ShaderPass&&THREE.UnrealBloomPass)) return;
   try{
@@ -4319,7 +4285,7 @@ function updActionRing(mode,pct,color){
 /* 持参アイテムのHUD兼使用ボタンの要素参照。elActRingと同じ理由
    (loadSettings()経由でlayoutPad()が早期に呼ばれうる)でTDZを踏まないよう
    layoutPad()の定義より必ず前に置く */
-const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
+const elItemHud=document.getElementById('itemhud'),
       elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon'),
       elItemHudPct=document.getElementById('itemhudPct');
 function layoutItemHud(){
@@ -4328,14 +4294,21 @@ function layoutItemHud(){
      読むだけなので、縦画面(flex)/横画面(grid)どちらにも自動で追従し、
      ボタン群との重なりが起きないことを幾何学的に保証できる
      (2026-09-08、「Fボタンの真下」という前回の配置が誤りだったとの
-     訂正を受けて「ボタン群の真上」に修正) */
+     訂正を受けて「ボタン群の真上」に修正)。
+     さらに、画面の狭い横画面スマホ等で#padの上端が画面上端に近いと
+     計算上topが負の値になり、ボタンの上半分が画面外に切れて「半分しか
+     表示されない」不具合が起きていたため、画面内に収まるようclamp
+     する(2026-09-08追加) */
   requestAnimationFrame(function(){
     const r=elPad.getBoundingClientRect();
     if(!r.width&&!r.height) return;
-    const hw=elItemHud.offsetWidth||158, hh=elItemHud.offsetHeight||58;
-    if(leftHand) elItemHud.style.left=r.left+'px';
-    else elItemHud.style.left=(r.right-hw)+'px';
-    elItemHud.style.top=(r.top-hh-14)+'px';
+    const hw=elItemHud.offsetWidth||80, hh=elItemHud.offsetHeight||90;
+    let left=leftHand?r.left:(r.right-hw);
+    let top=r.top-hh-14;
+    left=Math.max(4,Math.min(left,innerWidth-hw-4));
+    top=Math.max(4,Math.min(top,innerHeight-hh-4));
+    elItemHud.style.left=left+'px';
+    elItemHud.style.top=top+'px';
   });
 }
 /* ボタン配置（サイズ・左右反転に追従） */
@@ -7385,6 +7358,7 @@ const elWig=document.getElementById('wig'),elWigI=document.querySelector('#wig i
       elAb2Label=document.getElementById('ab2label');
 const elTasks=document.getElementById('tasks'),elRoster=document.getElementById('roster'),
       elHeart=document.getElementById('heart'),elStam=document.querySelector('#stam i'),
+      elFlGauge=document.getElementById('flAimGauge'),elFlGaugeI=document.querySelector('#flAimGauge i'),
       elStamBox=document.getElementById('stam'),elActLabel=document.getElementById('actlabel'),
       elHold=document.getElementById('hold');
 /* elItemHud等の要素参照はlayoutItemHud()の近く(layoutPad()定義の直前)で
@@ -7395,25 +7369,43 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
    長押しするとアイテムを使う(2026-09-06、押しても何も起きないという
    報告を受けて見た目をボタンらしく大きく作り直した) */
 function updItemHud(){
-  if(role!=='student'||!me||!me.item){ elItemHud.classList.remove('on'); return; }
+  if(role!=='student'||!me||!me.item){
+    elItemHud.classList.remove('on');
+    elFlGauge.classList.remove('on');
+    return;
+  }
   const wasOn=elItemHud.classList.contains('on');
   elItemHud.classList.add('on');
-  const it=itemOf(me.item);
+  /* 2026-09-08: 文言は全部削除し、絵文字＋黄色いゲージバー＋パーセンテージ
+     だけのシンプルな表示に変更(しゅんりさんの要望)。バーは常に「残量」を
+     表す黄色固定にし、懐中電灯を狙っている間の進捗は別の緑ゲージ
+     (#flAimGauge、画面中央下寄り)側で見せるようにした */
   if(me.item==='flashlight'){
     elItemHudIcon.textContent='💡';
     elItemHudPct.textContent=Math.round(me.itemAmmo||0)+'%';
-    const need=1.3*itemAddonVal(me,'chargeMul');
-    const aiming=(me.flCharge||0)>0;
-    elItemHudName.textContent=(it?it.name:me.item)+(aiming?'　狙い中…':'　長押しで狙う');
-    elItemHudBar.style.width=(aiming?Math.min(100,(me.flCharge||0)/need*100):(me.itemAmmo||0))+'%';
-    elItemHudBar.style.background=aiming?'#7fd4a2':'var(--yellow)';
-  } else if(me.item==='syringe'){
-    elItemHudIcon.textContent='💉';
-    elItemHudPct.textContent='×'+Math.round(me.itemAmmo||0);
-    elItemHudName.textContent=(it?it.name:me.item)+'　長押しで使用';
-    const need=3.6*itemAddonVal(me,'timeMul');
-    elItemHudBar.style.width=Math.min(100,(me.syT||0)/need*100)+'%';
-    elItemHudBar.style.background='#7fd4a2';
+    elItemHudBar.style.width=Math.max(0,Math.min(100,me.itemAmmo||0))+'%';
+    elItemHudBar.style.background='var(--yellow)';
+    /* オンライン参加者はupdItemUse()をローカルで回さないため、生の
+       flChargeではなくホストが計算済みの比率(me.flK、0〜1)が
+       netInterpolate()経由で乗っていることがある。あればそちらを優先し、
+       無ければ(ホスト/シングルプレイ)自分のflChargeから計算する */
+    const hasFlK=(me.flK!==undefined);
+    const aiming=hasFlK?(me.flK>0):((me.flCharge||0)>0);
+    if(aiming){
+      const need=1.3*itemAddonVal(me,'chargeMul');
+      const pct=hasFlK?(me.flK*100):((me.flCharge||0)/need*100);
+      elFlGauge.classList.add('on');
+      elFlGaugeI.style.width=Math.max(0,Math.min(100,pct))+'%';
+    } else elFlGauge.classList.remove('on');
+  } else {
+    elFlGauge.classList.remove('on');
+    if(me.item==='syringe'){
+      elItemHudIcon.textContent='💉';
+      elItemHudPct.textContent='×'+Math.round(me.itemAmmo||0);
+      const max=itemAmmoMax(me)||1;
+      elItemHudBar.style.width=Math.max(0,Math.min(100,(me.itemAmmo||0)/max*100))+'%';
+      elItemHudBar.style.background='var(--yellow)';
+    }
   }
   /* 表示され始める瞬間、内容(サイズに影響する文言)を入れ終わってから
      位置を合わせ直す(先に測ると高さ0のまま計算してしまうため) */
@@ -7736,9 +7728,13 @@ function tick(now){
                   !(me.drone>0)&&!(me.tackle>0));
 
   /* 画面の奥方向。三人称はカメラ→自分、一人称はカメラの視線
-     （ダークノードの狼／コウモリ形態は先生でも三人称になるので、
-     一人称用の+180度補正を掛けないようにする） */
-  const teacherFP=(role==='teacher')&&!(teacher.kindKey==='darknode'&&teacher.dnForm>0);
+     （ダークノードの狼／コウモリ形態、軋車の三兄弟の車輪形態は先生でも
+     三人称になるので、一人称用の+180度補正を掛けないようにする。
+     2026-09-08: 車輪形態を三人称化した時にカメラ側の分岐だけ直して
+     こちらの移動計算側を直し忘れていたため、カメラは三人称なのに
+     移動方向だけ一人称基準のまま=前後左右が反転する不具合になっていた） */
+  const teacherFP=(role==='teacher')&&!(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
+    !(teacher.kindKey==='wheel'&&teacher.wheelOn);
   const viewYaw=teacherFP?(camYaw+Math.PI):camYaw;
   const vf=[Math.sin(viewYaw),Math.cos(viewYaw)];      /* 前 */
   const vr=[-Math.cos(viewYaw),Math.sin(viewYaw)];     /* 右 */
@@ -9606,7 +9602,8 @@ function netHostBroadcastSnapshot(dt){
         knockT:s.knockT||0, knockDX:s.knockDX||0, knockDZ:s.knockDZ||0,
         qte: s.qte?{t:s.qte.t,n:s.qte.n}:null, abCd:s.abCd, abUses:s.abUses, lock:s.lock,
         painFree:s.painFree, item:s.item||'', itemAmmo:Math.round(s.itemAmmo||0),
-        fl:(s.item==='flashlight'&&!!s.itemHoldInput&&s.itemAmmo>0) } };
+        fl:(s.item==='flashlight'&&!!s.itemHoldInput&&s.itemAmmo>0),
+        flK:Math.round(Math.min(1,(s.flCharge||0)/(1.3*itemAddonVal(s,'chargeMul')))*100)/100 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -10460,7 +10457,6 @@ function showStage(){
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
   try{ renderItemPane(); renderPerkPane(); renderPhotoAddonPane(); }catch(e){}
-  try{ layoutCharPanel(); }catch(e){}
 }
 Array.prototype.forEach.call(document.querySelectorAll('#trole div'),function(d){
   d.addEventListener('click',function(){
@@ -10480,7 +10476,6 @@ Array.prototype.forEach.call(document.querySelectorAll('#rail .rbtn'),function(b
     b.classList.add('sel');
     const t=document.getElementById(b.dataset.pane);
     if(t) t.classList.add('on');
-    try{ layoutCharPanel(); }catch(e){}
   });
 });
 /* 相手の先生（BOT）選択 */
