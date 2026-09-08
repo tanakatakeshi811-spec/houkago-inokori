@@ -105,17 +105,24 @@ canvas{display:block}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
 #stam.low i{background:var(--alert)}
 
-/* 持参アイテムのHUD（名前とバッテリー/使用回数バー）。生徒がアイテムを
-   持っている時だけ表示（itemhud.js側のupdItemHud()がクラスをトグル） */
-#itemhud{position:absolute;top:9%;left:50%;transform:translateX(-50%);display:none;
-  text-align:center;font-size:12.5px;letter-spacing:.05em;text-shadow:0 1px 4px #000;
-  background:#0b120eb0;border:2px solid var(--yellow);border-radius:14px;
-  padding:8px 18px;cursor:pointer;user-select:none;touch-action:none}
-#itemhud.on{display:block}
-#itemhud.press{background:#e8c54733;transform:translateX(-50%) scale(0.96)}
-#itemhudIcon{font-size:20px;display:block;margin-bottom:2px}
-#itemhudBarWrap{width:150px;height:8px;background:#ffffff22;border:1px solid #ffffff55;
-  border-radius:4px;overflow:hidden;margin:4px auto 0}
+/* 持参アイテムのHUD兼使用ボタン。生徒がアイテムを持っている時だけ表示
+   （itemhud.js側のupdItemHud()がクラスをトグル）。位置は固定CSSではなく
+   layoutPad()側で「乗り越え(F)ボタンのすぐ下」に毎回動的に合わせる
+   (2026-09-08、しゅんりさんのスクリーンショット指定を受けて操作ボタン群の
+   中に組み込んだ。他の既存ボタンの配置には一切触れず、実際に描画された
+   altボタンの座標を読んで真下に重ねているだけなので、レイアウトが変わっても
+   追従する) */
+#itemhud{position:fixed;display:none;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;letter-spacing:.02em;text-shadow:0 1px 4px #000;
+  background:#ffffff20;border:2px solid var(--yellow);border-radius:13px;
+  cursor:pointer;user-select:none;touch-action:none;color:var(--chalk);z-index:6}
+#itemhud.on{display:flex}
+#itemhud.press{background:#e8c54745;transform:scale(0.94)}
+#itemhudIcon{font-size:20px;line-height:1}
+#itemhudName{font-size:8px;opacity:.8;margin-top:1px;padding:0 2px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#itemhudBarWrap{width:78%;height:4px;background:#ffffff22;border:1px solid #ffffff55;
+  border-radius:2px;overflow:hidden;margin-top:2px}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
@@ -4243,6 +4250,24 @@ function updActionRing(mode,pct,color){
   elRingPct.textContent=Math.round(p*100)+'%';
 }
 
+/* 持参アイテムのHUD兼使用ボタンの要素参照。elActRingと同じ理由
+   (loadSettings()経由でlayoutPad()が早期に呼ばれうる)でTDZを踏まないよう
+   layoutPad()の定義より必ず前に置く */
+const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
+      elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon');
+function layoutItemHud(){
+  /* 「乗り越え(F)」ボタンの直下に重ねる。他のボタンのDOM/レイアウトには
+     一切触れず、実際に描画されたaltボタンの座標を読むだけなので、
+     縦画面/横画面どちらのレイアウトにも自動で追従する */
+  requestAnimationFrame(function(){
+    const r=elAlt.getBoundingClientRect();
+    if(!r.width) return;
+    elItemHud.style.left=r.left+'px';
+    elItemHud.style.top=(r.bottom+8)+'px';
+    elItemHud.style.width=r.width+'px';
+    elItemHud.style.height=r.width+'px';
+  });
+}
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
   const s=btnScale;
@@ -4274,6 +4299,7 @@ function layoutPad(){
     elActRing.style[side]='calc(env(safe-area-inset-right) + 34px)';
     elActRing.style[leftHand?'right':'left']='auto';
     elActRing.style.bottom='calc(env(safe-area-inset-bottom) + 180px)';
+    layoutItemHud();
     return;
   }
   elPad.style.display='flex';
@@ -4303,6 +4329,7 @@ function layoutPad(){
   elActRing.style[side]='16px';
   elActRing.style[other]='auto';
   elActRing.style.bottom='calc(env(safe-area-inset-bottom) + 26px + '+padH+'px + 12px)';
+  layoutItemHud();
 }
 /* チャットボタン配置：横画面スマホはボタン群の上あたりへ */
 function layoutChatBtn(){
@@ -4881,11 +4908,19 @@ function updItemUse(s,dt){
       const need=1.3*itemAddonVal(s,'chargeMul');
       if(s.flCharge>=need){
         s.flCharge=0;
-        const dur=3.0*itemAddonVal(s,'blindMul');
-        teacher.blind=Math.max(teacher.blind||0,dur); teacher.alert=null;
+        /* 2026-09-08仕様調整：「動けなくなる(3秒)」と「視界を妨げる演出(5秒)」は
+           別の持続時間。命中の瞬間に攻撃を振っている最中だったら、その攻撃は
+           成立/空振りどちらの判定にもせずそのままキャンセルする(誰にもダメージが
+           入らない)。既存の共通stunフィールドを使うことで、移動・攻撃・各種
+           能力の禁止は既存のガード(t.stun>0チェック)にそのまま乗る */
+        if(teacher.atk){ teacher.atk=null; teacher.swing=0; }
+        teacher.stun=Math.max(teacher.stun,3.0);
+        teacher.path=[]; teacher.dash=0; teacher.charge=0;
+        const blindDur=5.0*itemAddonVal(s,'blindMul');
+        teacher.blind=Math.max(teacher.blind||0,blindDur); teacher.alert=null;
         if(teacher.carrying) escapeCarry(teacher.carrying);
         beep(1400,0.14,'square',0.13); bigNoise(0.18,0.4);
-        toast(s.name+'の懐中電灯が先生の目をくらませた！');
+        toast(s.name+'の懐中電灯が先生の目をくらませた！（3秒動けない）');
       }
     } else s.flCharge=Math.max(0,(s.flCharge||0)-dt*1.5);
   } else if(s.item==='syringe'){
@@ -7114,6 +7149,17 @@ function aiStudent(s,dt){
     else if(s.skill==='mirage'&&td<10) useStudentSkill(s);
   }
   if(td>=18) s.chased=0;
+  /* BOT(AI操作の生徒)も懐中電灯を持てる/使えるように(2026-09-08追加)。
+     追い詰められた時(2〜8m・視線が通っている・先生がよろけていない)だけ、
+     逃げるのをやめてその場で先生に向き直り、懐中電灯を構える。
+     命中すればescapeCarry等の効果は既存のupdItemUse()側でそのまま発動する */
+  if(s.item==='flashlight'&&(s.itemAmmo||0)>2&&td>2&&td<8&&
+     los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0&&!teacher.carrying){
+    s.itemHoldInput=true;
+    s.yaw=Math.atan2(teacher.x-s.x,teacher.z-s.z);
+    return;
+  }
+  s.itemHoldInput=false;
   if(td<16&&los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0){
     s.chased=(s.chased||0)+dt;
     /* 板：先生が板の向こう側にいる時だけ倒す */
@@ -7202,6 +7248,17 @@ function aiStudent(s,dt){
     if(s.pathT<=0){ repath(s,ally.x,ally.z); s.pathT=0.8; }
     follow(s,dt); return;
   }
+  /* 近くにアイテムボックスがあれば拾いに寄る(何も持っていない時だけ、
+     課題/救助より優先度は低い軽い寄り道)。実際の取得処理は
+     updItemBoxes()が近づいた時点で自動でやってくれる */
+  if(!s.item){
+    const box=itemBoxes.filter(function(b){ return b.item&&!b.taken; })
+      .sort(function(a,b){ return Math.hypot(a.x-s.x,a.z-s.z)-Math.hypot(b.x-s.x,b.z-s.z); })[0];
+    if(box&&Math.hypot(box.x-s.x,box.z-s.z)<14){
+      if(s.pathT<=0){ repath(s,box.x,box.z); s.pathT=0.8; }
+      follow(s,dt,0.9); return;
+    }
+  }
   let goal;
   if(gateOpen){
     goal=exits.slice().sort(function(a,b){
@@ -7253,15 +7310,16 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
       elHeart=document.getElementById('heart'),elStam=document.querySelector('#stam i'),
       elStamBox=document.getElementById('stam'),elActLabel=document.getElementById('actlabel'),
       elHold=document.getElementById('hold');
-const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
-      elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon');
-/* 持参アイテムのHUD兼「使用ボタン」。ホールド中は懐中電灯の狙い進捗、
+/* elItemHud等の要素参照はlayoutItemHud()の近く(layoutPad()定義の直前)で
+   宣言済み。ここではupdItemHud()の説明のみ残す。
+   持参アイテムのHUD兼「使用ボタン」。ホールド中は懐中電灯の狙い進捗、
    それ以外はバッテリー/使用回数を表示する。生徒がアイテムを持っている時
    だけ表示される。PCは右クリック長押し、スマホ/タッチはこのHUD自体を
    長押しするとアイテムを使う(2026-09-06、押しても何も起きないという
    報告を受けて見た目をボタンらしく大きく作り直した) */
 function updItemHud(){
   if(role!=='student'||!me||!me.item){ elItemHud.classList.remove('on'); return; }
+  if(!elItemHud.classList.contains('on')) layoutItemHud();   /* 表示され始める瞬間に位置を合わせ直す */
   elItemHud.classList.add('on');
   const it=itemOf(me.item);
   if(me.item==='flashlight'){
@@ -10160,6 +10218,37 @@ function unlockAddon(itemKey,key){
   return true;
 }
 
+/* 装備構成(持参アイテム/アドオン/特性)の保存。以前は毎試合選び直す必要が
+   あったが、しゅんりさんの要望で「一度選んだら次回以降も自動で引き継がれ、
+   変えたい時だけ選び直す」方式に変更(2026-09-08)。unlockedItems等より
+   後ろで定義しないと、復元時のisItemUnlocked()呼び出しがTDZエラーになる
+   (2026-09-04のelActRing事故と同じ理由なので、必ずこの位置を維持する) */
+function saveLoadout(){
+  try{
+    localStorage.setItem('hi_loadout_v1',JSON.stringify({
+      item:itemPick, a1:addon1Pick, a2:addon2Pick,
+      sp:studentPerksPick, tp:teacherPerksPick, pp:photoAddonPick
+    }));
+  }catch(e){}
+}
+(function(){
+  try{
+    const v=JSON.parse(localStorage.getItem('hi_loadout_v1')||'null');
+    if(!v) return;
+    if(v.item&&isItemUnlocked(v.item)){
+      itemPick=v.item;
+      if(v.a1&&isAddonUnlocked(itemPick,v.a1)) addon1Pick=v.a1;
+      if(v.a2&&isAddonUnlocked(itemPick,v.a2)) addon2Pick=v.a2;
+    }
+    if(Array.isArray(v.sp)) studentPerksPick=v.sp.filter(function(k){
+      return PERKS_STUDENT.some(function(p){return p.key===k;}); }).slice(0,4);
+    if(Array.isArray(v.tp)) teacherPerksPick=v.tp.filter(function(k){
+      return PERKS_TEACHER.some(function(p){return p.key===k;}); }).slice(0,4);
+    if(Array.isArray(v.pp)) photoAddonPick=v.pp.filter(function(k){
+      return isAddonUnlocked('photo_power',k); }).slice(0,2);
+  }catch(e){}
+})();
+
 function cssHex(c){ let h=c.toString(16); while(h.length<6) h='0'+h; return '#'+h; }
 function drawChar(g,W,H,o){
   g.clearRect(0,0,W,H);
@@ -10380,7 +10469,7 @@ function renderItemPane(){
   elItemSel.innerHTML='';
   const none=document.createElement('div');
   none.textContent='持たない'; none.className=itemPick?'':'sel';
-  none.addEventListener('click',function(){ itemPick=''; addon1Pick=''; addon2Pick=''; renderItemPane(); });
+  none.addEventListener('click',function(){ itemPick=''; addon1Pick=''; addon2Pick=''; saveLoadout(); renderItemPane(); });
   elItemSel.appendChild(none);
   ITEMS.forEach(function(it){
     const d=document.createElement('div');
@@ -10390,7 +10479,7 @@ function renderItemPane(){
     bindTip(d,it.name,it.desc+(owned?'':'　※初回のみコインで購入すると以後ずっと無料で持参できる'));
     d.addEventListener('click',function(){
       if(!owned){ if(!unlockItem(it.key)) return; }
-      itemPick=it.key; addon1Pick=''; addon2Pick=''; renderItemPane();
+      itemPick=it.key; addon1Pick=''; addon2Pick=''; saveLoadout(); renderItemPane();
     });
     elItemSel.appendChild(d);
   });
@@ -10411,7 +10500,7 @@ function renderItemPane(){
         else if(!addon1Pick) addon1Pick=a.key;
         else if(!addon2Pick) addon2Pick=a.key;
         else toast('アドオンは最大2つまで');
-        renderItemPane();
+        saveLoadout(); renderItemPane();
       });
       elAddonSel.appendChild(d);
     });
@@ -10453,7 +10542,7 @@ function renderPerkPane(){
       if(idx>=0) pick.splice(idx,1);
       else if(pick.length>=4) toast('特性は最大4つまで');
       else pick.push(p.key);
-      renderPerkPane();
+      saveLoadout(); renderPerkPane();
     });
     elPerkSel.appendChild(d);
   });
@@ -10497,7 +10586,7 @@ function renderPhotoAddonPane(){
       if(idx>=0) photoAddonPick.splice(idx,1);
       else if(photoAddonPick.length>=2) toast('アドオンは最大2つまで');
       else photoAddonPick.push(a.key);
-      renderPhotoAddonPane();
+      saveLoadout(); renderPhotoAddonPane();
     });
     elPhotoAddonSel.appendChild(d);
   });
