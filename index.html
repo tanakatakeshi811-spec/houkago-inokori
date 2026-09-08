@@ -107,22 +107,25 @@ canvas{display:block}
 
 /* 持参アイテムのHUD兼使用ボタン。生徒がアイテムを持っている時だけ表示
    （itemhud.js側のupdItemHud()がクラスをトグル）。位置は固定CSSではなく
-   layoutPad()側で「乗り越え(F)ボタンのすぐ下」に毎回動的に合わせる
-   (2026-09-08、しゅんりさんのスクリーンショット指定を受けて操作ボタン群の
-   中に組み込んだ。他の既存ボタンの配置には一切触れず、実際に描画された
-   altボタンの座標を読んで真下に重ねているだけなので、レイアウトが変わっても
-   追従する) */
+   layoutPad()側で動的に合わせる。2026-09-08の1回目の修正では「乗り越え(F)
+   ボタンの真下」にしたが、しゅんりさんの新しいスクショで「それは違う、
+   下部の操作ボタン群(F・能力ボタン等)に重ならない、その"上"の空きスペース」
+   と訂正が来たため、#pad全体のbounding rectを読んでその真上に配置し直した
+   (layoutItemHud()、pad-relative)。他の既存ボタンのDOM/レイアウトには
+   一切触れないので、縦画面/横画面どちらでも追従し、かつボタン群と重ならない
+   ことを幾何学的に保証できる */
 #itemhud{position:fixed;display:none;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;letter-spacing:.02em;text-shadow:0 1px 4px #000;
-  background:#ffffff20;border:2px solid var(--yellow);border-radius:13px;
-  cursor:pointer;user-select:none;touch-action:none;color:var(--chalk);z-index:6}
+  background:#0b120ec2;border:2px solid var(--yellow);border-radius:13px;
+  cursor:pointer;user-select:none;touch-action:none;color:var(--chalk);z-index:6;
+  width:158px;padding:7px 4px}
 #itemhud.on{display:flex}
-#itemhud.press{background:#e8c54745;transform:scale(0.94)}
-#itemhudIcon{font-size:20px;line-height:1}
-#itemhudName{font-size:8px;opacity:.8;margin-top:1px;padding:0 2px;white-space:nowrap;
+#itemhud.press{background:#e8c54755;transform:scale(0.95)}
+#itemhudIcon{font-size:18px;line-height:1}
+#itemhudName{font-size:10px;opacity:.9;margin-top:2px;padding:0 4px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;max-width:100%}
-#itemhudBarWrap{width:78%;height:4px;background:#ffffff22;border:1px solid #ffffff55;
-  border-radius:2px;overflow:hidden;margin-top:2px}
+#itemhudBarWrap{width:84%;height:5px;background:#ffffff22;border:1px solid #ffffff55;
+  border-radius:2px;overflow:hidden;margin-top:3px}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
@@ -4256,16 +4259,19 @@ function updActionRing(mode,pct,color){
 const elItemHud=document.getElementById('itemhud'),elItemHudName=document.getElementById('itemhudName'),
       elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon');
 function layoutItemHud(){
-  /* 「乗り越え(F)」ボタンの直下に重ねる。他のボタンのDOM/レイアウトには
-     一切触れず、実際に描画されたaltボタンの座標を読むだけなので、
-     縦画面/横画面どちらのレイアウトにも自動で追従する */
+  /* 下部の操作ボタン群(#pad全体)の"真上"、ボタンには一切重ならない位置に置く。
+     #pad自体のDOM/レイアウトには触れず、実際に描画されたbounding rectを
+     読むだけなので、縦画面(flex)/横画面(grid)どちらにも自動で追従し、
+     ボタン群との重なりが起きないことを幾何学的に保証できる
+     (2026-09-08、「Fボタンの真下」という前回の配置が誤りだったとの
+     訂正を受けて「ボタン群の真上」に修正) */
   requestAnimationFrame(function(){
-    const r=elAlt.getBoundingClientRect();
-    if(!r.width) return;
-    elItemHud.style.left=r.left+'px';
-    elItemHud.style.top=(r.bottom+8)+'px';
-    elItemHud.style.width=r.width+'px';
-    elItemHud.style.height=r.width+'px';
+    const r=elPad.getBoundingClientRect();
+    if(!r.width&&!r.height) return;
+    const hw=elItemHud.offsetWidth||158, hh=elItemHud.offsetHeight||58;
+    if(leftHand) elItemHud.style.left=r.left+'px';
+    else elItemHud.style.left=(r.right-hw)+'px';
+    elItemHud.style.top=(r.top-hh-14)+'px';
   });
 }
 /* ボタン配置（サイズ・左右反転に追従） */
@@ -7319,7 +7325,7 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
    報告を受けて見た目をボタンらしく大きく作り直した) */
 function updItemHud(){
   if(role!=='student'||!me||!me.item){ elItemHud.classList.remove('on'); return; }
-  if(!elItemHud.classList.contains('on')) layoutItemHud();   /* 表示され始める瞬間に位置を合わせ直す */
+  const wasOn=elItemHud.classList.contains('on');
   elItemHud.classList.add('on');
   const it=itemOf(me.item);
   if(me.item==='flashlight'){
@@ -7337,6 +7343,9 @@ function updItemHud(){
     elItemHudBar.style.width=Math.min(100,(me.syT||0)/need*100)+'%';
     elItemHudBar.style.background='#7fd4a2';
   }
+  /* 表示され始める瞬間、内容(サイズに影響する文言)を入れ終わってから
+     位置を合わせ直す(先に測ると高さ0のまま計算してしまうため) */
+  if(!wasOn) layoutItemHud();
 }
 for(let i=0;i<TASK_N;i++) elTasks.innerHTML+='<div class="sheet" id="sh'+i+'"><i></i><b>'+(i+1)+'</b></div>';
 const mg=mini.getContext('2d');
