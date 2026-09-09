@@ -645,6 +645,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div class="seg" id="diff">
         <div data-d="easy">やさしい</div><div data-d="normal" class="sel">ふつう</div><div data-d="hard">鬼</div>
       </div>
+      <p class="lbl" style="margin-top:12px">一ノ瀬「ラストスパート」の持続時間</p>
+      <div class="seg" id="sprintDurSel">
+        <div data-v="3" class="sel">3秒</div><div data-v="6">6秒</div><div data-v="9">9秒</div><div data-v="12">12秒</div>
+      </div>
+      <p class="hint" style="text-align:left">長くするほど1秒あたりの加速は控えめになります（速さ×時間の合計はほぼ一定）</p>
       <p class="lbl" style="margin-top:12px">操作</p>
       <p class="hint" style="text-align:left">
         移動 WASD／走る Shift／視点 マウス<br>
@@ -786,6 +791,21 @@ window.addEventListener('error',function(e){
 const COLS = 450, ROWS = 32, T = 4;
 const TASK_N = 5;
 let DIFF = {name:'normal', tSpeed:7.0, work:0.07, checkGap:[3.2,5.6], zone:46};
+/* 一ノ瀬(perk:foot)「ラストスパート」の持続時間調整。元は3秒・速度+55%固定
+   だったが、しゅんりさんの指定で持続時間(3/6/9/12秒)を選べるようにし、
+   「持続時間×速度ボーナス」がほぼ一定になるよう長いほどボーナスを按分する。
+   sprintMulは実際にs.speed計算へ掛ける倍率(1+ボーナス)そのもの */
+let sprintDur=3, sprintMul=1.55;
+function applySprintDur(v){
+  sprintDur=v; sprintMul=1+0.55*(3/v);
+}
+function loadSprintDur(){
+  try{
+    const v=parseInt(localStorage.getItem('hi_sprintdur_v1')||'3',10);
+    if([3,6,9,12].indexOf(v)>=0) applySprintDur(v);
+  }catch(e){}
+}
+loadSprintDur();
 
 const grid = [];
 for(let r=0;r<ROWS;r++) grid.push(new Array(COLS).fill('#'));
@@ -5447,7 +5467,7 @@ function useStudentSkill(s){
   if(s.abCd>0) return;
   if(s.abUses===0){ toast('もう使えない'); return; }
   if(s.skill==='sprint'){
-    s.sprintT=3.0; s.abCd=s.abMax;
+    s.sprintT=sprintDur; s.abCd=s.abMax;
     if(s===me) toast('ラストスパート！'); beep(880,0.2,'square',0.1); vib(25);
   } else if(s.skill==='reveal'){
     setAura(teacher,'reveal',3.0); s.abCd=s.abMax;
@@ -8770,7 +8790,7 @@ function tick(now){
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
-            (s.sprintT>0?1.55:1)*(s.tiredT>0?0.85:1)*
+            (s.sprintT>0?sprintMul:1)*(s.tiredT>0?0.85:1)*
             (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
             (hasTrait(s,'hope')&&gateOpen?1.08:1)*
             ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?0.94:1)*
@@ -11050,7 +11070,11 @@ function showStage(){
     drawChar(pg,elPort.width,elPort.height,{uniform:o.uniform,hair:o.hair,tall:false,
       male:!!((SLOOK[o.perk]||{}).male)});
     elTName.textContent=o.name;
-    elTDesc.innerHTML=o.ptxt+(o.skill?('<br>【'+o.sname+'】'+o.stxt):'')+
+    /* 一ノ瀬(foot)のラストスパートは設定パネルで持続時間を変えられるので、
+       説明文もその場で選ばれている値に合わせて出し直す */
+    const stxtShown=(o.perk==='foot')?
+      (sprintDur+'秒 大幅加速（速度+'+Math.round((sprintMul-1)*100)+'%）。使用後5秒は息切れで少し遅い'):o.stxt;
+    elTDesc.innerHTML=o.ptxt+(o.skill?('<br>【'+o.sname+'】'+stxtShown):'')+
       '<br>課題プリント5枚を仕上げて昇降口から脱出する';
   } else {
     const o=TCH[kindIndex];
@@ -11357,6 +11381,20 @@ Array.prototype.forEach.call(document.querySelectorAll('#diff div'),function(d){
     if(k==='easy')   DIFF={name:k,tSpeed:6.5,work:0.09, checkGap:[4.5,7.0],zone:60};
     if(k==='normal') DIFF={name:k,tSpeed:7.0,work:0.07, checkGap:[3.2,5.6],zone:46};
     if(k==='hard')   DIFF={name:k,tSpeed:7.6,work:0.055,checkGap:[2.4,4.2],zone:34};
+  });
+});
+/* ラストスパートの持続時間セレクタ。選択はhi_sprintdur_v1に保存し次回も復元 */
+Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(d){
+  if(parseInt(d.dataset.v,10)===sprintDur){
+    Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(x){ x.classList.remove('sel'); });
+    d.classList.add('sel');
+  }
+  d.addEventListener('click',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(x){ x.classList.remove('sel'); });
+    d.classList.add('sel');
+    applySprintDur(parseInt(d.dataset.v,10));
+    try{ localStorage.setItem('hi_sprintdur_v1',String(sprintDur)); }catch(e){}
+    try{ showStage(); }catch(e){}
   });
 });
 /* 持参アイテム＋アドオンの合計コイン価格 */
