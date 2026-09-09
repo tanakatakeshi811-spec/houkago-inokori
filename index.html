@@ -3430,12 +3430,265 @@ function person(opt){
   blob.rotation.x=-Math.PI/2; blob.position.y=0.05; g.add(blob);
   g.traverse&&g.traverse(function(o){ if(o.isMesh!==false&&o.geometry) o.castShadow=true; });
   blob.castShadow=false;
+  /* キャラ固有の小物(名前・アビリティ・世界観に合わせた低ポリ装飾)。
+     propKeyが指定され、対応するCHAR_PROPSがあれば追加で足す。
+     既存の見た目には一切触れず上乗せするだけなので、他キャラへの影響はない */
+  if(opt.propKey&&CHAR_PROPS[opt.propKey]){
+    try{ CHAR_PROPS[opt.propKey](g,{S:S,chest:chest,hipY:hipY,headY:headY,
+      head:head,armL:armL,armR:armR,skin:skin,hair:hair,uni:uni,acc:acc,
+      white:white,dark:dark,opt:opt}); }catch(e){}
+  }
   g.userData={paper:pap,legL:legL,legR:legR,armL:armL,armR:armR,head:head,phase:0,
     skirt:g.userData_skirt||null,
     aura:aura,auraMat:auraMat,heart:heart,hMat:hMat,hglow:hglow,hgMat:hgMat,trapMark:tm,
     torso:torso,blob:blob,paperMat:paperMat};
   scene.add(g); return g;
 }
+/* 小物づくり用の軽量ヘルパー(bx/limbと同じ流儀。低セグメントで軽く) */
+function cy(parent,mat,rt,rb,h,x,y,z,seg){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||8),mat);
+  m.position.set(x,y,z); parent.add(m); return m;
+}
+function sp(parent,mat,r,x,y,z,seg){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,seg||8,Math.max(6,(seg||8)-2)),mat);
+  m.position.set(x,y,z); parent.add(m); return m;
+}
+function cn(parent,mat,r,h,x,y,z,seg){
+  const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,seg||8),mat);
+  m.position.set(x,y,z); parent.add(m); return m;
+}
+function tr(parent,mat,r,tube,x,y,z,seg){
+  const m=new THREE.Mesh(new THREE.TorusGeometry(r,tube,6,seg||10),mat);
+  m.position.set(x,y,z); parent.add(m); return m;
+}
+/* ===== キャラ固有の追加ディテール(先生28種+一部生徒) =====
+   名前・アビリティ・世界観に沿った低ポリの小物を2〜6個ほど足すだけ。
+   胴回りはg空間(地面からの高さ)、顔まわりはc.head空間(head原点基準)に付ける */
+const CHAR_PROPS={
+  /* 体育教師｜ホイッスル＋腕章＋トラックジャージのライン */
+  pe:function(g,c){ const S=c.S;
+    tr(g,LM(0xcfcabc),0.05*S,0.014*S,0,c.chest+0.52*S,0.22*S,8).rotation.x=Math.PI/2;
+    sp(g,PM(0xe8dca4,60,0xffffff),0.07*S,0,c.chest+0.28*S,0.3*S,8);
+    bx(g,LM(0xd9552f),0.08*S,0.32*S,0.05*S,-0.5*S,c.chest,0.24*S);
+    bx(g,LM(0xd9552f),0.08*S,0.32*S,0.05*S, 0.5*S,c.chest,0.24*S);
+    bx(g,LM(0xf4f2ea),0.32*S,0.08*S,0.05*S,-0.62*S,c.chest+0.28*S,0.2*S);
+  },
+  /* 数学教師｜胸ポケットの三色ペン＋公式カード */
+  math:function(g,c){ const S=c.S;
+    for(let i=0;i<3;i++) cy(g,LM([0xc94a52,0x3f6ab2,0x2a2a2a][i]),0.02*S,0.02*S,0.34*S,
+      (-0.06+i*0.06)*S,c.chest+0.4*S,0.29*S,6);
+    bx(g,LM(0xf4f2ea),0.24*S,0.3*S,0.02*S,0.32*S,c.chest+0.12*S,0.28*S);
+    bx(g,LM(0x3a3550),0.2*S,0.02*S,0.022*S,0.32*S,c.chest+0.2*S,0.29*S);
+  },
+  /* 用務員｜キーリング＋工具ベルト＋レンチ */
+  jan:function(g,c){ const S=c.S;
+    bx(g,LM(0x3a3a2c),0.9*S,0.16*S,0.5*S,0,c.chest-0.5*S,0);
+    for(let i=0;i<4;i++) tr(g,LM(0xc9a24a),0.045*S,0.012*S,0.42*S+i*0.045*S,c.chest-0.62*S,-0.06*S*i+0.05*S,6);
+    bx(g,LM(0x8a9298),0.05*S,0.32*S,0.06*S,-0.34*S,c.chest-0.7*S,0.12*S);
+    bx(g,LM(0x8a9298),0.16*S,0.09*S,0.06*S,-0.34*S,c.chest-0.55*S,0.12*S);
+  },
+  /* 人体模型｜露出した関節ボルト＋赤い照準リング(パーツ射出) */
+  model:function(g,c){ const S=c.S;
+    [-1,1].forEach(function(sx){ cy(g,LM(0x8a8f7a),0.05*S,0.05*S,0.06*S,sx*0.44*S,c.chest+0.44*S,0,8); });
+    tr(g,new THREE.MeshBasicMaterial({color:0xd8382a,transparent:true,opacity:0.7}),
+      0.16*S,0.02*S,0,c.chest,0.33*S,10);
+    tr(g,new THREE.MeshBasicMaterial({color:0xd8382a,transparent:true,opacity:0.55}),
+      0.13*S,0.016*S,-0.56*S,c.chest+0.4*S,0,10).rotation.x=Math.PI/2;
+  },
+  /* コックリさん｜紙垂(しで)の飾りと扇 */
+  kok:function(g,c){ const S=c.S;
+    for(let i=0;i<3;i++) bx(g,LM(0xf4f2ea),0.09*S,0.22*S,0.01*S,
+      -0.62*S,c.chest-0.05*S-i*0.2*S,0.06*S,(i%2?0.35:-0.35));
+    bx(g,LM(0xb5352f),0.5*S,0.32*S,0.02*S,0.6*S,c.chest-0.1*S,0.18*S,0.5);
+  },
+  /* 鬼塚教頭｜校則手帳＋名札 */
+  vice:function(g,c){ const S=c.S;
+    bx(g,LM(0x1c1a16),0.28*S,0.4*S,0.06*S,-0.56*S,c.chest,0.2*S);
+    bx(g,LM(0xf4f2ea),0.22*S,0.06*S,0.01*S,0.3*S,c.chest+0.3*S,0.29*S);
+    bx(g,LM(0x8a2f28),0.22*S,0.02*S,0.012*S,0.3*S,c.chest+0.3*S,0.3*S);
+  },
+  /* ベートーヴェン像｜台座＋ひび割れ */
+  beet:function(g,c){ const S=c.S;
+    cy(g,LM(0xb9b3a4),0.62*S,0.7*S,0.28*S,0,0.14*S,0,16);
+    bx(g,LM(0x8f8a7c),0.06*S,0.4*S,0.03*S,-0.2*S,c.chest+0.1*S,0.24*S,0.3);
+    bx(g,LM(0x8f8a7c),0.05*S,0.3*S,0.03*S,0.22*S,c.chest-0.2*S,0.24*S,-0.2);
+  },
+  /* チョークマン｜チョーク粉の煙＋黒板の縁取り */
+  chalk:function(g,c){ const S=c.S;
+    sp(g,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.5}),
+      0.09*S,-0.56*S,c.chest+0.3*S,0.24*S,8);
+    sp(g,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.35}),
+      0.06*S,-0.62*S,c.chest+0.2*S,0.3*S,8);
+    bx(g,LM(0x2a3a2e),0.98*S,0.06*S,0.03*S,0,c.chest+0.5*S,0.15*S);
+    bx(g,LM(0x2a3a2e),0.98*S,0.06*S,0.03*S,0,c.chest-0.5*S,0.15*S);
+  },
+  /* テケテケ｜引きずる背骨の突起 */
+  teke:function(g,c){ const S=c.S;
+    for(let i=0;i<5;i++) sp(g,LM(0x6b2a2a),0.08*S-i*0.008*S,0,0.32*S-i*0.08*S,-0.55*S-i*0.35*S,6);
+  },
+  /* 湖畔の仮面｜キャンプの袋とロープ */
+  mask:function(g,c){ const S=c.S;
+    bx(g,LM(0x5a4a2a),0.09*S,0.9*S,0.09*S,-0.3*S,c.chest,0.24*S,0.5);
+    bx(g,LM(0x3a4a2a),0.34*S,0.4*S,0.24*S,-0.5*S,c.chest-0.5*S,0.1*S);
+  },
+  /* 夢喰い(獏)｜長い鼻面と夢のもや */
+  dream:function(g,c){ const S=c.S;
+    cn(c.head,LM(c.opt.skin||0xf0d3b4),0.11*S,0.34*S,0,-0.3*S,0.55*S,8);
+    sp(g,new THREE.MeshBasicMaterial({color:0x8a6bd8,transparent:true,opacity:0.35}),
+      0.1*S,0.4*S,c.headY+0.3*S,0.2*S,6);
+    sp(g,new THREE.MeshBasicMaterial({color:0x8a6bd8,transparent:true,opacity:0.28}),
+      0.07*S,0.58*S,c.headY+0.5*S,0.1*S,6);
+  },
+  /* 壊れた着ぐるみ｜露出配線とネジ */
+  anima:function(g,c){ const S=c.S;
+    bx(g,LM(0x24272b),0.06*S,0.4*S,0.06*S,0.2*S,c.chest,0.26*S,0.6);
+    bx(g,LM(0xc9c24a),0.05*S,0.05*S,0.28*S,0.2*S,c.chest-0.16*S,0.3*S,0.6);
+    [-1,1].forEach(function(sx){ sp(g,LM(0x9aa4aa),0.035*S,sx*0.42*S,c.chest+0.4*S,0.28*S,6); });
+  },
+  /* 落ち武者｜背旗と家紋 */
+  fallen:function(g,c){ const S=c.S;
+    bx(g,LM(0x8a2f28),0.36*S,0.9*S,0.03*S,0,c.chest+0.4*S,-0.32*S);
+    bx(g,LM(0xd8d2c0),0.14*S,0.14*S,0.032*S,0,c.chest+0.5*S,-0.31*S);
+    cy(g,LM(0x2a2620),0.05*S,0.05*S,0.7*S,-0.3*S,c.hipY,0.1*S,8);
+  },
+  /* 保健室の先生｜聴診器と赤十字バッジ */
+  nurse:function(g,c){ const S=c.S;
+    tr(g,LM(0xd8d2c0),0.16*S,0.02*S,0,c.chest+0.5*S,0.2*S,10).rotation.x=Math.PI/2;
+    cy(g,LM(0xd8d2c0),0.02*S,0.02*S,0.3*S,-0.1*S,c.chest+0.1*S,0.26*S,6);
+    bx(g,LM(0xc94a52),0.14*S,0.04*S,0.012*S,0.3*S,c.chest+0.3*S,0.29*S);
+    bx(g,LM(0xc94a52),0.04*S,0.14*S,0.012*S,0.3*S,c.chest+0.3*S,0.29*S);
+  },
+  /* ハンティン先生｜弾帯と双眼鏡 */
+  hunt:function(g,c){ const S=c.S;
+    for(let i=0;i<4;i++) cy(g,LM(0xc9a24a),0.03*S,0.03*S,0.16*S,
+      (-0.3+i*0.2)*S,c.chest+0.3*S-i*0.12*S,0.27*S,6);
+    bx(g,LM(0x24272b),0.16*S,0.12*S,0.14*S,0,c.chest+0.5*S,0.24*S);
+  },
+  /* 人面犬｜首輪と鋲 */
+  dogman:function(g,c){ const S=c.S;
+    tr(g,LM(0x3a2f22),0.36*S,0.05*S,0,1.32*S,0,10).rotation.x=Math.PI/2;
+    for(let i=0;i<5;i++){ const a=i/5*6.28;
+      sp(g,LM(0xc9a24a),0.045*S,Math.cos(a)*0.36*S,1.32*S,Math.sin(a)*0.36*S,6); }
+  },
+  /* 青鬼先生｜角と虎柄の腰布 */
+  oni:function(g,c){ const S=c.S;
+    [-1,1].forEach(function(sx){ cn(c.head,LM(0xe8e2d2),0.07*S,0.3*S,sx*0.18*S,0.5*S,0,7); });
+    bx(g,LM(0xe8622a),0.6*S,0.3*S,0.36*S,0,c.hipY,0);
+    bx(g,LM(0x14161a),0.6*S,0.06*S,0.37*S,0,c.hipY-0.06*S,0);
+  },
+  /* 時計塔の刻乃｜胸の時計盤＋振り子 */
+  clock:function(g,c){ const S=c.S;
+    cy(g,LM(0xf4f0e0),0.24*S,0.24*S,0.05*S,0,c.chest+0.05*S,0.28*S,16).rotation.x=Math.PI/2;
+    bx(g,LM(0x1a1a1a),0.03*S,0.16*S,0.02*S,0,c.chest+0.1*S,0.32*S);
+    bx(g,LM(0x1a1a1a),0.12*S,0.025*S,0.02*S,0.05*S,c.chest+0.05*S,0.32*S);
+    [-1,1].forEach(function(sx){ cy(g,LM(0xc9a24a),0.09*S,0.09*S,0.05*S,sx*0.5*S,c.chest+0.4*S,0,10).rotation.x=Math.PI/2; });
+    cy(g,LM(0x8a7f60),0.012*S,0.012*S,0.5*S,0,c.chest-0.6*S,0.2*S,6);
+    sp(g,LM(0xc9a24a),0.08*S,0,c.chest-0.9*S,0.2*S,8);
+  },
+  /* 影絵のシルエット｜背後の提灯とちぎれた紙端 */
+  shade:function(g,c){ const S=c.S;
+    cy(g,new THREE.MeshBasicMaterial({color:0xffcf7a,transparent:true,opacity:0.7}),
+      0.2*S,0.2*S,0.4*S,0,c.chest,-0.5*S,10);
+    for(let i=0;i<4;i++) bx(g,c.uni,0.08*S,0.1*S,0.02*S,
+      -0.4*S,0.3*S+i*0.16*S,0.02*S,0.3);
+  },
+  /* 禁書の墨吏｜巻物と墨のしみ */
+  ink:function(g,c){ const S=c.S;
+    cy(g,LM(0xe8dcc4),0.08*S,0.08*S,0.7*S,-0.4*S,c.chest+0.3*S,-0.2*S,10).rotation.z=0.5;
+    sp(g,LM(0x120f18),0.09*S,0.2*S,c.chest-0.1*S,0.28*S,6);
+    sp(g,LM(0x120f18),0.05*S,0.32*S,c.chest-0.2*S,0.26*S,6);
+    bx(g,LM(0x2a2438),0.3*S,0.42*S,0.1*S,0,c.chest+0.1*S,-0.3*S);
+  },
+  /* 給食室の化け猫｜白い前掛けとコック帽・多い尾 */
+  cat:function(g,c){ const S=c.S;
+    bx(g,LM(0xf4f2ea),0.7*S,0.7*S,0.03*S,0,c.chest-0.05*S,0.27*S);
+    cy(g,LM(0xf4f2ea),0.28*S,0.28*S,0.28*S,0,c.headY+0.5*S,0,10);
+    for(let i=0;i<3;i++) cn(g,LM(c.opt.hair||0x6b4a24),0.05*S,0.3*S,
+      (-0.08+i*0.08)*S,c.hipY+0.2*S,-0.5*S,6);
+  },
+  /* 檻の猿・猿飛｜切れた鎖と石袋 */
+  monk:function(g,c){ const S=c.S;
+    tr(g,LM(0x8a9298),0.08*S,0.02*S,-0.56*S,c.chest-0.3*S,0,10);
+    for(let i=0;i<3;i++) tr(g,LM(0x8a9298),0.05*S,0.014*S,-0.56*S,c.chest-0.5*S-i*0.12*S,0,8);
+    bx(g,LM(0x5a4a3a),0.24*S,0.28*S,0.18*S,0.4*S,c.hipY,0.1*S);
+  },
+  /* 月夜の狼男｜引き裂かれた服と背の毛並み */
+  wolf:function(g,c){ const S=c.S;
+    bx(g,c.uni,0.5*S,0.2*S,0.02*S,-0.1*S,c.chest+0.1*S,0.26*S,0.4);
+    bx(g,c.uni,0.4*S,0.16*S,0.02*S,0.15*S,c.chest-0.2*S,0.26*S,-0.3);
+    for(let i=0;i<4;i++) cn(g,LM(c.opt.hair||0x2e2820),0.05*S,0.2*S,0,
+      c.chest+0.5*S-i*0.24*S,-0.24*S,8);
+  },
+  /* 霧刃の紳士｜コートの裾と懐中時計・霧 */
+  ripper:function(g,c){ const S=c.S;
+    bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S,-0.16*S,c.hipY-0.4*S,-0.3*S);
+    bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S, 0.16*S,c.hipY-0.4*S,-0.3*S);
+    cy(g,LM(0xc9a24a),0.06*S,0.06*S,0.02*S,0.3*S,c.chest-0.2*S,0.28*S,10).rotation.x=Math.PI/2;
+    for(let i=0;i<3;i++) sp(g,new THREE.MeshBasicMaterial({color:0xdfe8ea,transparent:true,opacity:0.3}),
+      0.2*S-i*0.03*S,(-0.2+i*0.2)*S,0.15*S,0.4*S+i*0.1*S,6);
+  },
+  /* 軋車の三兄弟｜胸の木製車輪の飾り */
+  wheel:function(g,c){ const S=c.S;
+    tr(g,LM(0x5a4a2a),0.15*S,0.035*S,0,c.chest,0.29*S,8);
+    bx(g,LM(0x5a4a2a),0.02*S,0.28*S,0.02*S,0,c.chest,0.29*S);
+    bx(g,LM(0x5a4a2a),0.28*S,0.02*S,0.02*S,0,c.chest,0.29*S);
+  },
+  /* 三色道化｜三色の菱形パッチとポンポン */
+  clown:function(g,c){ const S=c.S;
+    [[0xc94a52,-0.2],[0x3f6ab2,0],[0xd8c04a,0.2]].forEach(function(o){
+      const b=bx(g,LM(o[0]),0.16*S,0.16*S,0.02*S,o[1]*S,c.chest+0.15*S,0.27*S); b.rotation.z=0.785; });
+    tr(g,LM(0xf4f2ea),0.24*S,0.05*S,0,c.chest+0.5*S,0.1*S,10).rotation.x=Math.PI/2;
+    [0xc94a52,0x3f6ab2,0xd8c04a].forEach(function(cl,i){ sp(g,LM(cl),0.06*S,0,c.chest-0.1*S-i*0.2*S,0.26*S,6); });
+  },
+  /* 風紀委員の亡霊｜すり切れたマントと違反切符 */
+  seitokai:function(g,c){ const S=c.S;
+    const capeMat=new THREE.MeshBasicMaterial({color:0x2a2038,transparent:true,opacity:0.55});
+    for(let i=0;i<3;i++) bx(g,capeMat,0.18*S,0.9*S-i*0.1*S,0.03*S,(-0.2+i*0.2)*S,c.hipY+0.1*S,-0.32*S);
+    bx(g,LM(0xf4f2ea),0.16*S,0.1*S,0.01*S,0.5*S,c.chest-0.3*S,0.2*S);
+  },
+  /* 花壇の見回り先生｜ジョウロと作業エプロン */
+  garden:function(g,c){ const S=c.S;
+    const wc=new THREE.Group(); wc.position.set(-0.55*S,c.chest-0.2*S,-0.15*S);
+    cy(wc,LM(0x4a6b3a),0.18*S,0.14*S,0.32*S,0,0,0,10);
+    cn(wc,LM(0x4a6b3a),0.06*S,0.3*S,0.2*S,0.1*S,-0.16*S,8);
+    tr(wc,LM(0x3a5a2a),0.13*S,0.02*S,-0.16*S,0.1*S,0,10);
+    g.add(wc);
+    bx(g,LM(0x8a9a5a),0.7*S,0.5*S,0.02*S,0,c.chest-0.1*S,0.27*S);
+    bx(g,LM(0x4a3a2a),0.06*S,0.2*S,0.03*S,-0.06*S,c.hipY-0.2*S,0.28*S);
+  },
+  /* 地学部顧問｜馬蹄磁石と岩石標本袋 */
+  magnet:function(g,c){ const S=c.S;
+    bx(g,LM(0xc03a2a),0.05*S,0.3*S,0.05*S,-0.14*S,c.chest-0.6*S,0.2*S);
+    bx(g,LM(0xc03a2a),0.05*S,0.3*S,0.05*S, 0.02*S,c.chest-0.6*S,0.2*S);
+    bx(g,LM(0xc9ccd0),0.05*S,0.06*S,0.05*S,-0.14*S,c.chest-0.44*S,0.2*S);
+    bx(g,LM(0xc9ccd0),0.05*S,0.06*S,0.05*S, 0.02*S,c.chest-0.44*S,0.2*S);
+    bx(g,LM(0x6b5a3a),0.24*S,0.2*S,0.18*S,0.5*S,c.hipY,0.1*S);
+  },
+  /* 吹奏楽部顧問｜蝶ネクタイと金モール */
+  band:function(g,c){ const S=c.S;
+    bx(g,LM(0x1a1a1a),0.06*S,0.1*S,0.05*S,0,c.chest+0.45*S,0.28*S);
+    bx(g,LM(0x1a1a1a),0.16*S,0.06*S,0.05*S,0,c.chest+0.45*S,0.28*S);
+    [-1,1].forEach(function(sx){ bx(g,LM(0xc9a24a),0.16*S,0.04*S,0.16*S,sx*0.42*S,c.chest+0.46*S,0,0.2*sx); });
+    bx(g,LM(0x14161a),0.06*S,0.9*S,0.03*S,-0.1*S,c.hipY-0.35*S,-0.3*S);
+    bx(g,LM(0x14161a),0.06*S,0.9*S,0.03*S, 0.1*S,c.hipY-0.35*S,-0.3*S);
+  },
+  /* 写真部顧問｜ストラップとフィルムリール */
+  photo:function(g,c){ const S=c.S;
+    bx(g,LM(0x24221c),0.06*S,0.9*S,0.02*S,-0.3*S,c.chest,0.2*S,0.5);
+    tr(g,LM(0x24272b),0.14*S,0.03*S,0.42*S,c.hipY-0.1*S,0.1*S,10);
+    bx(g,LM(0xf4f2ea),0.14*S,0.1*S,0.01*S,0.4*S,c.chest+0.3*S,0.29*S);
+  },
+  /* ダークノード｜人間形態にも滲む変身の気配(裂けた襟元・獣の爪痕・仄暗い霊気) */
+  darknode:function(g,c){ const S=c.S;
+    bx(g,c.uni,0.4*S,0.16*S,0.02*S,-0.12*S,c.chest+0.12*S,0.26*S,0.5);
+    bx(g,c.uni,0.34*S,0.14*S,0.02*S,0.16*S,c.chest-0.14*S,0.26*S,-0.4);
+    for(let i=0;i<3;i++) bx(g,LM(0x120e18),0.03*S,0.5*S,0.012*S,(-0.14+i*0.14)*S,c.chest,0.27*S,0.15);
+    sp(g,new THREE.MeshBasicMaterial({color:0x8a3ad8,transparent:true,opacity:0.3}),
+      0.12*S,-0.5*S,c.headY+0.1*S,-0.1*S,6);
+    sp(g,new THREE.MeshBasicMaterial({color:0x8a3ad8,transparent:true,opacity:0.22}),
+      0.08*S,-0.6*S,c.headY+0.35*S,-0.15*S,6);
+  }
+};
 const STU=[
  {name:'あおい',short:'あおい',uniform:0x3f6fb5,hair:0x2b2118,perk:'work',
   ptxt:'手が速い｜課題+12%',skill:null},
@@ -3896,7 +4149,7 @@ function spawnAll(){
     return {kind:'student',name:C.short,full:C.name,ci:ci,
       perk:C.perk,skill:C.skill,skillName:C.sname||'',
       abMax:C.cd||0,abUses:(C.uses===undefined?-1:C.uses),
-      mesh:person(Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false},
+      mesh:person(Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
         SLOOK[C.perk]||{})),
       male:!!((SLOOK[C.perk]||{}).male),
       color:C.uniform,hairC:C.hair,
@@ -3916,7 +4169,7 @@ function spawnAll(){
   const gs=far.length?far[0]:spots[spots.length-1];
   const gp=center(gs[0],gs[1]);
   const K=KINDS[teacherKind];
-  const LK=Object.assign({},LOOK[teacherKind]||{});
+  const LK=Object.assign({propKey:teacherKind},LOOK[teacherKind]||{});
   if(weaponPick) LK.weapon=weaponPick;
   const SPD={teke:1.06,wolf:1.03,mask:1.02,cat:1.04,monk:1.03,wheel:0.96,
              clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
@@ -10218,7 +10471,7 @@ function refreshLobby(){
   for(let i=0;i<STU.length&&picks.length<4;i++) if(picks.indexOf(i)<0) picks.push(i);
   picks.forEach(function(ci,i){
     const C=STU[ci];
-    const o=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false},
+    const o=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
       SLOOK[C.perk]||{});
     const m=makeLobbyModel(o);
     if(!m) return;
@@ -10231,7 +10484,7 @@ function refreshLobby(){
   });
   /* 手前に先生 */
   const K=TCH[kindIndex];
-  const lk=Object.assign({},LOOK[K.key]||{});
+  const lk=Object.assign({propKey:K.key},LOOK[K.key]||{});
   if(weaponPick) lk.weapon=weaponPick;
   const km=makeLobbyModel(Object.assign(
     {uniform:KINDS[K.key].color,hair:0x24201c,accent:0x8a2f28,tall:true},lk));
@@ -10721,10 +10974,10 @@ function buildPreview(){
   let opt;
   if(role==='student'){
     const o=STU[myIndex];
-    opt=Object.assign({uniform:o.uniform,hair:o.hair,accent:0xe4e0d4,tall:false},SLOOK[o.perk]||{});
+    opt=Object.assign({uniform:o.uniform,hair:o.hair,accent:0xe4e0d4,tall:false,propKey:o.perk},SLOOK[o.perk]||{});
   } else {
     const o=TCH[kindIndex];
-    opt=Object.assign({uniform:KINDS[o.key].color,hair:0x24201c,accent:0x8a2f28,tall:true},
+    opt=Object.assign({uniform:KINDS[o.key].color,hair:0x24201c,accent:0x8a2f28,tall:true,propKey:o.key},
       LOOK[o.key]||{});
     if(weaponPick) opt.weapon=weaponPick;
   }
