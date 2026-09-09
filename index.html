@@ -1892,6 +1892,7 @@ function applyStage(){
   chairs=allChairs.filter(function(c){ return inStage(c.c); });
   exits=allExits.filter(function(e){ return inStage(e.c); });
   vents=allVents.filter(function(v){ return inStage(v.c); });
+  ceilPoints=allCeil.filter(function(v){ return inStage(v.c); });
   allChairs.forEach(function(c){ c.taken=null; if(c.glow) c.glow.visible=false; });
   allExits.forEach(function(e){ e.mesh.material=M.exit; if(e.glow) e.glow.visible=false; });
   pickTasks();
@@ -2053,6 +2054,30 @@ function refreshVentLook(){
     v.puddle.visible=act&&k==='pool';
     v.grille.visible=act&&!v.gate.visible&&!v.torii.visible&&!v.stall.visible&&!v.puddle.visible;
   }
+}
+/* 渡り廊下の逆さ女専用：天井にへばりつけるポイント。
+   既存の通気口ワープの地点方式(ventSpots→allVents→毎ステージでフィルタ)を
+   再利用し、その半分の地点を「天井ポイント」として流用する(専用の座標
+   データを新規で用意しない) */
+function makeCeilMark(){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.35,0.6,14),
+    new THREE.MeshBasicMaterial({color:0x8a2f3a,transparent:true,opacity:0.55,
+      side:THREE.DoubleSide,depthTest:false}));
+  ring.rotation.x=Math.PI/2; g.add(ring);
+  return g;
+}
+const ceilSpots=ventSpots.filter(function(v,i){ return i%2===0; });
+const allCeil=[];
+for(const v of ceilSpots){
+  const p=center(v[0],v[1]);
+  const mk=makeCeilMark(); mk.position.set(p.x,3.3,p.z); mk.visible=false; scene.add(mk);
+  allCeil.push({c:v[0],r:v[1],x:p.x,z:p.z,mesh:mk});
+}
+let ceilPoints=[];
+function refreshCeilLook(){
+  const k=teacher?teacher.kindKey:'';
+  for(const v of allCeil) v.mesh.visible=inStage(v.c)&&k==='sakasa';
 }
 /* 射出パーツ（人体模型） */
 const shots=[];
@@ -2254,10 +2279,23 @@ function updShots(dt){
             teacher.sewPts=Math.min(30,(teacher.sewPts||0)+1);
             applySewGrowth(teacher);
             toast(st.name+'が糸に縫い止められた！（連打で抜け出せる）');
+          } else if(sh.doll){
+            st.freeze=Math.max(st.freeze,4.0); setAura(st,'reveal',4.0);
+            toast(st.name+(sh.dollReturn?'に戻ってきた人形が再び当たった！':'が人形に当てられて金縛りにされた！'));
           } else { st.slow=3.0; st.slowMul=0.62; toast(st.name+'にパーツが直撃'); }
           break;
         }
       }
+    }
+    /* 人形塚の番人：レベル2以上の人形はブーメラン式に自動で戻ってくる
+       (=2回攻撃扱い)。戻り弾が消える時にteacher.dlDollsを補充する */
+    if(dead&&sh.doll&&(sh.dollLvl||1)>=2&&!sh.dollReturn){
+      const rm=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),LM(0xcfa0a0));
+      rm.position.set(sh.x,1.6,sh.z); scene.add(rm);
+      shots.push({m:rm,x:sh.x,z:sh.z,dx:-sh.dx,dz:-sh.dz,t:0,doll:true,
+        dollLvl:sh.dollLvl,dollReturn:true});
+    } else if(dead&&sh.doll&&sh.dollReturn&&teacher.kindKey==='doll'){
+      teacher.dlDolls=1;
     }
     if(dead){ scene.remove(sh.m); shots.splice(i,1); }
   }
@@ -2467,12 +2505,15 @@ const spearBoxes=[];
   }
 })();
 function updSpears(dt){
-  const on=(teacher.kindKey==='mask');
+  const on=(teacher.kindKey==='mask'||teacher.kindKey==='doll');
   for(const b of spearBoxes){
     b.g.visible=on;
     if(!on) continue;
-    if(teacher.spears<1&&Math.hypot(teacher.x-b.x,teacher.z-b.z)<3.4){
+    if(teacher.kindKey==='mask'&&teacher.spears<1&&Math.hypot(teacher.x-b.x,teacher.z-b.z)<3.4){
       teacher.spears=1; toast('槍を補充した'); beep(600,0.15,'triangle',0.09);
+    } else if(teacher.kindKey==='doll'&&(teacher.dlDolls||0)<1&&teacher.dlLevel<2&&
+      Math.hypot(teacher.x-b.x,teacher.z-b.z)<3.4){
+      teacher.dlDolls=1; toast('人形塚で人形を回収した'); beep(500,0.15,'triangle',0.09);
     }
   }
 }
@@ -3804,6 +3845,41 @@ const CHAR_PROPS={
   judo:function(g,c){ const S=c.S;
     bx(g,LM(0x24242c),0.7*S,0.14*S,0.36*S,0,c.hipY+0.1*S,0);
     bx(g,LM(0x24242c),0.14*S,0.3*S,0.04*S,0,c.hipY-0.1*S,0.2*S);
+  },
+  /* にせもの(正体形態)｜継ぎ目のようなひび割れと、もう一つの顔の影 */
+  mirror:function(g,c){ const S=c.S;
+    for(let i=0;i<3;i++) bx(g,LM(0x1a0e10),0.02*S,0.4*S,0.012*S,(-0.1+i*0.1)*S,c.chest,0.27*S,0.1);
+    sp(g,new THREE.MeshBasicMaterial({color:0x6b1f2c,transparent:true,opacity:0.35}),
+      0.1*S,-0.5*S,c.headY,0.05*S,6);
+    tr(g,LM(0x8a2f3a),0.1*S,0.02*S,0,c.chest+0.5*S,0.28*S,10);
+  },
+  /* 渡り廊下の逆さ女｜長く垂れる髪と天井を睨む赤い目の影 */
+  sakasa:function(g,c){ const S=c.S;
+    for(let i=0;i<4;i++) cy(g,LM(0x0e0c12),0.015*S,0.005*S,0.3*S+i*0.05*S,
+      (-0.12+i*0.08)*S,c.headY-0.1*S-i*0.1*S,-0.2*S,6);
+    sp(g,new THREE.MeshBasicMaterial({color:0xff3b2e,transparent:true,opacity:0.4}),
+      0.06*S,0,c.headY+0.3*S,0.2*S,6);
+  },
+  /* 人形塚の番人｜継ぎだらけの人形と供養の紐 */
+  doll:function(g,c){ const S=c.S;
+    bx(g,LM(0xe4d4c4),0.14*S,0.22*S,0.1*S,-0.4*S,c.chest-0.3*S,0.15*S);
+    sp(g,LM(0xe4d4c4),0.08*S,-0.4*S,c.chest-0.08*S,0.15*S,8);
+    for(let i=0;i<3;i++) tr(g,LM(0xcfa876),0.03*S+i*0.01*S,0.008*S,
+      -0.4*S,c.chest-0.4*S+i*0.06*S,0.15*S,8);
+    bx(g,LM(0x8a2f28),0.5*S,0.04*S,0.02*S,0.1*S,c.chest+0.35*S,0.2*S,0.2);
+  },
+  /* 保健委員(たぬき寝入り)｜救急バッジと丸まった毛布 */
+  tanuki:function(g,c){ const S=c.S;
+    sp(g,LM(0xd8a0a8),0.06*S,0.3*S,c.chest+0.3*S,0.28*S,8);
+    bx(g,LM(0xf4f2ea),0.1*S,0.03*S,0.01*S,0.3*S,c.chest+0.3*S,0.29*S);
+    bx(g,LM(0xc94a52),0.03*S,0.1*S,0.012*S,0.3*S,c.chest+0.3*S,0.3*S);
+    tr(g,LM(0x8a7a5c),0.5*S,0.1*S,0,c.hipY-0.2*S,-0.3*S,12);
+  },
+  /* 図書委員(護符の栞)｜貸出カードと紐で結んだお守り */
+  tome:function(g,c){ const S=c.S;
+    bx(g,LM(0x5c6a8a),0.22*S,0.3*S,0.02*S,-0.32*S,c.chest+0.1*S,0.27*S);
+    bx(g,LM(0xf4f2ea),0.16*S,0.06*S,0.022*S,-0.32*S,c.chest+0.22*S,0.28*S);
+    for(let i=0;i<3;i++) sp(g,LM(0xe8c547),0.03*S,0.3*S+i*0.06*S,c.chest-0.1*S,0.26*S,6);
   }
 };
 const STU=[
@@ -3914,7 +3990,15 @@ const STU=[
  {name:'柔道部',short:'柔道部',uniform:0xf4f2ea,hair:0x1a1612,perk:'judo',
   ptxt:'受け身｜先生に担がれている間、その先生の移動速度を少し落とす',
   skill:'ippon',sname:'一本背負い',cd:24,
-  stxt:'先生に組み付かれた(担がれた)瞬間だけ、タイミングよく発動キーを押すと投げ返してよろけさせ、逃げられる'}
+  stxt:'先生に組み付かれた(担がれた)瞬間だけ、タイミングよく発動キーを押すと投げ返してよろけさせ、逃げられる'},
+ {name:'宗像 うらら',short:'うらら',uniform:0x8a7a5c,hair:0x2a2018,perk:'tanuki',
+  ptxt:'保健委員｜打たれ強い（ダウンから力尽きるまでが50%長い）',
+  skill:'possum',sname:'狸寝入り',cd:0,
+  stxt:'じっとして気配を殺す（1.5秒静止）と発動でき、気絶したふりをする。先生に担がれた瞬間、もう一度タイミングよく発動キーを押すと躱して自由になれる（失敗すると本当に担がれる）。成功時はしばらく先生に気づかれにくくなり、近くの仲間の作業も少し捗る'},
+ {name:'文月 しずく',short:'しずく',uniform:0x5c6a8a,hair:0x241f2c,perk:'tome',
+  ptxt:'図書委員｜落ち着いた読書家（課題を進める速度が少し速い）',
+  skill:'tome',sname:'護符の栞',cd:3,
+  stxt:'追われていない時にQ｜本を読んで護符を貯める（最大3、本は3冊まで）。追われている時にQ｜護符を1つ使って自分か近くの仲間に身代わり札（次の1発を無効化）。R｜護符を1つ使って先生を1.5秒足止めし、周りの仲間も少し加速させる'}
 ];
 const WEAPONS=[
  {k:'',        n:'キャラ標準'},
@@ -4149,7 +4233,13 @@ const LOOK={
           hair:0x14302e,skin:0x8aa8a4,eye:0xbfe8e0},
   sewing:{body:'human',hairStyle:'none',acc:'',weapon:'',accent:0xcfa876,
           hair:0x8a7050,skin:0xe0d0b8},
-  radio:{body:'human',hairStyle:'short',acc:'',weapon:'baton',accent:0x24242c}
+  radio:{body:'human',hairStyle:'short',acc:'',weapon:'baton',accent:0x24242c},
+  mirror:{body:'human',hairStyle:'none',acc:'',weapon:'claw',accent:0x6b1f2c,
+          hair:0x1c1a18,skin:0xd8c8c0,eye:0xb03030},
+  sakasa:{body:'human',hairStyle:'long',acc:'',weapon:'',accent:0x2a2438,
+          hair:0x0e0c12,skin:0xc9c0d4,eye:0xff3b2e},
+  doll:{body:'human',hairStyle:'none',acc:'',weapon:'',accent:0x8a2f28,
+        hair:0x2a2018,skin:0xe4d4c4,eye:0x1a1614}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -4182,6 +4272,8 @@ const SLOOK={
   zanshin:{hairStyle:'long',acc:'',weapon:''},
   naive:{hairStyle:'short',acc:'',weapon:''},
   judo:{hairStyle:'short',acc:'band',weapon:'',male:true,pants:0xf4f2ea},
+  tanuki:{hairStyle:'bob',acc:'',weapon:''},
+  tome:{hairStyle:'long',acc:'glasses',weapon:'book'},
   foot2:{}
 };
 SLOOK.foot={hairStyle:'short',acc:'band',weapon:'band',male:true,pants:0x3a2f2a};
@@ -4222,7 +4314,10 @@ const KINDS={
   kuchisake:{name:'口裂け女', ability:'斬撃ダッシュ／質問', color:0x2c2c2c, cd:10},
   pool:{name:'プールの主', ability:'水脈渡り／浮上の金縛り', color:0x1f4a4a, cd:8},
   sewing:{name:'継ぎ接ぎさん', ability:'糸投げ（縫い止め）', color:0xcfa876, cd:9},
-  radio:{name:'放送室の主', ability:'偽の終業チャイム／校内放送ジャック', color:0x24242c, cd:20}
+  radio:{name:'放送室の主', ability:'偽の終業チャイム／校内放送ジャック', color:0x24242c, cd:20},
+  mirror:{name:'にせもの', ability:'擬態／化け直し・正体を現す', color:0x6b1f2c, cd:8},
+  sakasa:{name:'渡り廊下の逆さ女', ability:'壁走り／天井からの落下奇襲', color:0x2a2438, cd:3},
+  doll:{name:'人形塚の番人', ability:'人形投げ／人形の視線', color:0x8a2f28, cd:9}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -4261,7 +4356,10 @@ const TCH=[
  {key:'kuchisake',desc:'マスクを外す動作を溜めて解放すると、正面へ高速直線ダッシュ斬り（命中で出血＝継続ダメージ、板は破壊できない）／質問｜近くの生徒に問いかける。正面で命中すれば数秒足止め、外すと反動で自分が数秒よろける（ハイリスク・ハイリターン）'},
  {key:'pool',desc:'水脈渡り｜通気口と同じ仕組みで、マップ上の水場（プール・噴水など）の間をワープする／浮上した瞬間、視線が合っている生徒を数秒間 金縛り（操作不能）にする'},
  {key:'sewing',desc:'糸投げ｜遠くから糸を投げて命中した生徒を縫い止める（連打で脱出できる）。生徒を縫い止めるたびに「収集」が貯まり、少しずつ体が大きく・攻撃の隙が短くなる'},
- {key:'radio',desc:'偽の終業チャイム｜発動すると、しばらく生徒全員のミニマップの位置表示が隠れる/ずれる／校内放送ジャック｜生徒を1人名指しすると、その生徒の位置は全員に見えるようになる代わりに、放送を聞いた他の生徒はしばらく課題の進みが遅くなる'}
+ {key:'radio',desc:'偽の終業チャイム｜発動すると、しばらく生徒全員のミニマップの位置表示が隠れる/ずれる／校内放送ジャック｜生徒を1人名指しすると、その生徒の位置は全員に見えるようになる代わりに、放送を聞いた他の生徒はしばらく課題の進みが遅くなる'},
+ {key:'mirror',desc:'擬態形態｜試合開始時、生徒の誰かにそっくり化けている（速度も生徒並み・攻撃不可）。Q｜近くの別の生徒に化け直す／R｜3秒の無防備な変身を経て正体を現す（片道）。正体形態｜通常の先生と同じ攻撃力。Q（ホールド）｜自分そっくりの偽物を3体ばら撒く。生徒をダウンさせるたび侵食ゲージが貯まり、満ちると60秒「二重人格」になり近くの生徒に成り代わって紛れられる'},
+ {key:'sakasa',desc:'床形態（3形態で一番遅い）｜通常攻撃可。Q｜壁走り形態（狼並みの速さ・気配減少・攻撃不可）に変身／壁走り中に天井の張り付き地点でQ｜天井形態（ホールドして待ち構え、真下を生徒が通ると自動で落下奇襲。外すと3秒動けない）。奇襲を3回決めると60秒「双子の逆さ女」になり、もう一体の逆さ女が同時出現する'},
+ {key:'doll',desc:'人形投げ｜命中で数秒間 金縛り。人形は1個のみ、投げたら人形塚（槍箱と同じ地点）で補充。生徒を1人ダウンさせるか3分経過でレベル2（速度+8%・人形がブーメラン式に強化・R「人形の視線」で生徒の位置が見える）。さらに2人ダウン＋一定時間でレベル3（速度最大・Qが踏み込み範囲攻撃＝板も破壊できるに変化・人形の視線が常時発動）'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -4322,7 +4420,8 @@ function spawnAll(){
              clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
              dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
              fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
-             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0};
+             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0,
+             mirror:1.0,sakasa:1.0,doll:0.98};
   teacher={kind:'teacher',name:K.name,
     mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
     x:gp.x,z:gp.z,yaw:0,speed:DIFF.tSpeed*(SPD[teacherKind]||1),
@@ -4347,7 +4446,20 @@ function spawnAll(){
     pdMode:0,pdGauge:0,pdSwitchCd:0,pdObsHold:false,pdObsIdleT:0,pdSoundFired:false,
     pdAwakeCastT:0,pdAwakeT:0,pdFinisherT:0,pdFinisherHit:[],pdChargeYaw0:0,
     pdBreakSlowT:0,pdExtendUsed:false,pdMuseIdx:-1,
-    pdTokensA:0,pdTokensB:0,pdTokensC:0,pdMuseNearT:0,pdMuseFarT:0,pdRushB:0};
+    pdTokensA:0,pdTokensB:0,pdTokensC:0,pdMuseNearT:0,pdMuseFarT:0,pdRushB:0,
+    /* にせもの(mirror)専用。mrForm:0=擬態/1=正体、mrMimicIdx=化けている生徒の
+       students配列index、mrReveal>0で変身モーション中(teacher.stunと連動)、
+       mrGaugeは侵食ゲージ(0〜3)、mrDualTは二重人格状態の残り秒数 */
+    mrForm:0,mrMimicIdx:-1,mrReveal:0,mrGauge:0,mrDualT:0,mrDualUsed:false,
+    mrBlendT:0,mrDecoys:[],
+    /* 渡り廊下の逆さ女(sakasa)専用。saForm:0=床/1=壁走り/2=天井、
+       saFearは恐怖ゲージ(0〜3)、saTwinTは双子状態の残り秒数、
+       saDiveは落下奇襲の突進タイマー(狼のleapと同じ方式) */
+    saForm:0,saFear:0,saTwinT:0,saCeilIdx:-1,saDive:0,saDiveMax:0,
+    saDiveFrom:null,saDiveTo:null,saDiveHit:false,saDiveTarget:null,saHoldReady:false,
+    /* 人形塚の番人(doll)専用。dlLevelは自動昇格する1〜3の段階、
+       dlDollsは所持中の人形(0か1)、dlDownsはこの先生がダウンさせた人数 */
+    dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0};
   if(teacherKind==='darknode'){
     /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
        teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
@@ -4360,8 +4472,24 @@ function spawnAll(){
     wolfMesh.visible=false; batMesh.visible=false;
     teacher.dnMeshes=[teacher.mesh,wolfMesh,batMesh];
   }
+  if(teacherKind==='mirror'){
+    /* 擬態形態の見た目はダークノードのdnMeshes方式を流用。生徒4人分の
+       そっくりさんメッシュを全部先に作っておき、参照を差し替えるだけで
+       誰に化けても既存のアニメーション/当たり判定コードに触らずに済む */
+    const trueMesh=teacher.mesh; trueMesh.visible=false;
+    const disguiseMeshes=students.map(function(s){
+      const dm=person(Object.assign({uniform:s.color,hair:s.hairC,accent:0xe4e0d4,
+        tall:false,propKey:s.perk},SLOOK[s.perk]||{}));
+      dm.visible=false; return dm;
+    });
+    const idx=students.length?((Math.random()*students.length)|0):0;
+    if(disguiseMeshes[idx]) disguiseMeshes[idx].visible=true;
+    teacher.mrMeshes=disguiseMeshes; teacher.mrTrueMesh=trueMesh;
+    teacher.mrMimicIdx=idx; teacher.mesh=disguiseMeshes[idx]||trueMesh; teacher.mrForm=0;
+  }
   players=students.concat([teacher]);
   refreshVentLook();
+  refreshCeilLook();
   oniAllies.forEach(function(o){ scene.remove(o.mesh); }); oniAllies.length=0;
   oniBodies.forEach(function(b){ b.used=false; });
   refreshOniBodies();
@@ -5405,10 +5533,11 @@ function noiseR(s,r){
   if(s.perk==='sound') return r*0.45;
   if(s.perk==='nine') return r*0.5;
   if(s.perk==='zanshin'&&(s.stillT||0)>0.4) return r*0.15;
+  if((s.tnCloakT||0)>0) return r*0.3;
   return r;
 }
 const SAB2={ medic:'鎮痛剤', chem:'煙幕', tank:'風紀粛清', ghost:'粉爆弾',
-  sound:'偽の悲鳴' };
+  sound:'偽の悲鳴', tome:'足止め（護符消費）' };
 function useStudentSkill2(s){
   if(s.lock>0){ toast('スキルが封じられている'); return; }
   if(s.ab2Cd>0) return;
@@ -5440,6 +5569,17 @@ function useStudentSkill2(s){
   } else if(k==='ghost'){
     if(s.drone>0){ if(s===me) toast('ドローン中は行動ボタンで粉爆弾'); }
     else if(s===me) toast('先にドローンを飛ばそう');
+  } else if(k==='tome'){
+    if((s.tomeCharges||0)<=0){ if(s===me) toast('護符がない'); return; }
+    const d=Math.hypot(teacher.x-s.x,teacher.z-s.z);
+    if(d>16||!los(teacher.x,teacher.z,s.x,s.z)){ if(s===me) toast('先生が近くにいないと使えない'); return; }
+    s.tomeCharges--; s.ab2Cd=10;
+    teacher.stun=Math.max(teacher.stun,1.5*stunMul());
+    students.forEach(function(a){
+      if(a.state==='free'&&Math.hypot(a.x-s.x,a.z-s.z)<10) a.rush=Math.max(a.rush||0,2.0);
+    });
+    if(s===me) toast('しおりを投げつけて足止め！（1.5秒）');
+    beep(240,0.3,'square',0.13); vib([30,40,50]);
   }
 }
 function dropPowderBomb(s,charge){
@@ -5682,6 +5822,50 @@ function useStudentSkill(s){
     teacher.stun=Math.max(teacher.stun,2.4*stunMul());
     if(s===me) toast('一本背負い！');
     beep(160,0.3,'square',0.15); vib([50,60,90]);
+  } else if(s.skill==='possum'){
+    /* 保健委員「狸寝入り」：担がれた瞬間の回避反応部分。開始(擬似ダウン化)は
+       s.abCd/s.abUsesに頼らず自前のs.tnCdで管理しているので、ここは
+       useStudentSkill()冒頭のabCdガードに一切引っかからず常に反応できる */
+    if(s.state==='carried'&&s.tnFake&&(s.grabWindow||0)>0){
+      s.grabWindow=0; s.tnFake=false;
+      escapeCarry(s);
+      s.tnCloakT=6.0;
+      students.forEach(function(a){
+        if(a!==s&&a.state==='free'&&Math.hypot(a.x-s.x,a.z-s.z)<10) a.tnBoostT=8.0;
+      });
+      if(s===me) toast('直前でするりと躱した！（しばらく気配が薄い）');
+      beep(700,0.25,'triangle',0.12); vib([30,40,60]);
+      return;
+    }
+    if(s.state!=='free'){ if(s===me) toast('今は使えない'); return; }
+    if((s.tnCd||0)>0){ if(s===me) toast('まだ狸寝入りは使えない'); return; }
+    /* オンライン参加者/BOTは「静止」の概念が薄いので、実際に操作している
+       ローカルの人間(me)だけ静止判定を厳密に見る */
+    if(s===me&&(s.stillT||0)<1.5){ if(s===me) toast('じっとして気配を殺してから…'); return; }
+    s.state='downed'; s.tnFake=true; s.downT=0; s.tnCd=40;
+    if(s===me) toast('狸寝入り…気絶したふりをした');
+    beep(140,0.3,'sine',0.08);
+  } else if(s.skill==='tome'){
+    const chased=los(teacher.x,teacher.z,s.x,s.z)&&Math.hypot(teacher.x-s.x,teacher.z-s.z)<16;
+    s.abCd=s.abMax;
+    if(!chased){
+      const left=(s.tomeReadsLeft===undefined)?3:s.tomeReadsLeft;
+      if(left<=0){ if(s===me) toast('もう読める本がない'); s.abCd=1; return; }
+      if((s.tomeCharges||0)>=3){ if(s===me) toast('護符はもう満タン(3/3)'); s.abCd=1; return; }
+      s.tomeReadsLeft=left-1; s.tomeCharges=(s.tomeCharges||0)+1;
+      if(s===me) toast('本を読んで護符を1つ手に入れた（護符'+s.tomeCharges+'/3・残り'+s.tomeReadsLeft+'冊）');
+      beep(700,0.2,'sine',0.09);
+    } else {
+      if((s.tomeCharges||0)<=0){ if(s===me) toast('護符がない（安全な時に本を読んでおこう）'); s.abCd=1; return; }
+      s.tomeCharges--;
+      const ally=students.filter(function(a){ return a!==s&&a.state==='free'&&
+        Math.hypot(a.x-s.x,a.z-s.z)<3; })
+        .sort(function(a,b){ return Math.hypot(a.x-s.x,a.z-s.z)-Math.hypot(b.x-s.x,b.z-s.z); })[0];
+      const target=ally||s;
+      target.tomeShield=true;
+      if(s===me||target===me) toast(target===s?'自分に身代わり札をかけた（次の1発を無効化）':(target.name+'に身代わり札をかけた'));
+      beep(500,0.25,'triangle',0.1);
+    }
   }
 }
 /* ドローン */
@@ -5776,7 +5960,8 @@ function workTask(s,d,dt){
   }
   d.prog=Math.min(1,d.prog+dt*DIFF.work*(s===me?1:0.8)*
     (s.perk==='work'?1.12:(s.perk==='read'?1.10:(s.perk==='proto'?5.0:
-      ((s.perk==='focus'||s.perk==='read2')?1.10:1))))*
+      ((s.perk==='focus'||s.perk==='read2'||s.perk==='tome')?1.10:1))))*
+    ((s.tnBoostT||0)>0?1.15:1)*
     (spotlightOn(s)?1.25:1)*traitTaskMul(s));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
   /* 共同作業感知(discordance)：2人以上が同じ机で一緒に作業していると位置がわかる */
@@ -5918,6 +6103,12 @@ function hit(s,heavy){ return damage(s,1,heavy); }
 function damage(s,amt,heavy){
   if(s.state!=='free'||s.hide) return false;
   if(s===me&&adminGod) return false;   /* 管理者モード：無敵 */
+  if(s.tomeShield){
+    s.tomeShield=false;
+    toast(s.name+'の護符が身代わりになった！');
+    beep(900,0.2,'sine',0.12); vib([25,30,25]);
+    return false;
+  }
   if(s.parry>0){
     s.parry=0; s.rush=3.0;
     teacher.stun=Math.max(teacher.stun,1.6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
@@ -5954,6 +6145,17 @@ function damage(s,amt,heavy){
     /* 写真部顧問の「記念撮影」判定用。誰がダウンさせたかは問わず、単純に
        この生徒が何回ダウンしたかを数えるだけの軽いカウンタ(他の先生には無関係) */
     s.pdDownCount=(s.pdDownCount||0)+1;
+    /* にせもの：正体形態でダウンさせるたび侵食ゲージが貯まる。満ちると
+       60秒「二重人格」状態になり、化け直しが1回使えるようになる */
+    if(teacher.kindKey==='mirror'&&teacher.mrForm===1){
+      teacher.mrGauge=Math.min(3,(teacher.mrGauge||0)+1);
+      if(teacher.mrGauge>=3){
+        teacher.mrGauge=0; teacher.mrDualT=60; teacher.mrDualUsed=false;
+        toast('侵食が満ちた…二重人格状態(60秒)');
+      }
+    }
+    /* 人形塚の番人：レベル自動昇格の判定に使うダウン数カウンタ */
+    if(teacher.kindKey==='doll') teacher.dlDowns=(teacher.dlDowns||0)+1;
     /* 見せしめ(misesime)：本命以外がダウンするたびトークンが貯まる */
     if(hasTrait(teacher,'misesime')){
       const muse=pdMuse();
@@ -6464,6 +6666,161 @@ function pdSpeedMul(t){
   if(t.pdRushB>0) m*=1.15+Math.min(0.15,(t.pdTokensB||0)*0.05);  /* じらし遊び */
   return m;
 }
+/* にせもの：擬態形態は化けている生徒(base 6.4)と同じ速度になるよう、
+   難易度設定で変わるteacher.base(≒DIFF.tSpeed)からの比率で合わせる */
+function mrSpeedMul(t){
+  if(t.kindKey!=='mirror') return 1;
+  if(t.mrForm===0) return 6.4/(t.base||6.4);
+  return 1;
+}
+/* 渡り廊下の逆さ女：床(3形態で一番遅い)＜壁走り(狼並みに速い)、
+   天井では待ち構えているだけなので静止 */
+function saSpeedMul(t){
+  if(t.kindKey!=='sakasa') return 1;
+  if(t.saForm===1) return 1.35;
+  if(t.saForm===2) return 0;
+  return 0.85;
+}
+/* 人形塚の番人：自動昇格するたびに速度が上がる */
+function dlSpeedMul(t){
+  if(t.kindKey!=='doll') return 1;
+  if(t.dlLevel>=3) return 1.18;
+  if(t.dlLevel>=2) return 1.08;
+  return 1;
+}
+function updMirror(dt){
+  const t=teacher;
+  if(t.kindKey!=='mirror'){
+    if(t.mrDecoys&&t.mrDecoys.length){
+      t.mrDecoys.forEach(function(d){ scene.remove(d.mesh); }); t.mrDecoys.length=0;
+    }
+    return;
+  }
+  if(t.mrReveal>0){
+    t.mrReveal-=dt;
+    if(t.mrReveal<=0){
+      if(t.mrMeshes&&t.mrMeshes[t.mrMimicIdx]) t.mrMeshes[t.mrMimicIdx].visible=false;
+      t.mrForm=1; t.mrReveal=0;
+      if(t.mrTrueMesh){ t.mesh=t.mrTrueMesh; t.mesh.visible=true; }
+      t.abCd=0; t.ab2Cd=999999;   /* 正体形態への変身は片道切符(能力2は二度と使えない) */
+      toast('正体を現した！');
+      beep(180,0.4,'sawtooth',0.14);
+    }
+  }
+  if(t.mrDualT>0){
+    t.mrDualT=Math.max(0,t.mrDualT-dt);
+    if(t.mrDualT<=0) t.mrDualUsed=false;
+  }
+  if(t.mrBlendT>0){
+    t.mrBlendT-=dt;
+    if(t.mrBlendT<=0){
+      if(t.mrBlendMesh) t.mrBlendMesh.visible=false;
+      if(t.mrTrueMesh){ t.mesh=t.mrTrueMesh; t.mesh.visible=true; }
+      t.mrBlendMesh=null;
+      toast('紛れていた効果が切れた');
+    }
+  }
+  if(t.mrDecoys&&t.mrDecoys.length){
+    for(let i=t.mrDecoys.length-1;i>=0;i--){
+      const d=t.mrDecoys[i]; d.t+=dt;
+      if(d.t>8){ scene.remove(d.mesh); t.mrDecoys.splice(i,1); }
+    }
+  }
+}
+function mrSpawnDecoys(){
+  const t=teacher; t.abCd=8;
+  if(t.mrDecoys) t.mrDecoys.forEach(function(d){ scene.remove(d.mesh); });
+  t.mrDecoys=[];
+  for(let i=0;i<3;i++){
+    const ang=Math.random()*Math.PI*2, rad=2+Math.random()*3;
+    const dx=t.x+Math.cos(ang)*rad, dz=t.z+Math.sin(ang)*rad;
+    const m=person(Object.assign({uniform:KINDS.mirror.color,propKey:'mirror'},LOOK.mirror,{tall:true}));
+    m.position.set(dx,0,dz); m.rotation.y=Math.random()*Math.PI*2;
+    t.mrDecoys.push({x:dx,z:dz,mesh:m,t:0});
+  }
+  toast('偽物を3体ばら撒いた！');
+  beep(200,0.3,'sawtooth',0.1);
+}
+function mrBlendIn(){
+  const t=teacher;
+  const near=students.filter(function(s){ return s.state==='free'; })
+    .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+  if(!near){ toast('紛れられる生徒がいない'); return; }
+  t.mrDualUsed=true; t.mrBlendT=10;
+  const idx=students.indexOf(near);
+  if(t.mrTrueMesh) t.mrTrueMesh.visible=false;
+  t.mesh=t.mrMeshes[idx]; t.mesh.visible=true; t.mrBlendMesh=t.mesh;
+  toast(near.name+'に成り代わって紛れた（10秒、能力はそのまま使える）');
+  beep(260,0.3,'sine',0.1);
+}
+function updSakasa(dt){
+  const t=teacher;
+  if(t.kindKey!=='sakasa'){
+    if(t.saTwinMesh){ scene.remove(t.saTwinMesh); t.saTwinMesh=null; }
+    return;
+  }
+  if(t.saTwinT>0){
+    t.saTwinT=Math.max(0,t.saTwinT-dt);
+    if(t.saTwinT<=0&&t.saTwinMesh){ scene.remove(t.saTwinMesh); t.saTwinMesh=null; }
+  }
+  /* 天井形態でホールドして待ち構えている時、真下を通った生徒に自動発動 */
+  if(t.saForm===2&&t.saHoldReady&&t.saDive<=0){
+    const victim=students.filter(function(s){ return s.state==='free'&&!s.hide&&
+      Math.hypot(s.x-t.x,s.z-t.z)<2.2; })[0];
+    if(victim) saStartDive(victim);
+  }
+  if(t.saDive>0){
+    t.saDive-=dt;
+    if(t.saDive<=0){
+      const ok=t.saDiveTarget&&t.saDiveTarget.state==='free'&&
+        Math.hypot(t.saDiveTarget.x-t.x,t.saDiveTarget.z-t.z)<2.8;
+      if(ok){
+        hit(t.saDiveTarget,true);
+        toast(t.saDiveTarget.name+'に落下奇襲！');
+        beep(700,0.2,'sawtooth',0.12);
+        t.saFear=(t.saFear||0)+1;
+        if(t.saFear>=3){
+          t.saFear=0; t.saTwinT=60;
+          const spot=ceilPoints.filter(function(v){ return v!==allCeil[t.saCeilIdx]; })[0];
+          if(spot){
+            const tm=person(Object.assign({uniform:KINDS.sakasa.color,propKey:'sakasa'},LOOK.sakasa,{tall:false}));
+            tm.position.set(spot.x,3.1,spot.z); tm.rotation.x=Math.PI;
+            t.saTwinMesh=tm;
+          }
+          toast('恐怖が満ちた…双子の逆さ女が現れた（60秒）');
+        }
+      } else {
+        t.stun=Math.max(t.stun,3.0);
+        toast('落下奇襲を外した…（3秒動けない）');
+        beep(120,0.4,'sawtooth',0.15);
+      }
+      t.saForm=0; t.saCeilIdx=-1; t.saDiveTarget=null; t.saHoldReady=false;
+    }
+  }
+}
+function saStartDive(target){
+  const t=teacher;
+  t.saDive=0.4; t.saDiveMax=0.4; t.saDiveTarget=target; t.saHoldReady=false;
+  beep(500,0.15,'sawtooth',0.1);
+}
+function updDoll(dt){
+  const t=teacher;
+  if(t.kindKey!=='doll') return;
+  if(t.dlLevel===1&&((t.dlDowns||0)>=1||elapsed>=180)){
+    t.dlLevel=2; t.dlLevel2At=elapsed;
+    toast('人形塚の番人が力を増した…（レベル2）');
+    beep(200,0.4,'sawtooth',0.12);
+  }
+  if(t.dlLevel===2&&(t.dlDowns||0)>=2&&elapsed>=((t.dlLevel2At||0)+90)){
+    t.dlLevel=3;
+    toast('人形塚の番人が真の姿を見せた…（レベル3・最終形態）');
+    beep(140,0.5,'sawtooth',0.14);
+  }
+  if(t.dlLevel>=3){
+    students.forEach(function(s){ if(s.state==='free') setAura(s,'reveal',0.4); });
+  }
+  if(t.dlSightT>0) t.dlSightT=Math.max(0,t.dlSightT-dt);
+}
 function terrorRadius(s){
   let r;
   if(teacher&&teacher.kindKey==='photo'){
@@ -6471,6 +6828,8 @@ function terrorRadius(s){
   } else {
     r=(s&&s.perk==='star')?32:((s&&s.perk==='bug')?40:24);
   }
+  /* 渡り廊下の逆さ女：壁走り形態は気配が大きく減る */
+  if(teacher&&teacher.kindKey==='sakasa'&&teacher.saForm===1) r*=0.4;
   /* 転校生「知らぬが仏」：怪談を知らないので気配が伝わる範囲そのものが縮む */
   if(s&&s.perk==='naive') r*=0.6;
   /* 静「残心」：完全に静止している間、気配がほとんど届かなくなる */
@@ -6671,6 +7030,8 @@ function nurseBurst(){
 function swing(force){
   if(possessT>0) return;
   if(teacher.wheelOn){ toast('車輪では攻撃できない'); return; }
+  if(teacher.kindKey==='mirror'&&teacher.mrForm===0){ toast('擬態中は攻撃できない'); return; }
+  if(teacher.kindKey==='sakasa'&&teacher.saForm>0){ toast('この形態では攻撃できない'); return; }
   teacher.idleT=0; teacher.cloak=0;
   if(teacher.cool>0||teacher.stun>0||teacher.wipe>0||teacher.dive>0||teacher.phase>0) return;
   if(teacher.kindKey==='nurse'&&teacher.atkWindow<=0){
@@ -6739,6 +7100,8 @@ function updSwing(dt){
 }
 function doAction(){
   if(role!=='teacher'||teacher.stun>0||teacher.wipe>0||teacher.dive>0) return;
+  if(teacher.kindKey==='mirror'&&teacher.mrForm===0) return;
+  if(teacher.kindKey==='sakasa'&&teacher.saForm>0) return;
   if(teacher.kindKey==='darknode'&&teacher.dnForm===1&&!teacher.carrying&&teacher.dnBreak<=0){
     /* 狼形態：倒れた板が近くにあれば、噛みついてその場で破壊する
        （動かずに専用モーション→完了時に破壊、代償として自分がスタン） */
@@ -6795,7 +7158,8 @@ const AB2={
   seitokai:'取り憑き突進', darknode:'形態変化', photo:'暗室⇔現像',
   hanako:'ノックの数当て', kuchisake:'質問', radio:'校内放送ジャック',
   model:'', pe:'', math:'', jan:'', teke:'', garden:'', magnet:'', band:'',
-  oni:'', ripper:'', dogman:'', nurse:'', wolf:'', pool:'', sewing:''
+  oni:'', ripper:'', dogman:'', nurse:'', wolf:'', pool:'', sewing:'',
+  mirror:'正体を現す', sakasa:'', doll:'人形の視線'
 };
 function useAbility2(){
   const t=teacher;
@@ -7014,6 +7378,20 @@ function useAbility2(){
       toast('近くに誰もおらず、反動でよろけた');
       beep(120,0.4,'sawtooth',0.15);
     }
+  } else if(k==='mirror'){
+    if(t.mrForm!==0){ toast('もう正体を現している'); return; }
+    if(t.mrReveal>0) return;
+    t.mrReveal=3.0; t.stun=Math.max(t.stun,3.0);
+    toast('正体を現し始めた…（3秒、無防備）');
+    beep(140,0.5,'sawtooth',0.12);
+  } else if(k==='doll'){
+    if(t.dlLevel<2){ toast('レベル2にならないと使えない'); return; }
+    if(t.dlLevel>=3){ toast('人形の視線は常時発動中'); return; }
+    if(t.ab2Cd>0) return;
+    t.ab2Cd=KINDS.doll.cd;
+    students.forEach(function(s){ if(s.state==='free') setAura(s,'reveal',8.0); });
+    toast('人形の視線：8秒間 生徒の位置が見える');
+    beep(240,0.4,'sine',0.1);
   }
 }
 function useAbility(){
@@ -7314,6 +7692,50 @@ function useAbility(){
     students.forEach(function(x){ if(x.state==='free'&&!x.hide){ mark(x.x,x.z,0xe8c547); n++; } });
     toast('指揮棒一閃！2.5秒加速して'+n+'人の気配を掴んだ');
     beep(500,0.25,'triangle',0.12);
+  } else if(t.kindKey==='mirror'){
+    if(t.mrForm!==0||t.mrReveal>0) return;
+    if(t.abCd>0) return;
+    const cands=students.map(function(s,i){ return i; })
+      .filter(function(i){ return i!==t.mrMimicIdx&&students[i].state==='free'; })
+      .sort(function(a,b){
+        return Math.hypot(students[a].x-t.x,students[a].z-t.z)-
+               Math.hypot(students[b].x-t.x,students[b].z-t.z); });
+    if(!cands.length){ toast('化け直せる生徒がいない'); return; }
+    if(t.mrMeshes[t.mrMimicIdx]) t.mrMeshes[t.mrMimicIdx].visible=false;
+    t.mrMimicIdx=cands[0]; t.mesh=t.mrMeshes[t.mrMimicIdx]; t.mesh.visible=true;
+    t.abCd=KINDS.mirror.cd;
+    toast('別の生徒に化け直した');
+    beep(320,0.2,'sine',0.1);
+  } else if(t.kindKey==='sakasa'){
+    if(t.abCd>0) return;
+    if(t.saForm===0){
+      t.saForm=1; t.abCd=KINDS.sakasa.cd;
+      toast('壁を這い始めた（攻撃不可・気配減少）'); beep(220,0.3,'sine',0.1);
+    } else if(t.saForm===1){
+      const near=ceilPoints.filter(function(v){ return Math.hypot(v.x-t.x,v.z-t.z)<3.6; })[0];
+      if(near){
+        t.saForm=2; t.saCeilIdx=allCeil.indexOf(near); t.x=near.x; t.z=near.z; unstick(t);
+        t.abCd=KINDS.sakasa.cd;
+        toast('天井に張り付いた…待ち構えよう（ホールド）'); beep(180,0.4,'sine',0.1);
+      } else {
+        t.saForm=0; t.abCd=KINDS.sakasa.cd;
+        toast('床に降りた'); beep(260,0.25,'sine',0.1);
+      }
+    } else if(t.saForm===2){
+      t.saForm=0; t.saCeilIdx=-1; t.abCd=KINDS.sakasa.cd;
+      toast('天井から降りた'); beep(260,0.25,'sine',0.1);
+    }
+  } else if(t.kindKey==='doll'){
+    if(t.dlLevel>=3) return;   /* レベル3は踏み込み技専用(charge経由) */
+    if(t.abCd>0) return;
+    if((t.dlDolls||0)<1){ toast('人形がない（人形塚で補充）'); return; }
+    t.dlDolls=0; t.abCd=KINDS.doll.cd;
+    const m=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.5,0.22),LM(0xe4d4c4));
+    m.position.set(t.x,1.6,t.z); scene.add(m);
+    shots.push({m:m,x:t.x,z:t.z,dx:Math.sin(t.yaw),dz:Math.cos(t.yaw),t:0,
+      doll:true,dollLvl:t.dlLevel});
+    beep(300,0.2,'triangle',0.1);
+    toast(t.dlLevel>=2?'人形投げ！（当たっても外れても戻ってくる）':'人形投げ！');
   }
 }
 function roomAt(c,r){
@@ -7493,6 +7915,11 @@ function nearestChair(x,z){
 }
 function aiTeacher(dt){
   const t=teacher;
+  /* にせもの：AIは駆け引きをせず、開始直後に正体を現して普通の先生として
+     戦う(ダークノードのAIが狼形態に固定するのと同じ簡略化の考え方) */
+  if(t.kindKey==='mirror'&&t.mrForm===0&&!t.mrRevealStarted){
+    t.mrRevealStarted=true; t.mrReveal=3.0; t.stun=Math.max(t.stun,3.0);
+  }
   if(t.blink>0){
     t.blink-=dt; move(t,Math.sin(t.yaw)*17,Math.cos(t.yaw)*17,dt);
     if(t.blink<=0){ t.phase=0; unstick(t); t.atkWindow=1.6; nurseBurst();
@@ -7510,7 +7937,13 @@ function aiTeacher(dt){
     const tg=students.filter(function(x){ return x.state==='free'&&!x.hide; })
       .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
     if(tg) t.yaw=Math.atan2(tg.x-t.x,tg.z-t.z);
-    if(t.aiCharge<=0){ if(t.kindKey==='kuchisake') ksStartDash(t.charge); else startDash(t.charge); }
+    if(t.aiCharge<=0){
+      if(t.kindKey==='kuchisake') ksStartDash(t.charge);
+      else if(t.kindKey==='doll'){
+        t.dash=0.5+t.charge*1.3; t.dashHit=[]; t.slash=true; t.abCd=KINDS.doll.cd; t.charge=0;
+      }
+      else startDash(t.charge);
+    }
     return;
   }
   t.pathT-=dt;
@@ -7639,6 +8072,13 @@ function aiTeacher(dt){
       }
       else if(t.kindKey==='radio'&&t.abCd<=0&&Math.random()<0.006) useAbility();
       else if(t.kindKey==='radio'&&t.ab2Cd<=0&&Math.random()<0.006) useAbility2();
+      else if(t.kindKey==='doll'&&t.dlLevel<3&&d<18&&d>5&&(t.dlDolls||0)>=1){
+        t.yaw=Math.atan2(tgt.x-t.x,tgt.z-t.z); useAbility();
+      }
+      else if(t.kindKey==='doll'&&t.dlLevel===3&&d>4&&d<13&&t.dash<=0&&t.aiCharge<=0){
+        t.aiCharge=0.7; t.charge=0;
+      }
+      else if(t.kindKey==='doll'&&t.dlLevel>=2&&t.ab2Cd<=0&&Math.random()<0.004) useAbility2();
     }
     if(d<3.8) swing(t.dash>0);
     /* 相手の進行方向を読んで先回り */
@@ -7729,6 +8169,11 @@ function aiStudent(s,dt){
     if(Math.random()<0.5) useStudentSkill(s);
     return;
   }
+  /* 保健委員「狸寝入り」：担がれた瞬間の回避もstate!=='free'でも判定したい */
+  if(s.skill==='possum'&&s.state==='carried'&&s.tnFake&&(s.grabWindow||0)>0){
+    if(Math.random()<0.6) useStudentSkill(s);
+    return;
+  }
   if(s.state!=='free') return;
   if(s.trapped) return;
   s.pathT-=dt;
@@ -7754,6 +8199,9 @@ function aiStudent(s,dt){
     else if(s.skill==='announce'&&Math.random()<0.003) useStudentSkill(s);
     else if(s.skill==='snipe'&&td>8&&td<24&&los(teacher.x,teacher.z,s.x,s.z)) useStudentSkill(s);
     else if(s.skill==='mirage'&&td<10) useStudentSkill(s);
+    else if(s.skill==='possum'&&!s.hurt&&td>10&&td<30&&(s.tnCd||0)<=0&&Math.random()<0.02) useStudentSkill(s);
+    else if(s.skill==='tome'&&td>22&&Math.random()<0.03) useStudentSkill(s);
+    else if(s.skill==='tome'&&td<14&&(s.tomeCharges||0)>0&&Math.random()<0.02) useStudentSkill(s);
   }
   if(td>=18) s.chased=0;
   /* BOT(AI操作の生徒)も懐中電灯を持てる/使えるように(2026-09-08追加)。
@@ -8296,7 +8744,8 @@ function tick(now){
      こちらの移動計算側を直し忘れていたため、カメラは三人称なのに
      移動方向だけ一人称基準のまま=前後左右が反転する不具合になっていた） */
   const teacherFP=(role==='teacher')&&!(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
-    !(teacher.kindKey==='wheel'&&teacher.wheelOn);
+    !(teacher.kindKey==='wheel'&&teacher.wheelOn)&&
+    !(teacher.kindKey==='sakasa'&&teacher.saForm>0);
   const viewYaw=teacherFP?(camYaw+Math.PI):camYaw;
   const vf=[Math.sin(viewYaw),Math.cos(viewYaw)];      /* 前 */
   const vr=[-Math.cos(viewYaw),Math.sin(viewYaw)];     /* 右 */
@@ -8463,6 +8912,35 @@ function tick(now){
         abDim=(t.pdMode===1); abHot=(t.pdMode===0);
         hp=(t.pdMode===0)?(t.pdGauge||0)/5:0;
       }
+    } else if(t.kindKey==='mirror'&&t.mrForm===1){
+      /* 正体形態：二重人格状態なら一度だけタップで「化け直し(紛れる)」、
+         それ以外は攻撃ボタンをホールドで溜めて離すと分身3体をばら撒く */
+      if(t.mrDualT>0&&!t.mrDualUsed){
+        abLabel='紛れる（二重人格）';
+        if(input.abEdge) mrBlendIn();
+      } else {
+        abLabel=(t.mrDecoys&&t.mrDecoys.length)?('分身'+t.mrDecoys.length+'体展開中'):'分身をばらまく';
+        if((input.act||input.abHold)&&t.abCd<=0&&t.stun<=0&&t.wipe<=0){
+          t.charge=Math.min(1,t.charge+dt*0.9); hp=t.charge;
+          abLabel='溜め中 '+Math.round(t.charge*100)+'%';
+        } else if(t.charge>0.15){ mrSpawnDecoys(); t.charge=0; }
+        else t.charge=0;
+      }
+    } else if(t.kindKey==='sakasa'&&t.saForm===2){
+      /* 天井形態：ホールドして待ち構える。真下に生徒が来ると自動発動(updSakasa) */
+      t.saHoldReady=!!input.abHold&&t.saDive<=0;
+      abLabel=t.saDive>0?'落下中！':(t.saHoldReady?'待ち構えている…':'ホールドで待ち構える');
+      hp=t.saHoldReady?1:0;
+    } else if(t.kindKey==='doll'&&t.dlLevel>=3){
+      /* レベル3：能力1が踏み込み距離の伸びた範囲攻撃(板も破壊可)に変化 */
+      abLabel='踏み込み攻撃';
+      if(input.abHold&&t.abCd<=0&&t.stun<=0&&t.wipe<=0&&t.dive<=0){
+        t.charge=Math.min(1,t.charge+dt*0.9); hp=t.charge;
+        abLabel='踏み込み '+Math.round(t.charge*100)+'%';
+      } else if(t.charge>0.15){
+        t.dash=0.5+t.charge*1.3; t.dashHit=[]; t.slash=true; t.abCd=KINDS.doll.cd; t.charge=0;
+        beep(200,0.3,'sawtooth',0.12); toast('人形塚の踏み込み！');
+      } else t.charge=0;
     } else if(input.abEdge) useAbility();
     if(input.ab2Edge&&AB2[t.kindKey]) useAbility2();
 
@@ -8570,7 +9048,9 @@ function tick(now){
     if(me.skill){
       abLabel=me.skillName;
       const ready=(me.abCd<=0)&&(me.abUses!==0)&&(me.lock<=0)&&
-        (me.state==='free'||(me.skill==='ippon'&&me.state==='carried'&&(me.grabWindow||0)>0));
+        (me.state==='free'||
+         (me.skill==='ippon'&&me.state==='carried'&&(me.grabWindow||0)>0)||
+         (me.skill==='possum'&&me.state==='carried'&&me.tnFake&&(me.grabWindow||0)>0));
       abDim=!ready; abHot=ready;
       if(input.abEdge&&ready) useStudentSkill(me);
     } else { abLabel='固有なし'; abDim=true; }
@@ -8787,6 +9267,9 @@ function tick(now){
       if(s.fxT2>0.35){ s.fxT2=0; fartFx(s); }
     }
     if(s.tiredT>0) s.tiredT-=dt;
+    if(s.tnCloakT>0) s.tnCloakT=Math.max(0,s.tnCloakT-dt);
+    if(s.tnBoostT>0) s.tnBoostT=Math.max(0,s.tnBoostT-dt);
+    if(s.tnCd>0) s.tnCd=Math.max(0,s.tnCd-dt);
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
@@ -8816,14 +9299,23 @@ function tick(now){
     }
     if(s.parry>0) s.parry-=dt;
     if(s.state==='downed'){
-      s.downT+=dt;
-      if((s.perk==='nine'||hasTrait(s,'perseverance'))&&!s.usedNine&&s.downT>4){
-        s.usedNine=true; s.state='free'; s.hurt=true; s.dmg=1; s.downT=0;
-        paperLook(s); s.rush=3.0;
-        toast(s.name+(hasTrait(s,'perseverance')&&s.perk!=='nine'?'は不屈の一念で自力で起き上がった':'は九死に一生で起き上がった'));
-        beep(900,0.3,'triangle',0.11);
+      /* 保健委員「狸寝入り」：先生が遠く(15m超)にいて発覚のリスクが
+         無い間は、8秒経ったら安全に狸寝入りをやめて起き上がれる。
+         先生が近くまで来ている場合はそのまま賭けを続けさせる(高リスク) */
+      if(s.tnFake&&s.downT>8&&Math.hypot(teacher.x-s.x,teacher.z-s.z)>15){
+        s.state='free'; s.tnFake=false; s.downT=0; paperLook(s);
+        if(s===me) toast('狸寝入りをやめて起き上がった');
+      } else {
+        s.downT+=dt;
+        if((s.perk==='nine'||hasTrait(s,'perseverance'))&&!s.usedNine&&s.downT>4){
+          s.usedNine=true; s.state='free'; s.hurt=true; s.dmg=1; s.downT=0;
+          paperLook(s); s.rush=3.0;
+          toast(s.name+(hasTrait(s,'perseverance')&&s.perk!=='nine'?'は不屈の一念で自力で起き上がった':'は九死に一生で起き上がった'));
+          beep(900,0.3,'triangle',0.11);
+        }
+        if(s.downT>((s.perk==='kendo'||s.perk==='tanuki')?48:32)) out(s,'力尽きた');
       }
-      if(s.downT>(s.perk==='kendo'?48:32)) out(s,'力尽きた'); }
+    }
     if(s.state==='seated'){
       s.seatT+=dt;
       const limit=(s.seatLimit===undefined?62:s.seatLimit),
@@ -8921,6 +9413,9 @@ function tick(now){
   updInk(dt);
   updDarkNode(dt);
   updPhoto(dt);
+  updMirror(dt);
+  updSakasa(dt);
+  updDoll(dt);
   /* 巻き戻し用の位置履歴 */
   teacher.histT=(teacher.histT||0)+dt;
   if(teacher.histT>0.25){
@@ -8970,7 +9465,7 @@ function tick(now){
     (teacher.crawl>0?1.6:1)*(teacher.phase>0?1.5:1)*
     dnSpeedMul(teacher)*
     ((teacher.kindKey==='darknode'&&teacher.dnForm!==2&&teacher.charge>0)?0.3:1)*
-    pdSpeedMul(teacher)*
+    pdSpeedMul(teacher)*mrSpeedMul(teacher)*saSpeedMul(teacher)*dlSpeedMul(teacher)*
     (role==='teacher'?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
   updWarp(dt);
   updShots(dt);
@@ -9363,7 +9858,8 @@ function tick(now){
 
   if(role==='teacher'&&!(puppet&&puppet!==teacher)&&
      !(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
-     !(teacher.kindKey==='wheel'&&teacher.wheelOn)){
+     !(teacher.kindKey==='wheel'&&teacher.wheelOn)&&
+     !(teacher.kindKey==='sakasa'&&teacher.saForm>0)){
     teacher.mesh.visible=false; ruler.visible=true;
     const shake=(teacher.stun>0?Math.sin(elapsed*38)*0.09:0)
                +(teacher.wipe>0?Math.sin(elapsed*9)*0.02:0);
@@ -9415,6 +9911,14 @@ function tick(now){
       teacher.mesh.position.y=1.1+Math.sin(elapsed*2.2)*0.15;   /* コウモリ：浮遊 */
     } else if(teacher.mesh&&teacher.kindKey==='darknode'){
       teacher.mesh.position.y=0;
+    }
+    /* 渡り廊下の逆さ女：天井形態は天井に張り付いて逆さまになる */
+    if(teacher.kindKey==='sakasa'&&teacher.mesh){
+      if(teacher.saForm===2){
+        teacher.mesh.position.y=3.1; teacher.mesh.rotation.x=Math.PI;
+      } else {
+        teacher.mesh.position.y=0; teacher.mesh.rotation.x=0;
+      }
     }
     /* 車輪形態(轢車の三兄弟)は爆速で移動するため、通常の三人称距離(7.4)より
        少し遠めにして見切れにくくする(しゅんりさんの要望「遠すぎず近すぎない」) */
@@ -10176,7 +10680,10 @@ function netApplyStudentInput(s,inp,dt){
     else { s.rescueT=0; s.healT=0; }
   }
   if(s.skill){
-    const ready=(s.abCd<=0)&&(s.abUses!==0)&&(s.lock<=0)&&s.state==='free';
+    const ready=(s.abCd<=0)&&(s.abUses!==0)&&(s.lock<=0)&&
+      (s.state==='free'||
+       (s.skill==='ippon'&&s.state==='carried'&&(s.grabWindow||0)>0)||
+       (s.skill==='possum'&&s.state==='carried'&&s.tnFake&&(s.grabWindow||0)>0));
     if(inp.abEdge&&ready) useStudentSkill(s);
   }
   if(inp.ab2Edge&&SAB2[s.perk]&&s.state==='free') useStudentSkill2(s);
@@ -10204,7 +10711,11 @@ function netHostBroadcastSnapshot(dt){
       pdMode:teacher.pdMode||0, pdAwakeT:teacher.pdAwakeT||0, pdAwakeCastT:teacher.pdAwakeCastT||0,
       vault:teacher.vault||0, vaultMax:teacher.vaultMax||1, vaultK:teacher.vaultK||0,
       miniFakeT:teacher.miniFakeT||0, sewScaleMul:teacher.sewScaleMul||1,
-      ksDash:teacher.ksDash||0 } },
+      ksDash:teacher.ksDash||0,
+      mrForm:teacher.mrForm||0, mrMimicIdx:(teacher.mrMimicIdx===undefined?-1:teacher.mrMimicIdx),
+      mrBlend:!!(teacher.mrBlendT>0),
+      mrBlendIdx:(teacher.mrBlendMesh&&teacher.mrMeshes)?teacher.mrMeshes.indexOf(teacher.mrBlendMesh):-1,
+      saForm:teacher.saForm||0, dlLevel:teacher.dlLevel||1 } },
     stu: students.map(function(s){
       return { x:s.x, z:s.z, yaw:s.yaw, f:{
         state:s.state, dmg:s.dmg, hurt:s.hurt, hide:!!s.hide, sleep:s.sleep, confuse:s.confuse,
@@ -10300,6 +10811,16 @@ function netInterpolate(dt){
         wheelMesh.rotation.x+=dt*9;
       }
     } else if(wheelMesh) wheelMesh.visible=false;
+    /* にせもの：参加者(観戦者)側の画面にも、擬態中の見た目(誰に化けているか)・
+       正体形態・二重人格中の紛れ変装を反映する。分身(mrDecoys)の見た目までは
+       同期していない(戦闘に影響しない演出のみのため、スコープを絞った) */
+    if(teacher.kindKey==='mirror'&&teacher.mrMeshes&&teacher.mrTrueMesh){
+      const f=snap.tea.f;
+      const wantIdx=f.mrBlend?f.mrBlendIdx:(f.mrForm===0?f.mrMimicIdx:-1);
+      teacher.mrMeshes.forEach(function(m,i){ m.visible=(i===wantIdx); });
+      if(wantIdx>=0){ teacher.mrTrueMesh.visible=false; teacher.mesh=teacher.mrMeshes[wantIdx]; }
+      else { teacher.mrTrueMesh.visible=true; teacher.mesh=teacher.mrTrueMesh; }
+    }
   }
   if(snap.tasks) snap.tasks.forEach(function(p,i){
     const d=tasks[i]; if(!d) return;
@@ -10390,7 +10911,10 @@ function netClientTick(dt){
   else label=(me.state==='seated')?'反省椅子…':((me.state==='downed')?'ダウン中…':'—');
   if(me.skill){
     abLabel=me.skillName;
-    const ready=(me.abCd<=0)&&(me.abUses!==0)&&(me.lock<=0)&&me.state==='free';
+    const ready=(me.abCd<=0)&&(me.abUses!==0)&&(me.lock<=0)&&
+      (me.state==='free'||
+       (me.skill==='ippon'&&me.state==='carried'&&(me.grabWindow||0)>0)||
+       (me.skill==='possum'&&me.state==='carried'&&me.tnFake&&(me.grabWindow||0)>0));
     abDim=!ready; abHot=ready;
   } else { abLabel='固有なし'; abDim=true; }
 
