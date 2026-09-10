@@ -310,6 +310,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   letter-spacing:.15em;text-align:center}
 #adminLogin .wc{padding:8px;text-align:center;font-size:11px;opacity:.75;
   border:1px solid #ff5f5f66;border-radius:2px;color:#ff5f5f}
+/* スマホ向け管理者パネル開閉ボタン。#roster(左上のロースター一覧)の
+   実測bounding rectの右横にJSで追従配置する(layoutSprintHudと同じ方針) */
+#adminMiniBtn{position:fixed;display:none;padding:5px 9px;font-size:11px;
+  background:#0b120ef0;border:1px solid #ff5f5f88;border-radius:4px;color:#ff8f6a;z-index:6}
+#adminMiniBtn.on{display:block}
 #adminPanel{position:fixed;top:46px;left:8px;width:216px;max-height:76vh;overflow-y:auto;
   padding:14px;border-radius:4px;background:#0b120ef2;border:1px solid #ff5f5f66;
   display:none;font-size:11.5px;-webkit-overflow-scrolling:touch;touch-action:pan-y;z-index:60}
@@ -386,6 +391,20 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .seg div.locked{opacity:0.62;border-style:dashed}
 .seg.small div{padding:5px 9px;font-size:10px}
 .seg.small.wrap{max-height:170px;overflow-y:auto;touch-action:pan-y}
+/* パークのレベルアップUI(2026-09-11追加)。.perkrowは.seg divのピル型見た目を
+   上書きし、複数行のブロックにする。中身はdivではなくspanにして、
+   .seg div{...}の子孫セレクタに二重に巻き込まれないようにしている */
+.seg div.perkrow{flex:1 1 100%;flex-direction:column;align-items:stretch;
+  padding:6px 9px;gap:4px;cursor:default}
+.perkname{cursor:pointer;display:block}
+.perkname.sel{color:var(--yellow)}
+.perklvrow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;opacity:.85;margin-top:2px}
+.lvbadge{font-size:9px;opacity:.7;min-width:40px}
+.lvbtn{padding:2px 7px;border:1px solid #ffffff33;border-radius:2px;font-size:10px;cursor:pointer}
+.lvbtn:active{background:#ffffff1a}
+.lvup{padding:3px 8px;border:1px solid #7fd4a266;border-radius:2px;font-size:9.5px;
+  color:#a6e6c4;cursor:pointer;margin-left:auto}
+.lvup.maxed{opacity:.5;border-color:#ffffff33;color:#fff;cursor:default}
 #go{padding:11px 40px;border:1px solid var(--yellow);color:var(--yellow);
   background:#0b120ecc;font-size:15px;letter-spacing:.3em;font-family:inherit;border-radius:2px}
 .hint{font-size:8.5px;opacity:.34;line-height:1.7;text-align:center}
@@ -595,6 +614,9 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <input type="password" id="adminPassInput" autocomplete="off" spellcheck="false">
   <div class="wc" id="adminLoginGo">ENTER</div>
 </div>
+<!-- スマホ向けの管理者パネル開閉ボタン。試合中、管理者モードが有効な
+     タッチ操作端末でだけ表示する(PCのF2キーに相当、2026-09-11追加) -->
+<div id="adminMiniBtn" class="pe">管理😈</div>
 <div id="adminPanel" class="pe">
   <h3>管理者モード</h3>
   <div class="row"><span>敵(先生)を常時表示</span><span class="tog" id="a_wallhack">OFF</span></div>
@@ -615,6 +637,13 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div class="row"><span>自分をリスポーン</span><span class="tog" id="a_revive">実行</span></div>
   <div class="row"><span>生徒全員リスポーン</span><span class="tog" id="a_reviveall">実行</span></div>
   <div class="row"><span>課題を全部終わらせる</span><span class="tog" id="a_finishtasks">実行</span></div>
+  <h3>コイン・スコア改ざん</h3>
+  <div class="row"><span>コイン</span><input type="number" id="a_coin" value="0" step="10"></div>
+  <div class="row"><span>コインに設定</span><span class="tog" id="a_coinset">実行</span></div>
+  <div class="row"><span>コインに加算</span><span class="tog" id="a_coinadd">実行</span></div>
+  <div class="row"><span>スコア</span><input type="number" id="a_score" value="0" step="100"></div>
+  <div class="row"><span>スコアに設定</span><span class="tog" id="a_scoreset">実行</span></div>
+  <div class="row"><span>スコアに加算</span><span class="tog" id="a_scoreadd">実行</span></div>
   <div class="row"><span>閉じる</span><span class="tog" id="a_close">閉じる</span></div>
 </div>
 
@@ -4727,7 +4756,7 @@ function checkMobileLandscape(){
     elLookZone.style.left=lr.x0+'px'; elLookZone.style.top=lr.y0+'px';
     elLookZone.style.width=(lr.x1-lr.x0)+'px'; elLookZone.style.height=(lr.y1-lr.y0)+'px';
   }
-  layoutPad(); layoutChatBtn(); layoutSprintHud();
+  layoutPad(); layoutChatBtn(); layoutSprintHud(); layoutAdminMiniBtn();
 }
 
 addEventListener('pointerdown',function(e){
@@ -4883,6 +4912,9 @@ const elItemHud=document.getElementById('itemhud'),
 /* 一ノ瀬「ラストスパート」持続時間セレクタ(試合中HUD版)の要素参照も
    同じ理由でここに置く(2026-09-10追加) */
 const elSprintHud=document.getElementById('sprintHud');
+/* スマホ向け管理者パネル開閉ボタン(2026-09-11追加)。elSprintHudと同じ
+   「loadSettings()より前に置く」TDZ対策の並びに揃えている */
+const elAdminMiniBtn=document.getElementById('adminMiniBtn');
 /* #roster(左上のロースター一覧)の実測bounding rectの直下に追従配置する。
    roster自体はbuildRoster()で人数ぶんの行が作られるまで高さが定まらない
    ため、resize/orientationchange時とbuildRoster()直後の両方から呼ぶ */
@@ -4893,6 +4925,16 @@ function layoutSprintHud(){
     const r=rosterEl.getBoundingClientRect();
     elSprintHud.style.left=(r.width?r.left:8)+'px';
     elSprintHud.style.top=Math.max(8,r.bottom+8)+'px';
+  });
+}
+/* 管理者ミニボタンはロースターの右横に置く(下は既にsprintHudが使うため) */
+function layoutAdminMiniBtn(){
+  requestAnimationFrame(function(){
+    const rosterEl=document.getElementById('roster');
+    if(!rosterEl||!elAdminMiniBtn) return;
+    const r=rosterEl.getBoundingClientRect();
+    elAdminMiniBtn.style.left=(r.width?r.right+8:8)+'px';
+    elAdminMiniBtn.style.top=Math.max(8,r.top)+'px';
   });
 }
 function layoutItemHud(){
@@ -5253,10 +5295,10 @@ function toast(s){
 /* 執念の追跡(bloodhound)・有終の美(rancor、生存者が残り1人の時)を持つ先生は
    物音に気づける範囲が広がる */
 function teacherHearMul(){
-  let m=hasTrait(teacher,'bloodhound')?1.25:1;
+  let m=hasTrait(teacher,'bloodhound')?perkScale(teacher,'bloodhound',1.25):1;
   if(hasTrait(teacher,'rancor')){
     const alive=students.filter(function(s){return s.state!=='out'&&s.state!=='escaped';});
-    if(alive.length===1) m*=1.2;
+    if(alive.length===1) m*=perkScale(teacher,'rancor',1.2);
   }
   return m;
 }
@@ -5313,34 +5355,46 @@ function pdMisesimePenalty(s){
   const muse=pdMuse();
   if(muse&&muse.state==='escaped') return 1;
   if(muse&&s===muse) return 1;
-  return Math.max(0.7,1-(teacher.pdTokensC||0)*0.1);
+  /* レベルが上がるほど1トークンあたりの減速が強くなり、下限(floor)も下がる */
+  const mul=perkLevelMul(teacher,'misesime');
+  return Math.max(perkScale(teacher,'misesime',0.7),1-(teacher.pdTokensC||0)*0.1*mul);
 }
 function stunMul(){
-  return ((teacher&&teacher.kindKey==='teke')?3.0:1)*(hasTrait(teacher,'enduring')?0.65:1)*
+  return ((teacher&&teacher.kindKey==='teke')?3.0:1)*
+    (hasTrait(teacher,'enduring')?perkScale(teacher,'enduring',0.65):1)*
     (pdActiveBoost()?0.8:1)*((teacher&&teacher.kindKey==='photo')?pdAddonVal('stunMulVal'):1);
 }
 /* ===== 特性(パーク)の汎用倍率ヘルパー ===== 既存の各種計算式に薄く1項掛けるだけの
    ものはここにまとめる。専用ロジックが要るもの(不屈・自己治療・アイテムボックスなど)は
    それぞれの関数の近くに直接書いている */
-function traitTaskMul(s){ return (hasTrait(s,'stakeout')?1.08:1)*pdMisesimePenalty(s)*
+function traitTaskMul(s){ return (hasTrait(s,'stakeout')?perkScale(s,'stakeout',1.08):1)*pdMisesimePenalty(s)*
   ((s.bcastSlowT>0)?0.7:1); }
 function traitHealMul(s){
-  let m=hasTrait(s,'botany')?1.35:1;
-  if(hasTrait(s,'wemakeit')&&(s.healBoostT||0)>0) m*=2.0;
+  let m=hasTrait(s,'botany')?perkScale(s,'botany',1.35):1;
+  if(hasTrait(s,'wemakeit')&&(s.healBoostT||0)>0) m*=perkScale(s,'wemakeit',2.0);
   m*=pdMisesimePenalty(s);
   return m;
 }
 function traitVaultMul(e){
-  let m=hasTrait(e,'fixated')?0.85:1;
-  if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?0.8:1;
+  let m=hasTrait(e,'fixated')?perkScale(e,'fixated',0.85):1;
+  if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?perkScale(e,'bamboozle',0.8):1;
   if(e.kind==='student') m*=pdMisesimePenalty(e);
   return m;
 }
 function traitCdMul(t){
   let m=1;
-  if(hasTrait(t,'fireup')) m*=Math.max(0.85,1-elapsed*0.00125);
-  if(hasTrait(t,'save_best')) m*=Math.max(0.75,1-(t.comboStacks||0)*0.05);
-  if(hasTrait(t,'yakuyakugari')) m*=Math.max(0.75,1-(t.pdTokensA||0)*0.05);
+  if(hasTrait(t,'fireup')){
+    const mul=perkLevelMul(t,'fireup');
+    m*=Math.max(perkScale(t,'fireup',0.85),1-elapsed*0.00125*mul);
+  }
+  if(hasTrait(t,'save_best')){
+    const mul=perkLevelMul(t,'save_best');
+    m*=Math.max(perkScale(t,'save_best',0.75),1-(t.comboStacks||0)*0.05*mul);
+  }
+  if(hasTrait(t,'yakuyakugari')){
+    const mul=perkLevelMul(t,'yakuyakugari');
+    m*=Math.max(perkScale(t,'yakuyakugari',0.75),1-(t.pdTokensA||0)*0.05*mul);
+  }
   return m;
 }
 /* 教師トレイトによる「生徒の位置を見せる」系のmark()呼び出しをまとめたもの。
@@ -5397,7 +5451,7 @@ function scStart(task){
   scSpeed=240+Math.random()*110;
   /* 威圧感(unnerving)を持つ先生は成功ゾーンが狭くなる。scEnd側の判定も
      このscZoneWを見て一致させる(DIFF.zoneを直接使うとズレる) */
-  scZoneW=DIFF.zone*(hasTrait(teacher,'unnerving')?0.85:1);
+  scZoneW=DIFF.zone*(hasTrait(teacher,'unnerving')?perkScale(teacher,'unnerving',0.85):1);
   const w=scZoneW;
   elZone.style.background='conic-gradient(from '+scZone+'deg, var(--ok) 0deg 12deg, '+
     'rgba(232,197,71,.55) 12deg '+w+'deg, transparent '+w+'deg)';
@@ -5607,7 +5661,7 @@ function healDone(o,by){
 }
 function noiseR(s,r){
   if(!s) return r;
-  if(hasTrait(s,'ironwill')&&s.hurt) return r*0.3;
+  if(hasTrait(s,'ironwill')&&s.hurt) return r*perkScale(s,'ironwill',0.3);
   if(s.perk==='quiet') return r*0.55;
   if(s.perk==='sound') return r*0.45;
   if(s.perk==='nine') return r*0.5;
@@ -6081,7 +6135,7 @@ function workTask(s,d,dt){
     });
     if(tasksDone()>=TASK_N&&!gateOpen){
       gateOpen=true; exits.forEach(function(e){ e.mesh.material=M.exitOn; });
-      endTimer=120+(hasTrait(teacher,'no_way_out')?40:0);
+      endTimer=120+(hasTrait(teacher,'no_way_out')?40*perkLevelMul(teacher,'no_way_out'):0);
       say('通信','課題が全部終わった！昇降口へ！（残り120秒）','sys');
       toast('昇降口が開いた'); beep(523,0.3,'triangle',0.12);
     }
@@ -6098,7 +6152,7 @@ function studentAct(s,dt,manual){
   if(a){
     s.rescueT+=dt*(s.perk==='heal'?1.3:(s.perk==='aed'?1.15:1));
     if(s.rescueT>2.4){ freeStudent(a); s.rescueT=0; beep(700,0.2,'sine',0.09);
-      if(hasTrait(s,'wemakeit')) s.healBoostT=8.0;
+      if(hasTrait(s,'wemakeit')) s.healBoostT=8.0*perkLevelMul(s,'wemakeit');
       if(manual) toast(a.name+'を助けた'); }
     return 'rescue';
   }
@@ -6129,7 +6183,8 @@ function studentAct(s,dt,manual){
     for(const o of students)
       if(o!==s&&o!==hv&&o.state==='free'&&Math.hypot(o.x-hv.x,o.z-hv.z)<2.7) helpers++;
     s.healT=(s.healT||0)+dt*(s.perk==='heal'?1.3:(s.perk==='medic'?1.7:1))*
-      (spotlightOn(s)?1.25:1)*(s.perk==='cook'?1.2:1)*((s.dull>0)?0.55:1)*
+      (spotlightOn(s)?1.25:1)*(s.perk==='cook'?1.2:1)*
+      ((s.dull>0)?perkScale(teacher,'sloppy',0.55):1)*
       (helpers>1?1.8:1)*traitHealMul(s);
     /* 血の匂い(nurse_calling)：治療中の生徒の位置が先生に常にわかる(1秒おきに表示) */
     if(hasTrait(teacher,'nurse_calling')){
@@ -6146,7 +6201,8 @@ function studentAct(s,dt,manual){
     const mv2=Math.hypot(s.x-(s.hpx===undefined?s.x:s.hpx),s.z-(s.hpz===undefined?s.z:s.hpz));
     s.hpx=s.x; s.hpz=s.z;
     if(mv2>0.02){ s.healT=0; return 'heal'; }
-    s.healT=(s.healT||0)+dt*0.42*traitHealMul(s)*((s.dull>0)?0.55:1);
+    s.healT=(s.healT||0)+dt*0.42*perkLevelMul(s,'selfcare')*traitHealMul(s)*
+      ((s.dull>0)?perkScale(teacher,'sloppy',0.55):1);
     if(s.healT>10.5){ s.healT=0; healDone(s,s); }
     return 'heal';
   }
@@ -6261,7 +6317,7 @@ function damage(s,amt,heavy){
   }
   /* 授業態度の悪化(sloppy)：攻撃を当てた生徒はしばらく治療速度が大きく落ちる
      (既存のs.dullフィールドをそのまま再利用) */
-  if(hasTrait(teacher,'sloppy')) s.dull=Math.max(s.dull||0,20);
+  if(hasTrait(teacher,'sloppy')) s.dull=Math.max(s.dull||0,20*perkLevelMul(teacher,'sloppy'));
   /* 反省の連鎖(save_best)：同じ生徒を続けて攻撃するほど次の攻撃までの隙が短くなる */
   if(hasTrait(teacher,'save_best')){
     teacher.comboStacks=(teacher.lastHitTarget===s)?Math.min(5,(teacher.comboStacks||0)+1):1;
@@ -6294,7 +6350,7 @@ function seat(s,ch){
     ch.taken=null; out(s,'居残り確定'); checkEnd(); return;
   }
   /* 決死の覚悟(deliverance)：反省椅子の猶予が20%延びる */
-  const delivMul=hasTrait(s,'deliverance')?1.2:1;
+  const delivMul=hasTrait(s,'deliverance')?perkScale(s,'deliverance',1.2):1;
   if(s.seatCount>=2){
     s.seatLimit=32*delivMul; s.seatQteAt=0; s.seatT=0; s.qteWait=0;
     s.qte={t:3,n:0};   /* 2回目は待たずに即QTE発生 */
@@ -6306,7 +6362,10 @@ function seat(s,ch){
     students.forEach(function(o){ if(o!==s&&o.state==='free') teacherRevealStudent(o,0xff9a5a); });
   }
   /* デジャヴ(kindred)：誰かが座らされた瞬間、装備している生徒には先生の位置がわかる */
-  if(hasTrait(students[0],'kindred')){ setAura(teacher,'reveal',8.0); teacher.revealT=8.0; }
+  if(hasTrait(students[0],'kindred')){
+    const kd=8.0*perkLevelMul(students[0],'kindred');
+    setAura(teacher,'reveal',kd); teacher.revealT=kd;
+  }
   checkEnd();
 }
 function out(s,why){ say(s.name,why,'warn'); s.state='out'; s.mesh.visible=false; toast(s.name+' — '+why); checkEnd(); }
@@ -6753,7 +6812,11 @@ function pdSpeedMul(t){
   if(t.pdMode===0&&t.pdObsHold) m*=0.6;      /* 観察中はさらに60%に低下 */
   if(t.charge>0&&t.pdAwakeT>0) m*=0.55;      /* 焼き付けの溜め中は動きが重くなる */
   if(t.pdBreakSlowT>0) m*=0.6;               /* 障害物を壊した直後の一時減速 */
-  if(t.pdRushB>0) m*=1.15+Math.min(0.15,(t.pdTokensB||0)*0.05);  /* じらし遊び */
+  if(t.pdRushB>0){
+    /* じらし遊び(jirashiasobi)：基礎加速+トークンごとの上乗せの両方がレベルで複利強化される */
+    const jaMul=perkLevelMul(t,'jirashiasobi');
+    m*=(1+0.15*jaMul)+Math.min(0.15*jaMul,(t.pdTokensB||0)*0.05*jaMul);
+  }
   return m;
 }
 /* にせもの：擬態形態は化けている生徒(base 6.4)と同じ速度になるよう、
@@ -7029,7 +7092,7 @@ function updPhoto(dt){
       t.pdMuseFarT=(t.pdMuseFarT||0)+dt;
       if(t.pdMuseFarT>1.5){
         t.pdMuseNearT=0; t.pdMuseFarT=0;
-        t.pdTokensB=Math.min(3,(t.pdTokensB||0)+1); t.pdRushB=4.0;
+        t.pdTokensB=Math.min(3,(t.pdTokensB||0)+1); t.pdRushB=4.0*perkLevelMul(t,'jirashiasobi');
         toast('じらし遊び：追跡を切り上げて加速！'); beep(500,0.2,'triangle',0.1);
       }
     } else { t.pdMuseNearT=0; t.pdMuseFarT=0; }
@@ -8540,7 +8603,7 @@ function buildRoster(){
       nm:box.querySelector('.rn'),st:box.querySelector('.rs'),
       bar:box.querySelector('.rb'),fill:box.querySelector('.rb i')});
   });
-  layoutSprintHud();
+  layoutSprintHud(); layoutAdminMiniBtn();
 }
 function updRoster(){
   students.forEach(function(s,i){
@@ -8861,7 +8924,7 @@ function tick(now){
       if(role!=='teacher'&&Math.random()<0.12&&!inWater(me.x,me.z)&&
          me.perk!=='nine'&&teacher.kindKey!=='chalk') mark(me.x,me.z);
     } else {
-      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?1.25:1));
+      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.25):1));
       if(me.exh&&me.stam>0.65) me.exh=false;
     }
     if(role==='teacher'&&teacher.carrying)
@@ -9257,6 +9320,9 @@ function tick(now){
   const carriedNow=(role==='student'&&me.state==='carried');
   elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
   if(carriedNow) elCarryGaugeI.style.width=((me.wig||0)*100)+'%';
+  /* スマホ向け管理者パネル開閉ボタン。管理者モードが有効なタッチ操作端末で
+     試合中だけ表示する(PCのF2キーに相当、2026-09-11追加) */
+  if(elAdminMiniBtn) elAdminMiniBtn.classList.toggle('on',isTouchDevice&&adminUnlocked&&started&&!over);
   updItemHud();
 
   /* --- AI --- */
@@ -9374,8 +9440,8 @@ function tick(now){
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
             (s.sprintT>0?(s.sprintMulActive||sprintMul):1)*(s.tiredT>0?0.85:1)*
             (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
-            (hasTrait(s,'hope')&&gateOpen?1.08:1)*
-            ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?0.94:1)*
+            (hasTrait(s,'hope')&&gateOpen?perkScale(s,'hope',1.08):1)*
+            ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?perkScale(teacher,'rancor',0.94):1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
@@ -9393,7 +9459,7 @@ function tick(now){
     }
     /* 見張りの目(whispers)：生徒が12m以内に近づくと気配で知らせる */
     if(hasTrait(teacher,'whispers')&&s.state==='free'&&!s.hide&&
-       Math.hypot(s.x-teacher.x,s.z-teacher.z)<12){
+       Math.hypot(s.x-teacher.x,s.z-teacher.z)<12*perkLevelMul(teacher,'whispers')){
       teacher.whisperNear=true;
     }
     if(s.parry>0) s.parry-=dt;
@@ -9406,7 +9472,10 @@ function tick(now){
         if(s===me) toast('狸寝入りをやめて起き上がった');
       } else {
         s.downT+=dt;
-        if((s.perk==='nine'||hasTrait(s,'perseverance'))&&!s.usedNine&&s.downT>4){
+        /* 不屈の一念(perseverance)：レベルが上がるほど起き上がりまでの待ち時間が短くなる
+           (元々の「九死に一生」(perk:nine)固有の4秒はレベルの影響を受けない) */
+        const persWait=hasTrait(s,'perseverance')?4/perkLevelMul(s,'perseverance'):4;
+        if((s.perk==='nine'||hasTrait(s,'perseverance'))&&!s.usedNine&&s.downT>persWait){
           s.usedNine=true; s.state='free'; s.hurt=true; s.dmg=1; s.downT=0;
           paperLook(s); s.rush=3.0;
           toast(s.name+(hasTrait(s,'perseverance')&&s.perk!=='nine'?'は不屈の一念で自力で起き上がった':'は九死に一生で起き上がった'));
@@ -9462,7 +9531,7 @@ function tick(now){
       s.x=teacher.x; s.z=teacher.z;
       const isMe=(s===me&&role==='student');
       const isNet=(netMode==='host'&&s.netSlot!==undefined);
-      const boilMul=hasTrait(s,'boilover')?1.2:1;
+      const boilMul=hasTrait(s,'boilover')?perkScale(s,'boilover',1.2):1;
       s.wig=(s.wig||0)+dt*((isMe||isNet)?0.0165:0.0125)*boilMul;
       if(isMe&&input.mash){ s.wig+=0.0121*(s.perk==='wig'?1.35:1)*boilMul; input.mash=false;
         beep(300+Math.random()*160,0.05,'square',0.05); }
@@ -10737,7 +10806,7 @@ function netApplyStudentInput(s,inp,dt){
       sp*=1.45; s.stam=Math.max(0,s.stam-dt*0.30*(s.perk==='stam'?0.75:(s.perk==='proto'?2.2:1)));
       if(s.stam<=0) s.exh=true;
     } else {
-      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1)*(hasTrait(s,'secondwind')?1.25:1));
+      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1)*(hasTrait(s,'secondwind')?perkScale(s,'secondwind',1.25):1));
       if(s.exh&&s.stam>0.65) s.exh=false;
     }
     move(s,inp.dx*sp,inp.dz*sp,dt);
@@ -10981,7 +11050,7 @@ function netClientTick(dt){
     const canRun=running&&!me.exh&&me.stam>0;
     if(canRun){ sp*=1.45; me.stam=Math.max(0,me.stam-dt*0.30*(me.perk==='stam'?0.75:(me.perk==='proto'?2.2:1)));
       if(me.stam<=0) me.exh=true; }
-    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?1.25:1));
+    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.25):1));
       if(me.exh&&me.stam>0.65) me.exh=false; }
     move(me,dx*sp,dz*sp,dt);
     me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*13));
@@ -11046,6 +11115,7 @@ function netClientTick(dt){
 
   elChatBtn.style.display='flex';
   elSprintHud.classList.toggle('on',me.perk==='foot');
+  if(elAdminMiniBtn) elAdminMiniBtn.classList.toggle('on',isTouchDevice&&adminUnlocked&&started&&!over);
   {
     const carriedNow=(me.state==='carried');
     elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
@@ -11584,6 +11654,76 @@ function unlockAddon(itemKey,key){
   return true;
 }
 
+/* ===== 特性(パーク)のレベルアップ制度(2026-09-11追加) =====
+   持ち物/アドオンと違い、パークはもともと「コインで買い切りアンロック」の
+   仕組みが無く、装備選択(studentPerksPick/teacherPerksPick)は最初から誰でも
+   無料で選べる作りだった(コード確認ずみ)。そのため今回は「アンロック済みの
+   パークだけレベルアップできる」という依頼を、「すべてのパークはLv0の状態で
+   常にアンロック済み扱いとし、Lv0(=元の効果そのまま、無料)から
+   Lv99(コインでレベルアップした分だけ強化)まで誰でも育てられる」という
+   形で解釈して実装した。パーク自体を新たにコインで買い切りロックする変更は
+   行っていない(既存の無料選択という前提を壊さないため)。
+
+   ・レベルNの効果強化倍率 = 1.2^N の複利式（PERK_LV_MUL）
+     例: 元の効果が+100%ならLv1で+120%相当になる、という依頼の例に一致する
+   ・レベルNへのアップ価格 = 基準価格(PERK_LV_BASE_COST) × 1.2^(N-1) の複利式
+   ・最大Lv99、到達済み最大レベル(perkLvMax)の範囲内なら現在レベル
+     (perkLvCur)を無料で自由に上げ下げできる
+   ・保存はhi_perklv_v1に{max:{student:{key:lv},teacher:{key:lv}},cur:{...}}の
+     形でJSON保存する(hi_unlocks_v1とは別キー。既存の永久アンロックの保存
+     フォーマットを壊さないよう分離した) */
+const PERK_LV_BASE_COST=50, PERK_LV_MAX=99;
+let perkLvMax={student:{},teacher:{}}, perkLvCur={student:{},teacher:{}};
+try{
+  const savedPL=JSON.parse(localStorage.getItem('hi_perklv_v1')||'null');
+  if(savedPL){
+    if(savedPL.max){ perkLvMax.student=savedPL.max.student||{}; perkLvMax.teacher=savedPL.max.teacher||{}; }
+    if(savedPL.cur){ perkLvCur.student=savedPL.cur.student||{}; perkLvCur.teacher=savedPL.cur.teacher||{}; }
+  }
+}catch(e){}
+function savePerkLv(){
+  try{ localStorage.setItem('hi_perklv_v1',JSON.stringify({max:perkLvMax,cur:perkLvCur})); }catch(e){}
+}
+/* role2は'teacher'/'student'の文字列、またはkind:'teacher'/'student'を持つ
+   エンティティ(生徒s・先生teacher)のどちらでも受け取れるようにしている
+   (呼び出し側によって手元にあるものが違うため) */
+function perkRoleKey(role2){
+  if(role2&&typeof role2==='object') return (role2.kind==='teacher')?'teacher':'student';
+  return (role2==='teacher')?'teacher':'student';
+}
+function getPerkMaxLv(role2,key){ return (perkLvMax[perkRoleKey(role2)]||{})[key]||0; }
+function getPerkCurLv(role2,key){
+  const rk=perkRoleKey(role2), max=getPerkMaxLv(role2,key);
+  let c=(perkLvCur[rk]||{})[key];
+  if(c===undefined||c===null) c=max;   /* 未指定なら到達済み最大レベルを使う */
+  return Math.max(0,Math.min(max,c));
+}
+function perkLvCost(level){ return Math.round(PERK_LV_BASE_COST*Math.pow(1.2,level-1)); }
+/* 現在の選択レベルに応じた強化倍率(複利式)。Lv0なら1(=元の効果のまま) */
+function perkLevelMul(e,key){ return Math.pow(1.2,getPerkCurLv(e,key)); }
+/* 「元の効果がbase倍(例:1.08=+8%、0.85=-15%)」という既存の数値を、そのまま
+   perkLevelMulで複利強化した値に変換するヘルパー。1からの差分(delta)だけに
+   レベル倍率をかけるので、base=1(無効果)を渡した場合は常に1のまま */
+function perkScale(e,key,base){ return 1+(base-1)*perkLevelMul(e,key); }
+function perkLevelUp(role2,key){
+  const rk=perkRoleKey(role2), max=getPerkMaxLv(role2,key);
+  if(max>=PERK_LV_MAX){ toast('このパークは既に最大レベル'); return false; }
+  const next=max+1, cost=perkLvCost(next);
+  if(COINS<cost){ toast('コインが足りない（あと'+(cost-COINS)+'）'); return false; }
+  COINS-=cost;
+  if(!perkLvMax[rk]) perkLvMax[rk]={}; if(!perkLvCur[rk]) perkLvCur[rk]={};
+  perkLvMax[rk][key]=next; perkLvCur[rk][key]=next;
+  saveWallet(); savePerkLv(); refreshStats();
+  toast('パークをLv'+next+'に強化した'); beep(760,0.2,'square',0.1);
+  return true;
+}
+function perkLevelSet(role2,key,lv){
+  const rk=perkRoleKey(role2), max=getPerkMaxLv(role2,key);
+  lv=Math.max(0,Math.min(max,Math.round(lv)));
+  if(!perkLvCur[rk]) perkLvCur[rk]={};
+  perkLvCur[rk][key]=lv; savePerkLv();
+}
+
 /* 装備構成(持参アイテム/アドオン/特性)の保存。以前は毎試合選び直す必要が
    あったが、しゅんりさんの要望で「一度選んだら次回以降も自動で引き継がれ、
    変えたい時だけ選び直す」方式に変更(2026-09-08)。unlockedItems等より
@@ -11892,10 +12032,49 @@ function renderPerkSlots(){
     const p=key?pool.find(function(x){return x.key===key;}):null;
     const d=document.createElement('div');
     d.className='lslot'+(p?' filled':'');
-    d.textContent=p?p.name:'空き';
+    const lv=p?getPerkCurLv(role,p.key):0;
+    d.textContent=p?(p.name+(lv>0?'　Lv'+lv:'')):'空き';
     if(p) bindTip(d,p.name,p.desc);
     elPerkSlots.appendChild(d);
   }
+}
+/* パーク1つぶんの「レベルLv表示／＋−で現在レベル切替／レベルアップ購入」行。
+   到達済み最大レベル(perkLvMax)の範囲内なら＋−は無料、レベルアップだけ
+   コインを消費する(2026-09-11追加) */
+function buildPerkLvRow(p){
+  const lvRow=document.createElement('span');
+  lvRow.className='perklvrow';
+  const maxLv=getPerkMaxLv(role,p.key), curLv=getPerkCurLv(role,p.key);
+  const badge=document.createElement('span');
+  badge.className='lvbadge';
+  badge.textContent='Lv'+curLv+(maxLv>curLv?('/'+maxLv):'');
+  lvRow.appendChild(badge);
+  if(maxLv>0){
+    const minus=document.createElement('span'); minus.className='lvbtn'; minus.textContent='−';
+    minus.addEventListener('click',function(e){
+      e.stopPropagation(); perkLevelSet(role,p.key,curLv-1); renderPerkPane();
+    });
+    lvRow.appendChild(minus);
+    const plus=document.createElement('span'); plus.className='lvbtn'; plus.textContent='＋';
+    plus.addEventListener('click',function(e){
+      e.stopPropagation(); perkLevelSet(role,p.key,curLv+1); renderPerkPane();
+    });
+    lvRow.appendChild(plus);
+  }
+  const upBtn=document.createElement('span'); upBtn.className='lvup';
+  if(maxLv>=PERK_LV_MAX){ upBtn.textContent='MAX'; upBtn.classList.add('maxed'); }
+  else {
+    const cost=perkLvCost(maxLv+1);
+    upBtn.textContent='強化 Lv'+(maxLv+1)+'（'+cost+'G）';
+    upBtn.addEventListener('click',function(e){
+      e.stopPropagation(); perkLevelUp(role,p.key); renderPerkPane();
+    });
+  }
+  lvRow.appendChild(upBtn);
+  bindTip(lvRow,p.name+'のレベル',
+    'レベルを上げるほど効果が複利で強くなる代わりに次のレベルの価格も上がる（最大Lv99）。'+
+    '＋/−はこれまでに到達したレベルの範囲内なら無料でいつでも切り替えられる。');
+  return lvRow;
 }
 function renderPerkPane(){
   if(!elPerkSel) return;
@@ -11904,16 +12083,21 @@ function renderPerkPane(){
   elPerkSel.innerHTML='';
   pool.forEach(function(p){
     const d=document.createElement('div');
+    d.className='perkrow';
     const on=pick.indexOf(p.key)>=0;
-    d.textContent=p.name+(on?'　✓':''); if(on) d.className='sel';
-    bindTip(d,p.name,p.desc);
-    d.addEventListener('click',function(){
+    const nameEl=document.createElement('span');
+    nameEl.className='perkname'+(on?' sel':'');
+    nameEl.textContent=p.name+(on?'　✓':'');
+    bindTip(nameEl,p.name,p.desc);
+    nameEl.addEventListener('click',function(){
       const idx=pick.indexOf(p.key);
       if(idx>=0) pick.splice(idx,1);
       else if(pick.length>=4) toast('特性は最大4つまで');
       else pick.push(p.key);
       saveLoadout(); renderPerkPane();
     });
+    d.appendChild(nameEl);
+    d.appendChild(buildPerkLvRow(p));
     elPerkSel.appendChild(d);
   });
   renderPerkSlots();
@@ -12056,7 +12240,7 @@ function applyLoadout(){
   if(role==='student'){
     const meS=students[0];
     meS.traits=studentPerksPick.slice(0,4);
-    if(hasTrait(meS,'distortion')) meS.distortLeft=3;
+    if(hasTrait(meS,'distortion')) meS.distortLeft=Math.round(3*perkLevelMul(meS,'distortion'));
     /* 2026-09-06〜：持ち物/アドオンは購入時に永久アンロック済みなので、
        試合開始のたびにコインを消費することはしない。念のため未所持の
        ものが紛れ込んでいた場合はここで弾く(不正な保存データ対策) */
@@ -12067,14 +12251,18 @@ function applyLoadout(){
       });
       meS.itemAmmo=itemAmmoMax(meS);
     }
-    if(hasTrait(meS,'pathfinder')) exits.forEach(function(e){ mark(e.x,e.z,0x7fd4a2,8); });
+    if(hasTrait(meS,'pathfinder')){
+      const pfDur=8*perkLevelMul(meS,'pathfinder');
+      exits.forEach(function(e){ mark(e.x,e.z,0x7fd4a2,pfDur); });
+    }
   } else {
     teacher.traits=teacherPerksPick.slice(0,4);
     teacher.comboStacks=0; teacher.lastHitTarget=null;
     /* 手はず狂わせ(corrupt)：試合開始時、課題机のうち2枚を60秒ロックする */
     if(hasTrait(teacher,'corrupt')){
+      const lockDur=60*perkLevelMul(teacher,'corrupt');
       tasks.slice().sort(function(){ return Math.random()-0.5; }).slice(0,2)
-        .forEach(function(t){ t.lockT=60; });
+        .forEach(function(t){ t.lockT=lockDur; });
     }
     /* 写真部顧問の専用パーク(脇役狩り/じらし遊び/見せしめ)のいずれかを
        装備していたら、試合開始時に生徒1人を「本命の被写体」にランダム指定する
@@ -12203,6 +12391,7 @@ function softReset(keepNet){
   scActive=false; scTarget=null; scNext=3; elSkill.classList.remove('on');
   elMashN.classList.remove('on'); elStun.classList.remove('on'); elWig.style.display='none';
   elItemHud.classList.remove('on'); elSprintHud.classList.remove('on'); elCarryHands.classList.remove('on');
+  if(elAdminMiniBtn) elAdminMiniBtn.classList.remove('on');
   elActRing.classList.remove('on'); ringMode=null;
   Object.keys(stats).forEach(function(k){ stats[k]=0; });
   endTimer=0;
@@ -12272,7 +12461,13 @@ addEventListener('orientationchange',function(){ setTimeout(function(){
    2026-08-23追記：一度パスワードが通った端末は localStorage
    （hi_admin_unlocked_v1）に解除フラグを保存し、次回訪問時もコナミコマンドの
    入力は不要にした。解除済みの状態なら F2 キー単体で管理者パネルの開閉ができる
-   （未解除の端末では F2 は何もしない＝これまで通りコナミコマンド→パスワードが必要）。 */
+   （未解除の端末では F2 は何もしない＝これまで通りコナミコマンド→パスワードが必要）。
+
+   2026-09-11追記：スマホはキーボードが無くコナミコマンドを入力できないため、
+   別の入口として「設定(⚙)ボタンを10回連打」→同じパスワード画面が開く方式を
+   追加した。合言葉は tama0890（PC版のtama4678とは別の合言葉、どちらでも
+   解除できる）。解除の永続化・F2相当の開閉は共通（F2の代わりに、試合中だけ
+   表示される画面左上の「管理😈」ボタンで代用する）。 */
 let adminUnlocked=false, adminSpeedMul=1, adminAtkSpeedMul=1,
     adminWallhack=false, adminHitboxViz=false, adminGod=false, adminExtraHp=0;
 try{ adminUnlocked=(localStorage.getItem('hi_admin_unlocked_v1')==='1'); }catch(e){}
@@ -12297,7 +12492,9 @@ addEventListener('keydown',function(e){
   }
 });
 function adminTryLogin(){
-  if(elAdminPass.value==='tama4678'){
+  /* PC(コナミコマンド)はtama4678、スマホ(設定ボタン10連打)はtama0890。
+     どちらで入力しても同じ永続解除フラグが立つ(2026-09-11) */
+  if(elAdminPass.value==='tama4678'||elAdminPass.value==='tama0890'){
     adminUnlocked=true; elAdminLogin.classList.remove('on'); elAdminPass.value='';
     elAdminPanel.classList.add('on');
     try{ localStorage.setItem('hi_admin_unlocked_v1','1'); }catch(e){}
@@ -12313,6 +12510,25 @@ elAdminPass.addEventListener('keydown',function(e){
   e.stopPropagation();
   if(e.code==='Enter'){ adminTryLogin(); e.preventDefault(); }
   else if(e.code==='Escape'){ elAdminLogin.classList.remove('on'); }
+});
+/* スマホ向け入口：設定(⚙)ボタンを10回連打するとパスワード画面が開く
+   (既に解除済みの端末ではF2キーと同じくパネルをそのまま開閉する)。
+   1.5秒操作が無ければ連打カウントをリセットする(2026-09-11追加) */
+let gearTapCount=0, gearTapTimer=null;
+document.getElementById('gear').addEventListener('pointerdown',function(e){
+  if(!isTouchDevice) return;
+  gearTapCount++;
+  if(gearTapTimer) clearTimeout(gearTapTimer);
+  gearTapTimer=setTimeout(function(){ gearTapCount=0; },1500);
+  if(gearTapCount>=10){
+    gearTapCount=0;
+    if(adminUnlocked) elAdminPanel.classList.toggle('on');
+    else { elAdminLogin.classList.add('on'); elAdminPass.value=''; elAdminPass.focus(); }
+  }
+});
+/* 試合中、画面左上の「管理😈」ボタン(スマホ向け、F2キーの代わり) */
+if(elAdminMiniBtn) elAdminMiniBtn.addEventListener('pointerdown',function(e){
+  e.stopPropagation(); elAdminPanel.classList.toggle('on');
 });
 tog('a_wallhack',function(v,el){ adminWallhack=v; el.textContent=v?'ON':'OFF'; });
 tog('a_hitbox',function(v,el){ adminHitboxViz=v; el.textContent=v?'ON':'OFF'; });
@@ -12341,6 +12557,36 @@ document.getElementById('a_reviveall').addEventListener('pointerdown',function(e
 });
 document.getElementById('a_finishtasks').addEventListener('pointerdown',function(e){
   e.stopPropagation(); adminFinishTasks();
+});
+/* コイン・スコア改ざん(2026-09-11追加)。数値欄1つを「設定」(その値に上書き)
+   「加算」(現在値に足す、マイナス値なら引ける)の両方に使い回す */
+document.getElementById('a_coinset').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  const v=+document.getElementById('a_coin').value;
+  if(!isFinite(v)) return;
+  COINS=Math.max(0,Math.round(v)); refreshStats();
+  toast('[管理者] コインを'+COINS+'に設定'); beep(700,0.14,'square',0.09);
+});
+document.getElementById('a_coinadd').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  const v=+document.getElementById('a_coin').value;
+  if(!isFinite(v)) return;
+  COINS=Math.max(0,Math.round(COINS+v)); refreshStats();
+  toast('[管理者] コインに'+v+'加算（現在'+COINS+'）'); beep(700,0.14,'square',0.09);
+});
+document.getElementById('a_scoreset').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  const v=+document.getElementById('a_score').value;
+  if(!isFinite(v)) return;
+  SCORE=Math.max(0,Math.round(v)); refreshStats();
+  toast('[管理者] スコアを'+SCORE+'に設定'); beep(700,0.14,'square',0.09);
+});
+document.getElementById('a_scoreadd').addEventListener('pointerdown',function(e){
+  e.stopPropagation();
+  const v=+document.getElementById('a_score').value;
+  if(!isFinite(v)) return;
+  SCORE=Math.max(0,Math.round(SCORE+v)); refreshStats();
+  toast('[管理者] スコアに'+v+'加算（現在'+SCORE+'）'); beep(700,0.14,'square',0.09);
 });
 document.getElementById('a_close').addEventListener('pointerdown',function(e){
   e.stopPropagation(); elAdminPanel.classList.remove('on');
