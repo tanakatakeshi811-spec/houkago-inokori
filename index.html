@@ -123,11 +123,14 @@ canvas{display:block}
 #carryGauge{width:220px;height:12px;background:#00000055;border:1px solid #ffffff55;
   border-radius:6px;overflow:hidden}
 #carryGauge i{display:block;height:100%;background:var(--yellow);width:0%}
-#carryHands .chRow{display:flex;gap:60px}
-.chHand{width:76px;height:76px;border-radius:50%;background:#0b120ecc;
-  border:2px solid var(--yellow);display:flex;align-items:center;justify-content:center;
-  font-size:36px;user-select:none;touch-action:none}
-.chHand.press{background:#e8c54755;transform:scale(0.92)}
+#carryHands .chRow{display:flex;gap:50px}
+/* 2026-09-10: 絵文字プレースホルダーから、しゅんりさん提供の手のひら画像
+   (assets/hand_l.png・hand_r.png、ジャングル背景を透過抜きしたもの)に差し替え */
+.chHand{width:92px;height:auto;display:flex;align-items:center;justify-content:center;
+  user-select:none;touch-action:none;filter:drop-shadow(0 2px 8px #000c);
+  transition:transform .08s,filter .08s}
+.chHand img{width:100%;height:auto;pointer-events:none;display:block;-webkit-user-drag:none}
+.chHand.press{transform:scale(0.88);filter:drop-shadow(0 0 12px #e8c547dd)}
 #mashn{position:absolute;top:52%;left:50%;transform:translateX(-50%);font-size:26px;
   font-weight:800;color:var(--yellow);text-shadow:0 2px 10px #000;display:none;letter-spacing:.1em}
 #mashn.on{display:block}
@@ -552,8 +555,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="carryHands" class="pe">
     <div id="carryGauge"><i></i></div>
     <div class="chRow">
-      <div class="chHand" id="chHandL">🖐️</div>
-      <div class="chHand" id="chHandR">✋</div>
+      <div class="chHand" id="chHandL"><img src="assets/hand_l.png" alt="" draggable="false"></div>
+      <div class="chHand" id="chHandR"><img src="assets/hand_r.png" alt="" draggable="false"></div>
     </div>
   </div>
   <div id="stam"><i></i></div>
