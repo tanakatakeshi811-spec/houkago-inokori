@@ -49,6 +49,20 @@ canvas{display:block}
 .st-out{color:var(--alert)}.st-seat{color:var(--yellow)}.st-esc{color:var(--ok)}
 .st-hurt{color:#e79a5f}
 
+/* 一ノ瀬「ラストスパート」の持続時間セレクタ(試合中HUD版)。ロビーの#roster
+   の実測bounding rect直下に、他HUD要素を一切動かさずJSで追従配置する
+   (2026-09-10、layoutItemHud()と同じ実測ベース配置の方針を踏襲)。
+   一ノ瀬(perk:foot)を操作している本人にしか表示しない個人設定 */
+#sprintHud{position:fixed;display:none;flex-direction:column;gap:3px;
+  background:#0b120eb0;border:1px solid #ffffff1c;border-radius:4px;
+  padding:5px 6px;z-index:5}
+#sprintHud.on{display:flex}
+#sprintHud .lbl{font-size:8.5px;opacity:.75;white-space:nowrap}
+#sprintHud .opts{display:flex;gap:3px}
+#sprintHud .opts div{padding:3px 6px;font-size:10px;border-radius:3px;
+  background:#ffffff14;border:1px solid #ffffff26;cursor:pointer}
+#sprintHud .opts div.sel{background:var(--yellow);color:#211;border-color:var(--yellow);font-weight:700}
+
 #right{position:absolute;top:calc(env(safe-area-inset-top) + 6px);right:8px;
   display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 #heart{width:34px;height:34px;border:2px solid var(--chalk);border-radius:50%;
@@ -471,6 +485,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="micind" class="pe"><i></i><span id="micindtxt">マイク OFF</span></div>
   <div id="tasks"></div>
   <div id="roster"></div>
+  <div id="sprintHud" class="pe">
+    <div class="lbl">ラストスパート持続</div>
+    <div class="opts" id="sprintHudSel">
+      <div data-v="3">3s</div><div data-v="6">6s</div><div data-v="9">9s</div><div data-v="12">12s</div>
+    </div>
+  </div>
   <div id="right">
     <div style="display:flex;gap:6px">
       <div id="gear" class="pe">⚙</div>
@@ -794,10 +814,12 @@ let DIFF = {name:'normal', tSpeed:7.0, work:0.07, checkGap:[3.2,5.6], zone:46};
 /* 一ノ瀬(perk:foot)「ラストスパート」の持続時間調整。元は3秒・速度+55%固定
    だったが、しゅんりさんの指定で持続時間(3/6/9/12秒)を選べるようにし、
    「持続時間×速度ボーナス」がほぼ一定になるよう長いほどボーナスを按分する。
+   基準値は3秒=速度+150%(2026-09-10、しゅんりさんの指定で+55%→+150%へ変更)。
    sprintMulは実際にs.speed計算へ掛ける倍率(1+ボーナス)そのもの */
-let sprintDur=3, sprintMul=1.55;
+let sprintDur=3, sprintMul=2.5;
+function sprintMulFor(v){ return 1+1.5*(3/v); }
 function applySprintDur(v){
-  sprintDur=v; sprintMul=1+0.55*(3/v);
+  sprintDur=v; sprintMul=sprintMulFor(v);
 }
 function loadSprintDur(){
   try{
@@ -4671,7 +4693,7 @@ function checkMobileLandscape(){
     elLookZone.style.left=lr.x0+'px'; elLookZone.style.top=lr.y0+'px';
     elLookZone.style.width=(lr.x1-lr.x0)+'px'; elLookZone.style.height=(lr.y1-lr.y0)+'px';
   }
-  layoutPad(); layoutChatBtn();
+  layoutPad(); layoutChatBtn(); layoutSprintHud();
 }
 
 addEventListener('pointerdown',function(e){
@@ -4816,6 +4838,21 @@ function updActionRing(mode,pct,color){
 const elItemHud=document.getElementById('itemhud'),
       elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon'),
       elItemHudPct=document.getElementById('itemhudPct');
+/* 一ノ瀬「ラストスパート」持続時間セレクタ(試合中HUD版)の要素参照も
+   同じ理由でここに置く(2026-09-10追加) */
+const elSprintHud=document.getElementById('sprintHud');
+/* #roster(左上のロースター一覧)の実測bounding rectの直下に追従配置する。
+   roster自体はbuildRoster()で人数ぶんの行が作られるまで高さが定まらない
+   ため、resize/orientationchange時とbuildRoster()直後の両方から呼ぶ */
+function layoutSprintHud(){
+  requestAnimationFrame(function(){
+    const rosterEl=document.getElementById('roster');
+    if(!rosterEl||!elSprintHud) return;
+    const r=rosterEl.getBoundingClientRect();
+    elSprintHud.style.left=(r.width?r.left:8)+'px';
+    elSprintHud.style.top=Math.max(8,r.bottom+8)+'px';
+  });
+}
 function layoutItemHud(){
   /* 下部の操作ボタン群(#pad全体)の"真上"、ボタンには一切重ならない位置に置く。
      #pad自体のDOM/レイアウトには触れず、実際に描画されたbounding rectを
@@ -5602,12 +5639,23 @@ function dropPowderBomb(s,charge){
              :('粉爆弾が直撃！（残り'+s.bombs+'）'));
   bigNoise(0.24+c*0.14,0.7+c*0.5); vib([30,40,60]); beep(1200,0.2,'square',0.1);
 }
-function useStudentSkill(s){
+function useStudentSkill(s,netDurOverride){
   if(s.lock>0){ toast('スキルが封じられている'); return; }
   if(s.abCd>0) return;
   if(s.abUses===0){ toast('もう使えない'); return; }
   if(s.skill==='sprint'){
-    s.sprintT=sprintDur; s.abCd=s.abMax;
+    /* sprintMulActiveに発動時点の倍率を焼き付けておく。試合中HUDで
+       途中で設定を変えても、発動中の効果は変えず次回発動から反映される
+       仕様(2026-09-10)にするため、速度計算では毎フレームのsprintMul
+       ではなくこちらを参照する。
+       netDurOverrideは、オンライン対戦で自分がホストでない参加者として
+       一ノ瀬を操作している場合に使う。ホストが代わりにこの関数を実行する
+       (netApplyStudentInput経由)ため、何もしなければホスト自身の
+       sprintDur(個人設定)が使われてしまう。参加者の入力パケットに
+       乗せた本人の設定(inp.sprintDur)をここで優先させることで、
+       「個人設定」の意図を保つ */
+    const dur=([3,6,9,12].indexOf(netDurOverride)>=0)?netDurOverride:sprintDur;
+    s.sprintT=dur; s.sprintMulActive=sprintMulFor(dur); s.abCd=s.abMax;
     if(s===me) toast('ラストスパート！'); beep(880,0.2,'square',0.1); vib(25);
   } else if(s.skill==='reveal'){
     setAura(teacher,'reveal',3.0); s.abCd=s.abMax;
@@ -8450,6 +8498,7 @@ function buildRoster(){
       nm:box.querySelector('.rn'),st:box.querySelector('.rs'),
       bar:box.querySelector('.rb'),fill:box.querySelector('.rb i')});
   });
+  layoutSprintHud();
 }
 function updRoster(){
   students.forEach(function(s,i){
@@ -9073,6 +9122,9 @@ function tick(now){
   bgmUpdateTension(dt);
 
   elChatBtn.style.display=(role==='student')?'flex':'none';
+  /* ラストスパート持続時間の試合中HUD。一ノ瀬(perk:foot)本人にのみ表示する
+     個人設定(2026-09-10追加、他プレイヤーの画面には出ない・影響しない) */
+  elSprintHud.classList.toggle('on',role==='student'&&!!me&&me.perk==='foot');
   elActLabel.textContent=label;
   elActKey.textContent=(role==='student'&&me.state==='carried')?'F / J 連打':'E';
   elAct.classList.toggle('hot',hot);
@@ -9273,7 +9325,7 @@ function tick(now){
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
-            (s.sprintT>0?sprintMul:1)*(s.tiredT>0?0.85:1)*
+            (s.sprintT>0?(s.sprintMulActive||sprintMul):1)*(s.tiredT>0?0.85:1)*
             (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
             (hasTrait(s,'hope')&&gateOpen?1.08:1)*
             ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?0.94:1)*
@@ -10684,7 +10736,7 @@ function netApplyStudentInput(s,inp,dt){
       (s.state==='free'||
        (s.skill==='ippon'&&s.state==='carried'&&(s.grabWindow||0)>0)||
        (s.skill==='possum'&&s.state==='carried'&&s.tnFake&&(s.grabWindow||0)>0));
-    if(inp.abEdge&&ready) useStudentSkill(s);
+    if(inp.abEdge&&ready) useStudentSkill(s,inp.sprintDur);
   }
   if(inp.ab2Edge&&SAB2[s.perk]&&s.state==='free') useStudentSkill2(s);
   inp.altEdge=false; inp.abEdge=false; inp.ab2Edge=false;
@@ -10934,13 +10986,19 @@ function netClientTick(dt){
     netSendT=1/18;
     netSend(netHostConn,{t:'inp',dx:mdx,dz:mdz,mag:mmag,run:running,
       act:!!input.act, altEdge:!!input.altEdge, abEdge:!!input.abEdge, ab2Edge:!!input.ab2Edge,
-      itemHold:!!input.itemHold, mashN:netMashCount});
+      itemHold:!!input.itemHold, mashN:netMashCount,
+      /* 一ノ瀬「ラストスパート」の持続時間は個人設定なので、発動フラグと
+         一緒に自分の現在値を毎回乗せておく。ホストが自分の代わりに
+         useStudentSkill()を実行する時、ホスト自身のsprintDurではなく
+         こちらを使ってもらうため(2026-09-10) */
+      sprintDur:sprintDur});
     netMashCount=0;
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false; input.mash=false;
 
   elChatBtn.style.display='flex';
+  elSprintHud.classList.toggle('on',me.perk==='foot');
   updItemHud();
   elActLabel.textContent=label; elActKey.textContent=(me.state==='carried')?'F / J 連打':'E';
   elAct.classList.toggle('hot',hot);
@@ -11907,19 +11965,25 @@ Array.prototype.forEach.call(document.querySelectorAll('#diff div'),function(d){
     if(k==='hard')   DIFF={name:k,tSpeed:7.6,work:0.055,checkGap:[2.4,4.2],zone:34};
   });
 });
-/* ラストスパートの持続時間セレクタ。選択はhi_sprintdur_v1に保存し次回も復元 */
-Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(d){
-  if(parseInt(d.dataset.v,10)===sprintDur){
-    Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(x){ x.classList.remove('sel'); });
-    d.classList.add('sel');
-  }
-  d.addEventListener('click',function(){
-    Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div'),function(x){ x.classList.remove('sel'); });
-    d.classList.add('sel');
-    applySprintDur(parseInt(d.dataset.v,10));
-    try{ localStorage.setItem('hi_sprintdur_v1',String(sprintDur)); }catch(e){}
-    try{ showStage(); }catch(e){}
+/* ラストスパートの持続時間セレクタ。選択はhi_sprintdur_v1に保存し次回も復元。
+   タイトル画面のパネル(#sprintDurSel)と試合中HUD(#sprintHudSel)の2箇所に
+   同じ選択肢を置き、共通の関数で両方の見た目を同期する
+   (2026-09-10、しゅんりさんの要望で試合中にも切り替えられるようHUD版を追加。
+   #p_diff側は「試合前に確認しておきたい」需要もあるため残し、削除はしない) */
+function syncSprintDurSelUI(){
+  Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div,#sprintHudSel div'),function(x){
+    x.classList.toggle('sel',parseInt(x.dataset.v,10)===sprintDur);
   });
+}
+function pickSprintDur(v){
+  applySprintDur(v);
+  try{ localStorage.setItem('hi_sprintdur_v1',String(sprintDur)); }catch(e){}
+  syncSprintDurSelUI();
+  try{ showStage(); }catch(e){}
+}
+syncSprintDurSelUI();
+Array.prototype.forEach.call(document.querySelectorAll('#sprintDurSel div,#sprintHudSel div'),function(d){
+  d.addEventListener('click',function(){ pickSprintDur(parseInt(d.dataset.v,10)); });
 });
 /* 持参アイテム＋アドオンの合計コイン価格 */
 function itemLoadoutCost(){
@@ -12086,7 +12150,7 @@ function softReset(keepNet){
   dashWarn.visible=false;
   scActive=false; scTarget=null; scNext=3; elSkill.classList.remove('on');
   elMashN.classList.remove('on'); elStun.classList.remove('on'); elWig.style.display='none';
-  elItemHud.classList.remove('on');
+  elItemHud.classList.remove('on'); elSprintHud.classList.remove('on');
   elActRing.classList.remove('on'); ringMode=null;
   Object.keys(stats).forEach(function(k){ stats[k]=0; });
   endTimer=0;
