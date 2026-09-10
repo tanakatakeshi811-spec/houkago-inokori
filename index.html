@@ -111,6 +111,23 @@ canvas{display:block}
   width:190px;height:9px;background:#ffffff22;border:1px solid #ffffff55;
   border-radius:5px;overflow:hidden;display:none}
 #wig i{display:block;height:100%;background:var(--yellow);width:0%}
+
+/* 担がれ中、スマホ/タッチ操作の時だけ画面中央に出す両手連打UI。
+   PC(マウス/キーボード)は今まで通りF/J連打のままなので、この要素は
+   isTouchDeviceの判定と組み合わせてJS側で表示を切り替える
+   (2026-09-10追加)。ゲージ・手の2ボタンとも画面中央にまとめて置き、
+   既存の#wig(脇の細いバー)は重複表示のまま残す(実害がないため) */
+#carryHands{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+  display:none;flex-direction:column;align-items:center;gap:14px;z-index:6}
+#carryHands.on{display:flex}
+#carryGauge{width:220px;height:12px;background:#00000055;border:1px solid #ffffff55;
+  border-radius:6px;overflow:hidden}
+#carryGauge i{display:block;height:100%;background:var(--yellow);width:0%}
+#carryHands .chRow{display:flex;gap:60px}
+.chHand{width:76px;height:76px;border-radius:50%;background:#0b120ecc;
+  border:2px solid var(--yellow);display:flex;align-items:center;justify-content:center;
+  font-size:36px;user-select:none;touch-action:none}
+.chHand.press{background:#e8c54755;transform:scale(0.92)}
 #mashn{position:absolute;top:52%;left:50%;transform:translateX(-50%);font-size:26px;
   font-weight:800;color:var(--yellow);text-shadow:0 2px 10px #000;display:none;letter-spacing:.1em}
 #mashn.on{display:block}
@@ -532,6 +549,13 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="stunmsg">よろけた</div>
   <div id="wig"><i></i></div>
   <div id="mashn"></div>
+  <div id="carryHands" class="pe">
+    <div id="carryGauge"><i></i></div>
+    <div class="chRow">
+      <div class="chHand" id="chHandL">🖐️</div>
+      <div class="chHand" id="chHandR">✋</div>
+    </div>
+  </div>
   <div id="stam"><i></i></div>
   <div id="flAimGauge"><i></i></div>
   <div id="itemhud" class="pe">
@@ -800,6 +824,13 @@ window.addEventListener('error',function(e){
 <script>if(typeof THREE!=='undefined'&&!THREE.UnrealBloomPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"><\/scr'+'ipt>');</script>
 <script>
 "use strict";
+/* 担がれ中の両手連打UI(#carryHands)をスマホ/タッチ操作の時だけ出すための
+   判定。既存のmobileLandscape判定(pointer:coarse)と同じ考え方だが、
+   横画面限定ではなく縦画面でも出したいのでこちらは単独のconstにする
+   (2026-09-10追加) */
+const isTouchDevice=(function(){
+  try{ return matchMedia('(pointer:coarse)').matches; }catch(e){ return false; }
+})();
 /* ============================================================
    放課後の居残り  Phase 1-8
    1 マップ/移動/カメラ   2 課題+スキルチェック+脱出   3 先生AI/捕獲/反省椅子
@@ -4804,6 +4835,14 @@ document.getElementById('skill').addEventListener('pointerdown',function(e){e.st
    #padのグリッドに追加すると既存のレイアウト計算を全部触る必要が出るため、
    アイテムを持っている時しか出ないitemhudをそのまま流用した） */
 bindBtn(document.getElementById('itemhud'),function(){input.itemHold=true;},function(){input.itemHold=false;});
+/* 担がれ中の両手連打ボタン。既存のbindBtn()が「me.state==='carried'なら
+   input.mash=trueを立てる」処理を既に持っているので、新しいもがき方の
+   ロジックを増やさずそのまま乗せる(2026-09-10追加) */
+const elCarryHands=document.getElementById('carryHands'),
+      elCarryGaugeI=document.querySelector('#carryGauge i'),
+      elChHandL=document.getElementById('chHandL'),elChHandR=document.getElementById('chHandR');
+bindBtn(elChHandL,function(){},null);
+bindBtn(elChHandR,function(){},null);
 
 /* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
    CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
@@ -9210,6 +9249,11 @@ function tick(now){
   } else elMashN.classList.remove('on');
   elWig.style.display=(role==='student'&&me.state==='carried')?'block':'none';
   if(role==='student'&&me.state==='carried') elWigI.style.width=((me.wig||0)*100)+'%';
+  /* 担がれ中の両手連打UI。スマホ/タッチ操作の時だけ画面中央に表示する
+     (PCはこれまで通りF/J連打、既存の#wigは脇に残したまま重複表示でOK) */
+  const carriedNow=(role==='student'&&me.state==='carried');
+  elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
+  if(carriedNow) elCarryGaugeI.style.width=((me.wig||0)*100)+'%';
   updItemHud();
 
   /* --- AI --- */
@@ -10999,6 +11043,11 @@ function netClientTick(dt){
 
   elChatBtn.style.display='flex';
   elSprintHud.classList.toggle('on',me.perk==='foot');
+  {
+    const carriedNow=(me.state==='carried');
+    elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
+    if(carriedNow) elCarryGaugeI.style.width=((me.wig||0)*100)+'%';
+  }
   updItemHud();
   elActLabel.textContent=label; elActKey.textContent=(me.state==='carried')?'F / J 連打':'E';
   elAct.classList.toggle('hot',hot);
@@ -12150,7 +12199,7 @@ function softReset(keepNet){
   dashWarn.visible=false;
   scActive=false; scTarget=null; scNext=3; elSkill.classList.remove('on');
   elMashN.classList.remove('on'); elStun.classList.remove('on'); elWig.style.display='none';
-  elItemHud.classList.remove('on'); elSprintHud.classList.remove('on');
+  elItemHud.classList.remove('on'); elSprintHud.classList.remove('on'); elCarryHands.classList.remove('on');
   elActRing.classList.remove('on'); ringMode=null;
   Object.keys(stats).forEach(function(k){ stats[k]=0; });
   endTimer=0;
