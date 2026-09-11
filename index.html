@@ -665,11 +665,15 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     </div>
   </div>
 
+  <div id="modeSel" class="seg" style="margin:8px 10px 0">
+    <div data-m="classic" class="sel" style="flex:1">通常（先生1vs生徒4）</div>
+    <div data-m="event" style="flex:1">イベント（追跡者2vs生徒8）</div>
+  </div>
   <div id="rail">
     <div class="rbtn sel" data-pane="p_char"><i>&#128100;</i>キャラ</div>
-    <div class="rbtn" data-pane="p_wep"><i>&#9876;</i>武器</div>
-    <div class="rbtn" data-pane="p_item"><i>&#128161;</i>持ち物</div>
-    <div class="rbtn" data-pane="p_perk"><i>&#11088;</i>特性</div>
+    <div class="rbtn" data-pane="p_wep" id="railWep"><i>&#9876;</i>武器</div>
+    <div class="rbtn" data-pane="p_item" id="railItem"><i>&#128161;</i>持ち物</div>
+    <div class="rbtn" data-pane="p_perk" id="railPerk"><i>&#11088;</i>特性</div>
     <div class="rbtn" data-pane="p_stage"><i>&#128506;</i>ステージ</div>
     <div class="rbtn" data-pane="p_diff"><i>&#9881;</i>難易度</div>
     <div class="rbtn" data-pane="p_net"><i>&#127760;</i>オンライン</div>
@@ -677,6 +681,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 
   <div id="panelbox" class="on">
     <div class="pane on" id="p_char">
+      <div id="pCharClassic">
       <p class="lbl">役割</p>
       <div id="trole">
         <div data-role="student" class="sel">生徒</div>
@@ -684,6 +689,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       </div>
       <p class="lbl">キャラクター</p>
       <div id="tlist"></div>
+      </div>
+      <div id="pCharEvent" style="display:none"></div>
     </div>
     <div class="pane" id="p_wep">
       <div id="botwrap">
@@ -9141,6 +9148,7 @@ function tick(now){
     if(updIntro(dt)){ renderScene(); return; }
   }
   if(!started||over){ renderScene(); return; }
+  if(evtRunning){ if(netMode==='client') evtClientTick(dt); else evtHostTick(dt); return; }
   if(netMode==='client'){ netClientTick(dt); return; }
   elapsed+=dt; lookIdle+=dt;
 
@@ -10694,7 +10702,7 @@ function voiceUpdateVolumes(){
   });
 }
 
-function netMaxSlots(){ return role==='teacher'?4:3; }
+function netMaxSlots(){ if(gameMode==='event') return 9; return role==='teacher'?4:3; }
 function netStudentIndexForSlot(slot){ return role==='teacher'?slot:(slot+1); }
 function netStuIdx(s){ return students.indexOf(s); }
 function netPickCode(){
@@ -10865,7 +10873,8 @@ function netHostOnData(conn,msg){
   } else if(msg.t==='profile'){
     const c=netConns.filter(function(x){ return x.conn===conn; })[0];
     if(!c) return;
-    c.profile={name:String(msg.name||'名無し').slice(0,10),icon:msg.icon||'👤',pid:String(msg.pid||'')};
+    c.profile={name:String(msg.name||'名無し').slice(0,10),icon:msg.icon||'👤',pid:String(msg.pid||''),
+      eRole:msg.eRole,eChar:msg.eChar};
     netRenderPeerList();
     netSetStatus('部屋コード '+netRoomCode+'　'+c.profile.icon+' '+c.profile.name
       +' が参加！（'+netConns.length+'人接続中）',true);
@@ -10902,7 +10911,8 @@ function netJoinRoom(codeRaw){
       document.getElementById('netWaitMsg').innerHTML='ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…';
       document.getElementById('netwait').classList.add('on');
       micIndicatorUpdate();
-      netSend(conn,{t:'profile',name:myProfile.name,icon:myProfile.icon,pid:String(PID)});
+      netSend(conn,{t:'profile',name:myProfile.name,icon:myProfile.icon,pid:String(PID),
+        eRole:evtPickRole,eChar:(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx});
     });
     conn.on('data',function(msg){ netClientOnData(msg); });
     conn.on('close',function(){ netClientDisconnected('ホストとの接続が切れた'); });
@@ -10939,6 +10949,9 @@ function netClientOnData(msg){
   else if(msg.t==='players'){ netPlayersList=msg.list||[]; renderNetWaitPeers(); }
   else if(msg.t==='snap'){ netLastSnap=msg; }
   else if(msg.t==='end'){ netClientOnEnd(msg); }
+  else if(msg.t==='estart'){ evtNetOnStart(msg); }
+  else if(msg.t==='esnap'){ evtNetLastSnap=msg; }
+  else if(msg.t==='eend'){ evtNetOnEnd(msg); }
 }
 function netApplyTaskDesks(coords){
   if(!coords) return;
@@ -12712,6 +12725,7 @@ function startMatch(){
 }
 document.getElementById('go').addEventListener('click',function(){
   if(netMode==='client') return;   /* 参加者はホストの開始を待つだけ */
+  if(gameMode==='event'){ evtStartMatch(); return; }
   startMatch();
 });
 
@@ -12794,8 +12808,24 @@ function softReset(keepNet){
   if(keepNet!==true) document.getElementById('title').style.display='flex';
   refreshStats(); buildList(); showStage();
 }
-document.getElementById('toTitle').addEventListener('click',function(){ softReset(); });
+document.getElementById('toTitle').addEventListener('click',function(){
+  if(evtRunning){ evtSoftReset(); return; }
+  softReset();
+});
 document.getElementById('again').addEventListener('click',function(){
+  if(evtRunning){
+    if(netMode==='host'){ evtSoftReset(true); evtStartMatch(); return; }
+    if(netMode==='client'){
+      evtSoftReset(true);
+      document.getElementById('netWaitCode').textContent=netRoomCode||'----';
+      document.getElementById('netWaitMsg').innerHTML='ホストが次の試合を始めるのを待っています…';
+      document.getElementById('netwait').classList.add('on');
+      return;
+    }
+    evtSoftReset();
+    document.getElementById('go').click();
+    return;
+  }
   if(netMode==='host'){
     /* ホストは接続を維持したまま、そのまま次の試合を作って全員に配信する */
     softReset(true);
@@ -13074,6 +13104,1116 @@ function updAdminViz(){
   }
   for(;i<V.bodySpheres.length;i++) V.bodySpheres[i].visible=false;
 }
+
+
+/* ===================================================================================
+   イベントモード（追跡者2 vs 生徒8、オンライン対応 最大10人）2026-09-11追加
+   -----------------------------------------------------------------------------------
+   著作権配慮：実在の非対称対戦ゲームの「仕組み・ルール」だけを参考にし、キャラ名・
+   世界観・固有名詞は一切引き継がず、「放課後の居残り」の学校の怪談として完全新規に
+   作った（写真部顧問実装時と同じ方針）。参考にしたのは以下の「仕組み」のみ：
+   ・追跡者2vs生徒8の非対称対戦、時間制限つき
+   ・追跡者は開始時は移動系能力のみ、時間経過で索敵・高速移動・隠密・終盤強化が
+     段階的に解禁される
+   ・生徒側はステータス制、脱出手段は複数種類（部品集め系／応援を呼ぶ系）
+   ・「追跡者を倒す」特殊勝利条件はソロ不可・複数手順が必要な設計にする
+   ・脱落者の中からランダムで1人が全ステ最大の特殊キャラとして復帰できる
+   実装は既存インフラ（person()/blocked()/move()/walkable/exits/mark()/PeerJS
+   ホスト権威モデルなど）を最大限流用し、衝突を避けるため専用の evt* 名前空間に
+   まとめ、tick()の冒頭で早期分岐して既存の4vs1モードには一切手を加えない設計にした。
+=================================================================================== */
+let gameMode='classic';     // 'classic'(先生1vs生徒4) | 'event'(追跡者2vs生徒8)
+let evtRunning=false;       // イベントモードの試合が今動作中か(tick分岐・後片付け判定用)
+
+/* ---- オリジナル追跡者2種(元ネタの固有名詞は一切使わず学校の怪談として新規作成) ---- */
+const EVT_CHASER_KINDS={
+  chokuin:{name:'宿直室の影',ability:'瞬間移動',color:0x2c3244,skin:0x8a95a6,hair:0x14161c,
+    desc:'夜勤の宿直室に取り憑いた影。物置から物置へ瞬時に移動する。'},
+  shokyaku:{name:'焼却炉の主',ability:'瞬間移動',color:0x4a2c22,skin:0x9a7a5c,hair:0x1c1410,
+    desc:'裏庭の焼却炉に棲みつく何か。動きは重いが一撃が重い。'}
+};
+const EVT_CHASER_SPD={chokuin:1.0,shokyaku:0.92};
+const EVT_CHASER_POWER={chokuin:1.0,shokyaku:1.25};   // 焼却炉の主は攻撃・罠が少し強い代わりに遅い
+
+/* ---- オリジナル生徒8人。7ステータス(冷静さ/幸運/修理/速度/体力/隠密/力、各1〜10) ----
+   1人だけ全ステ標準(5)の基準キャラ(元ネタの「全ステ5のキャラが1人いる」慣習を踏襲) */
+const EVT_STU=[
+  {name:'田中まこと',uniform:0x6c7a8a,hair:0x2a2420,stat:{calm:5,luck:5,repair:5,speed:5,hp:5,stealth:5,power:5},
+   desc:'これといって特徴のない、ごく普通の生徒。全部平均的。'},
+  {name:'早坂りん',uniform:0xc75a5a,hair:0x3a2418,stat:{calm:5,luck:5,repair:4,speed:9,hp:4,stealth:6,power:3},
+   desc:'陸上部のエース。とにかく足が速い。'},
+  {name:'郷田つばさ',uniform:0x5a6c48,hair:0x1c1a16,stat:{calm:6,luck:4,repair:3,speed:4,hp:8,stealth:3,power:9},
+   desc:'柔道部主将。体力と力に絶対の自信がある。'},
+  {name:'水無月あおい',uniform:0x5a4a7a,hair:0x241c2c,stat:{calm:8,luck:6,repair:5,speed:4,hp:3,stealth:8,power:2},
+   desc:'図書委員。物音を立てず、めったなことでは動じない。'},
+  {name:'黒田けん',uniform:0x8a7a3c,hair:0x2c2418,stat:{calm:5,luck:4,repair:9,speed:5,hp:5,stealth:4,power:3},
+   desc:'工作部。壊れた物を直すのが得意。'},
+  {name:'七瀬ゆき',uniform:0xc7a0c0,hair:0x3c2c34,stat:{calm:6,luck:9,repair:5,speed:5,hp:4,stealth:5,power:3},
+   desc:'なぜか物事がうまく転がる強運の転校生。'},
+  {name:'葉山さくら',uniform:0x4a8a7a,hair:0x241c1c,stat:{calm:4,luck:5,repair:4,speed:6,hp:3,stealth:9,power:2},
+   desc:'演劇部。気配を消すのが異様に上手い。'},
+  {name:'轟マサル',uniform:0x8a4a2c,hair:0x1c1810,stat:{calm:3,luck:3,repair:3,speed:6,hp:7,stealth:2,power:7},
+   desc:'番長気質。血の気が多く、怖がるより先に向かっていくタイプ。'}
+];
+/* 復帰キャラ「呼び出された先輩」：壊れた校内放送室(既存のcastObj)から、
+   既に脱落/脱出した生徒の中からランダムで1人が乗り移って復帰する。
+   全ステ最大＋専用武器所持、「追跡者を倒す」の最後の一撃はこのキャラだけが打てる */
+const EVT_SENPAI={name:'呼び出された先輩',uniform:0xd8c860,hair:0x0c0c0c,
+  stat:{calm:10,luck:10,repair:10,speed:10,hp:10,stealth:10,power:10},
+  desc:'誰かの中に、卒業したはずの先輩が降りてきた。専用武器「銀のペンライト」を持つ。'};
+
+/* ---- 能力の段階解禁スケジュール(試合開始からの経過秒。8分想定で終盤2分に終盤強化) ---- */
+const EVT_UNLOCK_SCENT=90, EVT_UNLOCK_DASH=180, EVT_UNLOCK_STEALTH=270, EVT_UNLOCK_ENDGAME=360;
+const EVT_MATCH_LEN=480;   // 8分
+
+let evtElapsed=0, evtTimer=EVT_MATCH_LEN, evtOver=false;
+let evtChasers=[], evtStudents=[], evtParts=0, evtTalisman=0;
+let evtRole='student';         // 自分がこの試合でどちら側を操作しているか('chaser'|'student')
+let evtMySlot=0;                // chaser側なら0/1、student側ならevtStudents添字
+let evtMe=null;                 // 自分が操作するオブジェクトへの参照
+let evtHelp={active:false,prog:0,done:false,timer:0,x:0,z:0,mesh:null};
+let evtPartsObjs=[], evtTalismanObjs=[], evtTrapObjs=[], evtKnifeObjs=[];
+let evtSpecTarget=null, evtSpecIdx=0;
+let evtNetMySlot=-1;             // オンライン参加者：自分のnetSlot
+let evtNetLastSnap=null;
+let evtSendT=0, evtNetMashCount=0;
+/* タイトル画面：役割・キャラ選択の一時状態 */
+let evtPickRole='student', evtPickStuIdx=0, evtPickChaserIdx=0;
+
+/* ---- 見た目：既存のperson()をそのまま流用(低ポリ人型の使い回し、時間短縮の判断) ---- */
+function evtMakeChaserMesh(kindKey){
+  const K=EVT_CHASER_KINDS[kindKey];
+  return person({uniform:K.color,hair:K.hair,skin:K.skin,accent:0x2a2a2a,tall:true});
+}
+function evtMakeStudentMesh(def){
+  return person({uniform:def.uniform,hair:def.hair,accent:0xe4e0d4,tall:false});
+}
+
+/* ---- 汎用ヘルパー ---- */
+function evtAlive(){ return evtChasers.filter(function(c){return !c.defeated;}); }
+function evtAliveStudents(){ return evtStudents.filter(function(s){return s.state==='free'||s.state==='downed'||s.state==='carried';}); }
+function evtStuIdx(s){ return evtStudents.indexOf(s); }
+function evtChIdx(c){ return evtChasers.indexOf(c); }
+function evtNoise(x,z,radius,stealthStat,srcStudent){
+  /* 隠密ステータスは「音のヒントの発生量」だけに効く独立系。半径を縮める形で反映する */
+  const mul=1.3-((stealthStat===undefined?5:stealthStat)*0.08);
+  const r=Math.max(2,radius*Math.max(0.3,mul));
+  evtChasers.forEach(function(c){
+    if(c.defeated) return;
+    if(Math.hypot(c.x-x,c.z-z)<r*3) c.alert={x:x,z:z,t:6};
+  });
+  mark(x,z,0xe8c547);
+  if(srcStudent) srcStudent.noiseT=1.6;
+}
+function evtBeep(f,d,t,v){ beep(f,d,t,v); }
+
+/* =========================== 試合開始・後片付け =========================== */
+function evtClearWorldObjs(){
+  evtPartsObjs.forEach(function(o){ scene.remove(o.mesh); }); evtPartsObjs=[];
+  evtTalismanObjs.forEach(function(o){ scene.remove(o.mesh); }); evtTalismanObjs=[];
+  evtTrapObjs.forEach(function(o){ scene.remove(o.mesh); }); evtTrapObjs=[];
+  evtKnifeObjs.forEach(function(o){ scene.remove(o.mesh); }); evtKnifeObjs=[];
+  if(evtHelp.mesh){ scene.remove(evtHelp.mesh); evtHelp.mesh=null; }
+}
+function evtScatterPickups(){
+  /* 既存のitemBoxesと同じ発想：walkableな候補地点から間引いて配置する */
+  const cand=walkable.filter(function(w){ return inStage(w[0]); });
+  const pool=cand.slice().sort(function(){ return Math.random()-0.5; });
+  let idx=0;
+  function nextSpot(){ const w=pool[idx%pool.length]; idx+=7; return center(w[0],w[1]); }
+  for(let i=0;i<10;i++){
+    const p=nextSpot();
+    const m=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.4,0.5),
+      new THREE.MeshLambertMaterial({color:0xd8b25a}));
+    m.position.set(p.x,0.3,p.z); scene.add(m);
+    evtPartsObjs.push({x:p.x,z:p.z,mesh:m,taken:false});
+  }
+  for(let i=0;i<3;i++){
+    const p=nextSpot();
+    const m=new THREE.Mesh(new THREE.OctahedronGeometry(0.42),
+      new THREE.MeshLambertMaterial({color:0x8a3ad8}));
+    m.position.set(p.x,0.9,p.z); scene.add(m);
+    evtTalismanObjs.push({x:p.x,z:p.z,mesh:m,taken:false});
+  }
+  const hp=nextSpot();
+  const hm=new THREE.Mesh(new THREE.BoxGeometry(1.0,1.2,0.6),
+    new THREE.MeshLambertMaterial({color:0x3ad8c7}));
+  hm.position.set(hp.x,0.6,hp.z); scene.add(hm);
+  evtHelp={active:false,prog:0,done:false,timer:0,x:hp.x,z:hp.z,mesh:hm};
+}
+function evtSpawnAll(){
+  applyStage();
+  evtClearWorldObjs();
+  const spots=walkable.filter(function(w){ return inStage(w[0]); })
+    .sort(function(){ return Math.random()-0.5; });
+  const chKinds=['chokuin','shokyaku'];
+  evtChasers=chKinds.map(function(kk,i){
+    const sp=spots[(i*23)%spots.length]; const p=center(sp[0],sp[1]);
+    const mesh=evtMakeChaserMesh(kk);
+    return {kind:'echaser',kindKey:kk,name:EVT_CHASER_KINDS[kk].name,mesh:mesh,
+      x:p.x,z:p.z,yaw:0,speed:6.0*EVT_CHASER_SPD[kk],base:6.0*EVT_CHASER_SPD[kk],
+      stun:0,hp:3,weaken:0,sealed:0,sealedHitBy:[],defeated:false,
+      teleCd:0,teleCharge:0,scentT:0,scentCd:0,dashT:0,dashCd:0,stealthT:0,stealthCd:0,
+      stanceOn:'', endgame:false, trapCharges:2,trapCd:0,knifeCd:0,
+      carrying:null, atk:0,swing:0,alert:null,path:[],pathT:0,vault:0,
+      netSlot:undefined};
+  });
+  evtStudents=EVT_STU.map(function(def,i){
+    const sp=spots[(i*11+3)%spots.length]; const p=center(sp[0],sp[1]);
+    const st=def.stat;
+    return {kind:'estudent',name:def.name,def:def,stat:st,
+      mesh:evtMakeStudentMesh(def),
+      x:p.x,z:p.z,yaw:0,speed:5.6+st.speed*0.18,base:5.6+st.speed*0.18,
+      hpMax:Math.max(1,Math.ceil(st.hp/4)),hpCur:Math.max(1,Math.ceil(st.hp/4)),
+      state:'free',hide:null,vault:0,fear:0,wig:0,downT:0,trapped:false,trapT:0,
+      stam:1,exh:false,slow:0,freeze:0,senpai:false,mesh3rd:true,
+      path:[],pathT:0,grabber:null,rescueT:0,scentGlowT:0,mashTick:0,
+      px:0,pz:0,netSlot:undefined};
+  });
+  evtParts=0; evtTalisman=0;
+  evtScatterPickups();
+  refreshVentLook(); refreshCeilLook();
+}
+function evtChooseKindForRoster(){}
+function evtSoftReset(keepNet){
+  bgmStop();
+  if(keepNet!==true&&netMode!=='off') netTeardown();
+  evtChasers.forEach(function(c){ if(c.mesh) scene.remove(c.mesh); });
+  evtStudents.forEach(function(s){ if(s.mesh) scene.remove(s.mesh); });
+  evtClearWorldObjs();
+  evtChasers=[]; evtStudents=[]; evtMe=null;
+  evtElapsed=0; evtTimer=EVT_MATCH_LEN; evtOver=false; evtRunning=false;
+  elRoster.innerHTML=''; elBuffs.innerHTML='';
+  elItemHud.classList.remove('on'); elCarryHands.classList.remove('on');
+  elWig.style.display='none'; elStun.classList.remove('on');
+  document.getElementById('result').style.display='none';
+  if(keepNet!==true) document.getElementById('title').style.display='flex';
+  started=false; over=false;
+}
+
+/* =========================== 移動・カメラ（既存の move()/blocked() を流用） =========================== */
+function evtMove(e,dx,dz,dt){
+  if(e.kind==='echaser'&&e.endgame){
+    /* 終盤強化：ドアや壁を破壊せず通り抜けられる、の簡易近似として
+       衝突判定そのものを免除する(重い当たり判定の分解までは今回は作らない) */
+    e.x+=dx*dt; e.z+=dz*dt; return;
+  }
+  const R=BODY;
+  const nx=e.x+dx*dt; if(!blocked(nx,e.z,R)) e.x=nx;
+  const nz=e.z+dz*dt; if(!blocked(e.x,nz,R)) e.z=nz;
+}
+function evtThirdPersonCam(camT,dt){
+  let dist=7.4;
+  const bx=-Math.sin(camYaw),bz=-Math.cos(camYaw);
+  for(let d2=1.4;d2<dist;d2+=0.6){
+    const p=tileOf(camT.x+bx*d2,camT.z+bz*d2);
+    const tt=at(p[0],p[1]);
+    if(tt==='#'||tt==='L'||tt==='B'){ dist=Math.max(2.4,d2-0.8); break; }
+  }
+  const k=Math.cos(pitch*0.5);
+  camera.position.set(camT.x+bx*dist*k,Math.max(1.5,3.7-pitch*5.2),camT.z+bz*dist*k);
+  camera.lookAt(camT.x,1.7,camT.z);
+}
+
+/* =========================== 追跡者の能力 =========================== */
+function evtAbilityUnlocked(kind){
+  if(kind==='scent') return evtElapsed>=EVT_UNLOCK_SCENT;
+  if(kind==='dash') return evtElapsed>=EVT_UNLOCK_DASH;
+  if(kind==='stealth') return evtElapsed>=EVT_UNLOCK_STEALTH;
+  return false;
+}
+function evtFireTeleport(c,charge){
+  const dist=6+Math.min(1,charge)*20;
+  const sx=Math.sin(c.yaw),sz=Math.cos(c.yaw);
+  let land=null;
+  for(let d=dist;d>=2;d-=0.8){
+    const tl=tileOf(c.x+sx*d,c.z+sz*d);
+    if(walk(tl[0],tl[1])&&inStage(tl[0])){ land=center(tl[0],tl[1]); break; }
+  }
+  if(!land){ if(c===evtMe) toast('その方向には跳べない'); return; }
+  c.x=land.x; c.z=land.z; c.teleCd=14;
+  evtBeep(700,0.22,'sine',0.12);
+  if(c===evtMe) toast('瞬間移動');
+}
+function evtToggleStance(c){
+  const order=['scent','dash','stealth'].filter(evtAbilityUnlocked);
+  if(!order.length) return;
+  if(c.stanceOn){
+    /* 手動でオフ→自然終了より早く終わる代わりにクールダウンを短縮する仕様 */
+    const k=c.stanceOn;
+    if(k==='scent') c.scentCd=10; else if(k==='dash') c.dashCd=8; else if(k==='stealth') c.stealthCd=11;
+    c.stanceOn=''; c.scentT=0; c.dashT=0; c.stealthT=0;
+    if(c===evtMe) toast('能力を解除（クールダウン短縮）');
+    return;
+  }
+  for(const k of order){
+    const cd=(k==='scent')?c.scentCd:(k==='dash')?c.dashCd:c.stealthCd;
+    if(cd<=0){
+      c.stanceOn=k;
+      if(k==='scent') c.scentT=10; else if(k==='dash') c.dashT=5; else c.stealthT=12;
+      if(c===evtMe) toast(k==='scent'?'索敵開始':(k==='dash'?'高速移動開始':'気配遮断開始'));
+      evtBeep(500,0.15,'triangle',0.1);
+      return;
+    }
+  }
+  if(c===evtMe) toast('まだクールダウン中');
+}
+function evtUpdChaserAbilities(c,dt){
+  if(c.teleCd>0) c.teleCd=Math.max(0,c.teleCd-dt);
+  if(c.scentCd>0) c.scentCd=Math.max(0,c.scentCd-dt);
+  if(c.dashCd>0) c.dashCd=Math.max(0,c.dashCd-dt);
+  if(c.stealthCd>0) c.stealthCd=Math.max(0,c.stealthCd-dt);
+  if(c.trapCd>0) c.trapCd=Math.max(0,c.trapCd-dt);
+  if(c.knifeCd>0) c.knifeCd=Math.max(0,c.knifeCd-dt);
+  if(c.stanceOn==='scent'){ c.scentT-=dt; if(c.scentT<=0){ c.stanceOn=''; c.scentCd=20; } }
+  else if(c.stanceOn==='dash'){ c.dashT-=dt; if(c.dashT<=0){ c.stanceOn=''; c.dashCd=16; } }
+  else if(c.stanceOn==='stealth'){ c.stealthT-=dt; if(c.stealthT<=0){ c.stanceOn=''; c.stealthCd=22; } }
+  if(!c.endgame&&evtElapsed>=EVT_UNLOCK_ENDGAME){
+    c.endgame=true; if(c===evtMe) toast('終盤強化：壁抜け＋怯みにくくなった');
+  }
+  if(c.stun>0) c.stun=Math.max(0,c.stun-dt);
+  if(c.atk>0) c.atk=Math.max(0,c.atk-dt);
+}
+function evtChaserStunMul(c){ return c.endgame?0.4:1; }
+function evtChaserSpeedNow(c){
+  let sp=c.base;
+  if(c.stanceOn==='dash') sp*=2.6;
+  if(c.carrying) sp*=0.7;
+  return sp;
+}
+function evtScentReveal(c){
+  if(c.stanceOn!=='scent') return;
+  evtStudents.forEach(function(s){
+    if(s.state==='out'||s.state==='escaped') return;
+    const running=(s.lastMoveMag||0)>0.3;
+    const noisy=(s.noiseT||0)>0;
+    if((running||noisy)&&Math.hypot(s.x-c.x,s.z-c.z)<40){
+      s.scentGlowT=0.6;
+    }
+  });
+}
+function evtPlaceTrap(c){
+  if(c.trapCharges<=0){ if(c===evtMe) toast('罠を使い切った'); return; }
+  const px=c.x+Math.sin(c.yaw)*2.0, pz=c.z+Math.cos(c.yaw)*2.0;
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.6,0.12,10),
+    new THREE.MeshLambertMaterial({color:0x8a2f28}));
+  m.position.set(px,0.08,pz); scene.add(m);
+  evtTrapObjs.push({x:px,z:pz,mesh:m,armedBy:c,power:EVT_CHASER_POWER[c.kindKey]});
+  c.trapCharges--; c.trapCd=8;
+  if(c===evtMe) toast('罠を仕掛けた（残り'+c.trapCharges+'）');
+  evtBeep(300,0.12,'square',0.1);
+}
+function evtThrowKnife(c){
+  if(c.knifeCd>0) return;
+  c.knifeCd=6;
+  const range=14, half=0.32;
+  let best=null,bd=1e9;
+  evtStudents.forEach(function(s){
+    if(s.state!=='free') return;
+    const dx=s.x-c.x,dz=s.z-c.z,d=Math.hypot(dx,dz);
+    if(d>range) return;
+    const ang=Math.atan2(dx,dz);
+    let da=Math.abs(ang-c.yaw); if(da>Math.PI) da=Math.PI*2-da;
+    if(da>half) return;
+    if(!los(c.x,c.z,s.x,s.z)) return;
+    if(d<bd){ bd=d; best=s; }
+  });
+  const m=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.5),
+    new THREE.MeshLambertMaterial({color:0xd8d8d8}));
+  m.position.set(c.x,1.4,c.z); m.rotation.y=c.yaw; scene.add(m);
+  evtKnifeObjs.push({m:m,t:0,life:0.28,fx:c.x,fz:c.z,
+    tx:best?best.x:(c.x+Math.sin(c.yaw)*range),tz:best?best.z:(c.z+Math.cos(c.yaw)*range)});
+  evtBeep(900,0.08,'square',0.08);
+  if(best) evtHitStudent(best,c,true);
+  else if(c===evtMe) toast('外した');
+}
+function evtUpdExecuteHold(c,dt,holding){
+  if(!c.carrying){ c.execT=0; return; }
+  if(holding){
+    c.execT=(c.execT||0)+dt;
+    if(c.execT>=1.6){ evtExecute(c); c.execT=0; }
+  } else c.execT=Math.max(0,(c.execT||0)-dt*2);
+}
+function evtChaserAttack(c){
+  if(c.atk>0||c.carrying) return;
+  c.atk=0.3; c.swing=1;
+  const target=evtStudents.filter(function(s){
+    return (s.state==='free'||s.state==='downed')&&Math.hypot(s.x-c.x,s.z-c.z)<2.6;
+  }).sort(function(a,b){ return Math.hypot(a.x-c.x,a.z-c.z)-Math.hypot(b.x-c.x,b.z-c.z); })[0];
+  if(!target){ if(c===evtMe) evtBeep(220,0.1,'square',0.07); return; }
+  if(target.state==='downed'){ evtGrab(c,target); return; }
+  evtHitStudent(target,c,false);
+}
+function evtHitStudent(s,c,heavy){
+  if(s.state!=='free') return false;
+  if(s.senpai&&s.senpaiParry){ return false; }
+  s.hpCur-=1;
+  s.rush=0; s.slow=0;
+  evtBeep(760,0.2,'square',0.12); vib([30,30]);
+  if(s.hpCur<=0){
+    s.state='downed'; s.downT=0; s.mesh.rotation.z=Math.PI/2*0.9;
+    if(s===evtMe) toast('ダウンした');
+  } else {
+    if(s===evtMe) toast('攻撃を受けた（残りHP '+s.hpCur+'）');
+  }
+  evtNoise(s.x,s.z,20,s.stat?s.stat.stealth:5);
+  return true;
+}
+function evtGrab(c,s){
+  c.carrying=s; s.grabber=c; s.state='carried'; s.mesh.rotation.z=0; s.wig=0;
+  if(c===evtMe||s===evtMe) toast(s.name+'が捕まった');
+  evtBeep(200,0.3,'sawtooth',0.14);
+}
+function evtExecute(c){
+  const s=c.carrying; if(!s) return;
+  s.state='out'; s.mesh.visible=false; c.carrying=null; s.grabber=null;
+  if(s===evtMe) toast('やられてしまった…');
+  evtCheckEnd();
+}
+function evtEscapeGrab(s){
+  if(!s.grabber) return;
+  s.grabber.carrying=null; s.grabber=null;
+  s.state='free'; s.wig=0; s.slow=0.01;
+  evtBeep(520,0.22,'triangle',0.1); vib([40,50,40]);
+}
+
+/* =========================== 生徒側：恐怖・拘束からの脱出・ダウン・救助 =========================== */
+function evtUpdFear(s,dt){
+  const near=evtChasers.some(function(c){ return !c.defeated&&Math.hypot(c.x-s.x,c.z-s.z)<20; });
+  const calm=s.stat.calm;
+  if(near) s.fear=Math.min(1,(s.fear||0)+dt*0.05*(11-calm)/10);
+  else s.fear=Math.max(0,(s.fear||0)-dt*0.08);
+  if(s.fear>=1){
+    s.fear=0; s.freeze=Math.max(s.freeze||0,0.3);
+    evtNoise(s.x,s.z,30,s.stat.stealth);
+    if(s===evtMe) toast('思わず声が漏れた…');
+  }
+}
+function evtUpdDowned(s,dt){
+  if(s.state==='downed'){
+    s.downT=(s.downT||0)+dt;
+    const maxT=45+s.stat.luck*3;
+    if(s.downT>=maxT){ s.state='out'; s.mesh.visible=false; if(s===evtMe) toast('力尽きた…'); evtCheckEnd(); }
+  }
+  if(s.state==='carried'&&s.grabber){
+    s.wig=Math.min(1,(s.wig||0)+((s.mashTick||0)?0.05*(0.6+s.stat.calm/10):0));
+    s.mashTick=0;
+    if(s.wig>=1) evtEscapeGrab(s);
+  }
+}
+function evtNearRescue(s){
+  return evtStudents.filter(function(o){
+    return o!==s&&(o.state==='free')&&Math.hypot(o.x-s.x,o.z-s.z)<2.4;
+  })[0];
+}
+function evtUpdRescue(s,dt){
+  const target=evtStudents.filter(function(o){ return o.state==='downed'&&Math.hypot(o.x-s.x,o.z-s.z)<2.4; })[0];
+  if(target){
+    target.rescueT=(target.rescueT||0)+dt;
+    if(target.rescueT>=3.0){ target.rescueT=0; target.state='free'; target.hpCur=Math.max(1,Math.ceil(target.hpMax/2));
+      target.downT=0; evtBeep(700,0.2,'sine',0.09);
+      if(s===evtMe||target===evtMe) toast(target.name+'を助けた'); }
+    return true;
+  }
+  return false;
+}
+
+/* =========================== 脱出手段 =========================== */
+function evtTryPickupParts(s){
+  for(const o of evtPartsObjs){
+    if(o.taken) continue;
+    if(Math.hypot(o.x-s.x,o.z-s.z)<2.0){
+      o.taken=true; o.mesh.visible=false; evtParts++;
+      if(s===evtMe) toast('脱出部品を回収（'+evtParts+'個）');
+      evtBeep(880,0.14,'triangle',0.09);
+      return true;
+    }
+  }
+  return false;
+}
+function evtTryPickupTalisman(s){
+  for(const o of evtTalismanObjs){
+    if(o.taken) continue;
+    if(Math.hypot(o.x-s.x,o.z-s.z)<2.0){
+      o.taken=true; o.mesh.visible=false; evtTalisman++;
+      if(s===evtMe) toast('御札の欠片を見つけた（'+evtTalisman+'/3）');
+      evtBeep(1000,0.18,'sine',0.1);
+      return true;
+    }
+  }
+  return false;
+}
+function evtNearExitPt(s){
+  return (exits||[]).filter(function(e){ return Math.hypot(e.x-s.x,e.z-s.z)<3.2; })[0];
+}
+function evtTryEscape(s){
+  const ex=evtNearExitPt(s); if(!ex) return false;
+  const nearby=evtStudents.filter(function(o){
+    return (o.state==='free')&&Math.hypot(o.x-ex.x,o.z-ex.z)<4.5;
+  });
+  if(evtHelp.done){
+    nearby.forEach(function(o){ o.state='escaped'; o.mesh.visible=false; });
+    if(nearby.indexOf(s)>=0){ if(s===evtMe) toast('応援の車で脱出した！'); evtBeep(880,0.4,'sine',0.12); evtCheckEnd(); return true; }
+  }
+  if(evtParts>=6&&nearby.length>=2){
+    evtParts-=6; nearby.slice(0,5).forEach(function(o){ o.state='escaped'; o.mesh.visible=false; });
+    if(nearby.indexOf(s)>=0){ if(s===evtMe) toast('正門から大人数で脱出した！'); evtBeep(880,0.4,'sine',0.12); evtCheckEnd(); return true; }
+    return true;
+  }
+  if(evtParts>=3){
+    evtParts-=3; nearby.slice(0,2).forEach(function(o){ o.state='escaped'; o.mesh.visible=false; });
+    if(nearby.indexOf(s)>=0){ if(s===evtMe) toast('通用口から脱出した！'); evtBeep(880,0.4,'sine',0.12); evtCheckEnd(); return true; }
+    return true;
+  }
+  if(s===evtMe) toast('脱出には部品が足りない（あと'+(3-evtParts)+'個）');
+  return false;
+}
+function evtUpdHelp(dt){
+  if(evtHelp.done) return;
+  if(evtHelp.active){
+    evtHelp.timer-=dt;
+    if(evtHelp.timer<=0){
+      evtHelp.done=true;
+      (exits||[]).forEach(function(e){ if(e.glow) e.glow.visible=true; });
+      say('通信','応援が昇降口に到着した！みんなで急いで！','sys');
+    }
+  }
+}
+function evtTryRepairHelp(s,dt){
+  if(!evtHelp.mesh||evtHelp.active) return false;
+  if(Math.hypot(evtHelp.mesh.position.x-s.x,evtHelp.mesh.position.z-s.z)<2.4){
+    evtHelp.prog=(evtHelp.prog||0)+dt*0.10*(0.6+s.stat.repair/10);
+    if(evtHelp.prog>=1){
+      evtHelp.active=true; evtHelp.timer=100;
+      say('通信','応援を呼んだ！約100秒で到着する','sys');
+    }
+    return true;
+  }
+  return false;
+}
+
+/* =========================== 特殊勝利条件「追跡者を倒す」 =========================== */
+function evtTryUseTalisman(s){
+  if(evtTalisman<3) return false;
+  const c=evtChasers.filter(function(x){ return !x.defeated&&Math.hypot(x.x-s.x,x.z-s.z)<6&&los(s.x,s.z,x.x,x.z); })[0];
+  if(!c) return false;
+  evtTalisman=0; c.sealed=8; c.sealedHitBy=[];
+  say('通信',s.name+'が御札を投げつけた！追跡者の動きが鈍っている','warn');
+  evtBeep(300,0.4,'sawtooth',0.12); vib([50,60,50]);
+  return true;
+}
+function evtTryWeakenSeal(s,c){
+  if(c.sealed<=0) return false;
+  if(Math.hypot(c.x-s.x,c.z-s.z)>2.6) return false;
+  const already=c.sealedHitBy.indexOf(s)>=0;
+  if(!already) c.sealedHitBy.push(s);
+  c.weaken=Math.min(1,(c.weaken||0)+s.stat.power/10*(s.senpai?2:1));
+  evtBeep(500,0.14,'square',0.1);
+  if(s.senpai&&c.weaken>=1&&c.sealedHitBy.length>=2){
+    c.defeated=true; c.sealed=0; c.mesh.visible=false;
+    say('通信',c.name+'を追い詰めて封じた！','sys');
+    evtBeep(160,0.6,'sawtooth',0.16); vib([80,60,80,60,120]);
+    evtCheckEnd();
+  } else if(s===evtMe) toast('手応えあり！（弱化度 '+Math.round(c.weaken*100)+'%）');
+  return true;
+}
+
+/* =========================== 復帰キャラ「呼び出された先輩」 =========================== */
+function evtTryCallSenpai(s){
+  if(!castObj||castObj.cd>0){ if(s===evtMe) toast('放送設備はまだ使えない'); return false; }
+  if(Math.hypot(castObj.x-s.x,castObj.z-s.z)>4.0) return false;
+  const pool=evtStudents.filter(function(o){ return o.state==='out'||o.state==='escaped'; });
+  if(!pool.length){ if(s===evtMe) toast('まだ誰も脱落していない'); return false; }
+  castObj.cd=45;
+  const pick=pool[(Math.random()*pool.length)|0];
+  pick.senpai=true; pick.state='free'; pick.mesh.visible=true;
+  pick.stat=EVT_SENPAI.stat; pick.hpMax=10; pick.hpCur=10;
+  pick.speed=5.6+pick.stat.speed*0.18; pick.base=pick.speed;
+  pick.x=castObj.x; pick.z=castObj.z;
+  say('通信',pick.name+'に先輩が降りてきた！','sys');
+  evtBeep(1200,0.5,'sine',0.14);
+  return true;
+}
+
+/* =========================== 勝敗判定 =========================== */
+function evtCheckEnd(){
+  if(evtOver) return;
+  if(evtChasers.every(function(c){ return c.defeated; })){ evtFinish('生徒の勝ち','追跡者を撃退した'); return; }
+  const rest=evtStudents.filter(function(s){ return s.state!=='out'&&s.state!=='escaped'; });
+  if(rest.length===0){ evtFinish('追跡者の勝ち','生徒が全員いなくなった'); return; }
+  const esc=evtStudents.filter(function(s){ return s.state==='escaped'; }).length;
+  if(evtTimer<=0){
+    evtFinish(esc>0?'生徒の勝ち':'追跡者の勝ち',esc>0?(esc+'人が脱出した'):'時間切れ（誰も脱出できなかった）');
+  }
+}
+function evtFinish(title,detail){
+  evtOver=true; over=true; bgmStop();
+  const esc=evtStudents.filter(function(s){ return s.state==='escaped'; }).length;
+  const out=evtStudents.filter(function(s){ return s.state==='out'; }).length;
+  const sc=esc*350+evtParts*20+(evtChasers.filter(function(c){return c.defeated;}).length*600);
+  const co=Math.round(sc/22);
+  SCORE+=sc; COINS+=co; refreshStats();
+  document.getElementById('rgain').textContent='＋'+sc+' スコア　＋'+co+' コイン';
+  document.getElementById('rtext').textContent=title;
+  document.getElementById('rsub').innerHTML=detail+'<br>脱出 '+esc+' / 脱落 '+out+' / 生徒8　経過 '+Math.floor(evtElapsed)+'秒';
+  document.getElementById('result').style.display='flex';
+  if(document.exitPointerLock) document.exitPointerLock();
+  if(netMode==='host') netBroadcast({t:'eend',
+    rtext:title, rsub:document.getElementById('rsub').innerHTML,
+    rgain:document.getElementById('rgain').textContent, sc:sc, co:co});
+}
+
+/* =========================== 簡易AI =========================== */
+function evtAiChaser(c,dt){
+  if(c.defeated) return;
+  let target=null,bd=1e9;
+  evtStudents.forEach(function(s){
+    if(s.state!=='free'&&s.state!=='downed') return;
+    const d=Math.hypot(s.x-c.x,s.z-c.z);
+    if(d<bd){ bd=d; target=s; }
+  });
+  c.speed=evtChaserSpeedNow(c);
+  if(target&&bd<28){
+    c.pathT=(c.pathT||0)-dt;
+    if(c.pathT<=0||!c.path.length){ repath(c,target.x,target.z); c.pathT=1.0; }
+    if(!follow(c,dt,1)) c.yaw=Math.atan2(target.x-c.x,target.z-c.z);
+    if(bd<2.6) evtChaserAttack(c);
+    else if(bd<10&&c.teleCd<=0&&Math.random()<dt*0.4) evtFireTeleport(c,0.6);
+    else if(evtAbilityUnlocked('scent')&&!c.stanceOn&&c.scentCd<=0&&Math.random()<dt*0.2) evtToggleStance(c);
+  } else {
+    c.pathT=(c.pathT||0)-dt;
+    if(c.pathT<=0||!c.path.length){
+      const w=walkable[(Math.random()*walkable.length)|0]; const p=center(w[0],w[1]);
+      repath(c,p.x,p.z); c.pathT=4+Math.random()*3;
+    }
+    follow(c,dt,0.6);
+  }
+}
+function evtAiStudent(s,dt){
+  if(s.state==='out'||s.state==='escaped') return;
+  if(s.state==='carried'){ if(Math.random()<dt*3) s.mashTick=1; return; }
+  if(s.state==='downed') return;
+  const nearC=evtChasers.filter(function(c){ return !c.defeated; })
+    .sort(function(a,b){ return Math.hypot(a.x-s.x,a.z-s.z)-Math.hypot(b.x-s.x,b.z-s.z); })[0];
+  const dC=nearC?Math.hypot(nearC.x-s.x,nearC.z-s.z):999;
+  if(dC<14){
+    const dx=s.x-nearC.x,dz=s.z-nearC.z,d=Math.hypot(dx,dz)||1;
+    evtMove(s,dx/d*s.speed,dz/d*s.speed,dt); s.yaw=Math.atan2(dx/d,dz/d);
+    return;
+  }
+  s.pathT=(s.pathT||0)-dt;
+  if(s.pathT<=0||!s.path||!s.path.length){
+    let goal=null;
+    const part=evtPartsObjs.filter(function(o){return !o.taken;})[0];
+    const tal=evtTalismanObjs.filter(function(o){return !o.taken;})[0];
+    const canExit=(evtParts>=3||evtHelp.done)&&exits&&exits.length;
+    if(canExit&&Math.random()<0.4) goal=exits[(Math.random()*exits.length)|0];
+    else if(part&&Math.random()<0.5) goal=part; else if(tal&&Math.random()<0.3) goal=tal;
+    else if(evtHelp.mesh&&!evtHelp.active&&Math.random()<0.2) goal=evtHelp.mesh.position;
+    if(!goal){ const w=walkable[(Math.random()*walkable.length)|0]; goal=center(w[0],w[1]); }
+    repath(s,goal.x,goal.z);
+    s.pathT=3+Math.random()*3;
+  }
+  follow(s,dt,1);
+  evtTryPickupParts(s); evtTryPickupTalisman(s);
+  if(evtNearExitPt(s)&&(evtParts>=3||evtHelp.done)) evtTryEscape(s);
+}
+
+/* =========================== 罠・投げナイフの見た目更新 =========================== */
+function evtUpdTraps(dt){
+  for(let i=evtTrapObjs.length-1;i>=0;i--){
+    const t=evtTrapObjs[i];
+    const hit=evtStudents.filter(function(s){
+      return s.state==='free'&&!s.trapped&&Math.hypot(s.x-t.x,s.z-t.z)<1.2;
+    })[0];
+    if(hit){
+      hit.trapped=true; hit.trapT=0; hit.slow=3.0*(t.power||1);
+      if(hit===evtMe) toast('罠にかかった！（連打で抜け出せ）');
+      evtBeep(220,0.3,'sawtooth',0.13); vib([40,40,80]);
+      scene.remove(t.mesh); evtTrapObjs.splice(i,1);
+    }
+  }
+  evtStudents.forEach(function(s){
+    if(s.trapped){
+      s.trapT=(s.trapT||0)+((s.mashTick2||0)?0.34:dt*0.12);
+      s.mashTick2=0;
+      if(s.trapT>=1){ s.trapped=false; s.trapT=0; }
+    }
+  });
+}
+function evtUpdKnifeFx(dt){
+  for(let i=evtKnifeObjs.length-1;i>=0;i--){
+    const k=evtKnifeObjs[i]; k.t+=dt;
+    const p=Math.min(1,k.t/k.life);
+    k.m.position.set(k.fx+(k.tx-k.fx)*p,1.4,k.fz+(k.tz-k.fz)*p);
+    if(k.t>=k.life){ scene.remove(k.m); evtKnifeObjs.splice(i,1); }
+  }
+}
+
+/* =========================== リモート入力の適用（ホスト権威、既存の
+   netApplyStudentInput()と同じ発想） =========================== */
+function evtApplyRemoteChaserInput(c,inp,dt){
+  if(!inp) return;
+  const vf=[Math.sin(camYaw),Math.cos(camYaw)];
+  const mag=inp.mag||0;
+  if(mag>0.02){
+    const sp=evtChaserSpeedNow(c)*mag;
+    evtMove(c,inp.dx*sp,inp.dz*sp,dt);
+    c.yaw=angLerp(c.yaw,Math.atan2(inp.dx,inp.dz),Math.min(1,(c.stanceOn==='dash')?dt*2.2:dt*13));
+  }
+  if(inp.actEdge) evtChaserAttack(c);
+  evtUpdExecuteHold(c,dt,!!inp.act);
+  if(inp.altEdge) evtThrowKnife(c);
+  if(inp.abHold){ c.teleCharging=true; c.teleCharge=Math.min(1,(c.teleCharge||0)+dt*1.4); }
+  else if(c.teleCharging){ c.teleCharging=false; if(c.teleCd<=0) evtFireTeleport(c,c.teleCharge||0); c.teleCharge=0; }
+  if(inp.ab2Edge) evtToggleStance(c);
+  if(inp.itemHold&&!c._prevItemHold&&c.trapCd<=0) evtPlaceTrap(c);
+  c._prevItemHold=!!inp.itemHold;
+}
+function evtApplyRemoteStudentInput(s,inp,dt){
+  if(!inp) return;
+  const mag=inp.mag||0;
+  const canMove=(s.state==='free'&&!s.trapped);
+  if(updVault(s,dt)){ /* 乗り越え中 */ }
+  else if(mag>0.02&&canMove){
+    const sp=s.speed*(s.slow>0?0.5:1)*mag;
+    evtMove(s,inp.dx*sp,inp.dz*sp,dt);
+    s.yaw=angLerp(s.yaw,Math.atan2(inp.dx,inp.dz),Math.min(1,dt*13));
+    if(inp.run) evtNoise(s.x,s.z,10,s.stat.stealth,s);
+    s.lastMoveMag=mag;
+  } else s.lastMoveMag=0;
+  if(s.state==='carried'&&inp.mashN) s.mashTick=1;
+  if(s.trapped&&inp.mashN) s.mashTick2=1;
+  if(s.state==='free'&&inp.actEdge){
+    if(inp.altEdge) tryVault(s);
+    if(!evtTryPickupParts(s)&&!evtTryPickupTalisman(s)){
+      const c=evtChasers.filter(function(x){return !x.defeated&&x.sealed>0&&Math.hypot(x.x-s.x,x.z-s.z)<2.6;})[0];
+      if(c) evtTryWeakenSeal(s,c);
+      else if(!evtTryEscape(s)){
+        if(!evtTryUseTalisman(s)) evtTryCallSenpai(s);
+      }
+    }
+  } else if(s.state==='free'&&inp.altEdge) tryVault(s);
+}
+
+/* =========================== ホスト権威メインループ =========================== */
+function evtHostTick(dt){
+  evtElapsed+=dt;
+  if(evtTimer>0){ evtTimer=Math.max(0,evtTimer-dt); }
+  if(netMode!=='client') evtHandleLocalInput(dt);
+  if(netMode==='host'){
+    evtChasers.forEach(function(c){ if(c.netSlot!==undefined) evtApplyRemoteChaserInput(c,netInputs[c.netSlot],dt); });
+    evtStudents.forEach(function(s){ if(s.netSlot!==undefined) evtApplyRemoteStudentInput(s,netInputs[s.netSlot],dt); });
+  }
+  evtChasers.forEach(function(c){ if(c!==evtMe&&c.netSlot===undefined) evtAiChaser(c,dt); });
+  evtStudents.forEach(function(s){ if(s!==evtMe&&s.netSlot===undefined) evtAiStudent(s,dt); });
+
+  evtChasers.forEach(function(c){
+    evtUpdChaserAbilities(c,dt); evtScentReveal(c);
+    if(c.sealed>0){ c.sealed=Math.max(0,c.sealed-dt); setAura(c,'rainbow',0.5); }
+    updAura(c,dt);
+    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated; }
+  });
+  evtStudents.forEach(function(s){
+    if(s.state==='free'){ evtUpdRescue(s,dt); evtTryRepairHelp(s,dt); }
+    evtUpdFear(s,dt); evtUpdDowned(s,dt);
+    if(s.freeze>0) s.freeze=Math.max(0,s.freeze-dt);
+    if(s.slow>0) s.slow=Math.max(0,s.slow-dt);
+    if(s.noiseT>0) s.noiseT=Math.max(0,s.noiseT-dt);
+    if(s.scentGlowT>0){ s.scentGlowT=Math.max(0,s.scentGlowT-dt); setAura(s,'reveal',0.5); }
+    if(s.senpai&&s.state==='free') setAura(s,'reveal',0.6);
+    updAura(s,dt);
+    if(s.mesh){ s.mesh.position.set(s.x,0,s.z); s.mesh.rotation.y=s.yaw;
+      s.mesh.visible=(s.state!=='out'&&s.state!=='escaped'); }
+  });
+  evtUpdTraps(dt); evtUpdKnifeFx(dt); evtUpdHelp(dt); updFx(dt);
+  evtCheckEnd();
+  if(evtOver) return;
+
+  const camT=evtMe||evtChasers[0]||evtStudents[0];
+  if(camT) evtThirdPersonCam(camT,dt);
+  evtHud(dt);
+  if(netMode==='host') evtNetHostBroadcast(dt);
+  renderScene();
+}
+
+/* =========================== オンライン：ホスト→参加者スナップショット =========================== */
+function evtNetHostBroadcast(dt){
+  evtSendT-=dt; if(evtSendT>0) return; evtSendT=1/16;
+  netBroadcast({t:'esnap', el:evtElapsed, timer:evtTimer, parts:evtParts, talisman:evtTalisman,
+    help:{active:evtHelp.active,prog:evtHelp.prog,done:evtHelp.done,timer:evtHelp.timer},
+    ch:evtChasers.map(function(c){ return {x:c.x,z:c.z,yaw:c.yaw,kindKey:c.kindKey,
+      stanceOn:c.stanceOn,endgame:c.endgame,defeated:c.defeated,sealed:c.sealed,
+      carrying:c.carrying?evtStuIdx(c.carrying):-1,swing:c.swing,atk:c.atk}; }),
+    stu: evtStudents.map(function(s){ return {x:s.x,z:s.z,yaw:s.yaw,state:s.state,
+      hpCur:s.hpCur,wig:s.wig||0,trapped:!!s.trapped,senpai:!!s.senpai,fear:s.fear||0}; }),
+    parts_taken: evtPartsObjs.map(function(o){ return o.taken; }),
+    tal_taken: evtTalismanObjs.map(function(o){ return o.taken; }),
+    traps: evtTrapObjs.map(function(o){ return {x:o.x,z:o.z}; })
+  });
+}
+function evtNetInterpolate(dt){
+  const s=evtNetLastSnap; if(!s) return;
+  evtElapsed=s.el; evtTimer=s.timer; evtParts=s.parts; evtTalisman=s.talisman;
+  evtHelp.active=s.help.active; evtHelp.prog=s.help.prog; evtHelp.done=s.help.done;
+  if(evtHelp.done) (exits||[]).forEach(function(e){ if(e.glow) e.glow.visible=true; });
+  s.ch.forEach(function(f,i){
+    const c=evtChasers[i]; if(!c) return;
+    c.x=f.x; c.z=f.z; c.yaw=f.yaw; c.stanceOn=f.stanceOn; c.endgame=f.endgame;
+    c.defeated=f.defeated; c.sealed=f.sealed; c.swing=f.swing; c.atk=f.atk;
+    c.carrying=(f.carrying>=0)?evtStudents[f.carrying]:null;
+    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated; }
+  });
+  s.stu.forEach(function(f,i){
+    const st=evtStudents[i]; if(!st) return;
+    st.x=f.x; st.z=f.z; st.yaw=f.yaw; st.state=f.state; st.hpCur=f.hpCur;
+    st.wig=f.wig; st.trapped=f.trapped; st.senpai=f.senpai; st.fear=f.fear;
+    if(st.mesh){ st.mesh.position.set(st.x,0,st.z); st.mesh.rotation.y=st.yaw;
+      st.mesh.visible=(st.state!=='out'&&st.state!=='escaped'); }
+  });
+  (s.parts_taken||[]).forEach(function(tk,i){ if(evtPartsObjs[i]){ evtPartsObjs[i].taken=tk; evtPartsObjs[i].mesh.visible=!tk; } });
+  (s.tal_taken||[]).forEach(function(tk,i){ if(evtTalismanObjs[i]){ evtTalismanObjs[i].taken=tk; evtTalismanObjs[i].mesh.visible=!tk; } });
+}
+function evtClientTick(dt){
+  evtNetInterpolate(dt);
+  const me=evtMe; if(!me){ renderScene(); return; }
+  let fx1=0,fz1=0;
+  if(keys.KeyW) fz1+=1; if(keys.KeyS) fz1-=1;
+  if(keys.KeyA) fx1-=1; if(keys.KeyD) fx1+=1;
+  fx1+=input.mx; fz1-=input.mz;
+  const mag=Math.hypot(fx1,fz1);
+  const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&Math.hypot(input.mx,input.mz)>deadZone);
+  elStick.classList.toggle('run',running);
+  const vf=[Math.sin(camYaw),Math.cos(camYaw)], vr=[-Math.cos(camYaw),Math.sin(camYaw)];
+  let mdx=0,mdz=0,mmag=0;
+  if(mag>0.02){ mdx=fx1/mag; mdz=fz1/mag;
+    const dx=vf[0]*mdz+vr[0]*mdx, dz=vf[1]*mdz+vr[1]*mdx; mdx=dx; mdz=dz; mmag=Math.min(1,mag); }
+  if(autoCam&&lookIdle>0.45&&mag>0.3) camYaw=angLerp(camYaw,me.yaw,Math.min(1,dt*2.4));
+  lookIdle+=dt;
+  evtSendT-=dt;
+  if(evtSendT<=0&&netHostConn&&netHostConn.open){
+    evtSendT=1/18;
+    if(input.mash) evtNetMashCount++;
+    netSend(netHostConn,{t:'inp',dx:mdx,dz:mdz,mag:mmag,run:running,
+      act:!!input.act, actEdge:!!input.actEdge, altEdge:!!input.altEdge,
+      abHold:!!input.abHold, ab2Edge:!!input.ab2Edge, itemHold:!!input.itemHold,
+      mashN:evtNetMashCount});
+    evtNetMashCount=0;
+  }
+  input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false; input.tap=false; input.mash=false;
+  const camT=me;
+  evtThirdPersonCam(camT,dt);
+  evtHud(dt);
+  renderScene();
+}
+
+/* =========================== HUD（既存のDOM要素を使い回す） =========================== */
+function evtFmtTime(t){ t=Math.max(0,Math.ceil(t)); return Math.floor(t/60)+':'+String(t%60).padStart(2,'0'); }
+function evtBuildRoster(){
+  const me=evtMe;
+  let html='<div class="rrow" style="background:#1a2a1fd0"><div class="rinfo">'+
+    '<div class="rn">残り時間 <span>'+evtFmtTime(evtTimer)+'</span></div>'+
+    '<div class="rs">部品 '+evtParts+'（3で少人数/6で大人数脱出）　御札 '+evtTalisman+'/3</div>'+
+    '<div class="rs">'+(evtHelp.done?'応援到着中！昇降口へ':(evtHelp.active?'応援を待機中…残り'+Math.ceil(evtHelp.timer)+'秒':'放送室を直すと応援を呼べる'))+'</div>'+
+    '</div></div>';
+  evtChasers.forEach(function(c){
+    const isMe=(c===me);
+    html+='<div class="rrow'+(isMe?' me':'')+(c.defeated?' gone':'')+'">'+
+      '<div class="rface" style="background:#'+((EVT_CHASER_KINDS[c.kindKey]||{}).color||0x333333).toString(16).padStart(6,'0')+'"></div>'+
+      '<div class="rinfo"><div class="rn">'+c.name+(isMe?' <span>YOU</span>':'')+'</div>'+
+      '<div class="rs">'+(c.defeated?'撃退された':(c.stanceOn||(c.endgame?'終盤強化中':'待機')))+'</div></div></div>';
+  });
+  evtStudents.forEach(function(s){
+    const isMe=(s===me);
+    const stTxt=s.state==='out'?'脱落':(s.state==='escaped'?'脱出':(s.state==='downed'?'ダウン':(s.state==='carried'?'捕まっている':'—')));
+    const cls=s.state==='out'?'st-out':(s.state==='escaped'?'st-esc':(s.state==='downed'||s.state==='carried'?'st-hurt':''));
+    html+='<div class="rrow'+(isMe?' me':'')+((s.state==='out'||s.state==='escaped')?' gone':'')+'">'+
+      '<div class="rface" style="background:#'+s.def.uniform.toString(16).padStart(6,'0')+'"></div>'+
+      '<div class="rinfo"><div class="rn">'+(s.senpai?'★':'')+s.name+(isMe?' <span>YOU</span>':'')+'</div>'+
+      '<div class="rs '+cls+'">HP '+s.hpCur+'/'+s.hpMax+'　'+stTxt+'</div></div></div>';
+  });
+  elRoster.innerHTML=html;
+}
+function evtBuildBuffs(){
+  const me=evtMe; if(!me){ elBuffs.innerHTML=''; return; }
+  let html='';
+  if(evtRole==='chaser'){
+    html+='<div class="buff'+(me.teleCd<=0?' good':'')+'">瞬間移動 '+(me.teleCd<=0?'OK':Math.ceil(me.teleCd)+'秒')+'</div>';
+    if(evtAbilityUnlocked('scent')) html+='<div class="buff'+(me.stanceOn==='scent'?' good':(me.scentCd>0?'':' warn'))+'">索敵 '+(me.stanceOn==='scent'?Math.ceil(me.scentT)+'秒':(me.scentCd>0?Math.ceil(me.scentCd)+'秒CD':'使用可'))+'</div>';
+    else html+='<div class="buff">索敵 あと'+Math.ceil(Math.max(0,EVT_UNLOCK_SCENT-evtElapsed))+'秒で解禁</div>';
+    if(evtAbilityUnlocked('dash')) html+='<div class="buff'+(me.stanceOn==='dash'?' good':'')+'">高速移動 '+(me.stanceOn==='dash'?Math.ceil(me.dashT)+'秒':(me.dashCd>0?Math.ceil(me.dashCd)+'秒CD':'使用可'))+'</div>';
+    if(evtAbilityUnlocked('stealth')) html+='<div class="buff'+(me.stanceOn==='stealth'?' good':'')+'">気配遮断 '+(me.stanceOn==='stealth'?Math.ceil(me.stealthT)+'秒':(me.stealthCd>0?Math.ceil(me.stealthCd)+'秒CD':'使用可'))+'</div>';
+    if(me.endgame) html+='<div class="buff bad">終盤強化 発動中</div>';
+    html+='<div class="buff">罠 残り'+me.trapCharges+'　ナイフ '+(me.knifeCd<=0?'使用可':Math.ceil(me.knifeCd)+'秒')+'</div>';
+  } else {
+    html+='<div class="buff">冷静さ'+me.stat.calm+' 幸運'+me.stat.luck+' 修理'+me.stat.repair+
+      ' 速さ'+me.stat.speed+' 体力'+me.stat.hp+' 隠密'+me.stat.stealth+' 力'+me.stat.power+'</div>';
+    if(me.senpai) html+='<div class="buff good">呼び出された先輩：追跡者へのとどめが打てる</div>';
+  }
+  elBuffs.innerHTML=html;
+}
+function evtHud(dt){
+  const me=evtMe;
+  evtBuildRoster(); evtBuildBuffs();
+  if(msgT>0){ msgT-=dt; if(msgT<=0) elMsg.classList.remove('on'); }
+  if(!me){ return; }
+  if(evtRole==='chaser'){
+    elActKey.textContent='E';
+    elActLabel.textContent=me.carrying?'処刑（ホールド）':'攻撃・つかむ';
+    elAct.classList.toggle('hot',!!me.carrying||evtStudents.some(function(s){return (s.state==='free'||s.state==='downed')&&Math.hypot(s.x-me.x,s.z-me.z)<2.6;}));
+    elAltLabel.textContent='投げナイフ（'+(me.knifeCd<=0?'OK':Math.ceil(me.knifeCd)+'秒')+'）';
+    elAlt.classList.toggle('hot',me.knifeCd<=0);
+    elAb.style.display='flex';
+    elAbLabel.textContent='瞬間移動'+(me.teleCharging?'（溜め中）':(me.teleCd>0?'（'+Math.ceil(me.teleCd)+'秒）':''));
+    elAb.classList.toggle('hot',me.teleCd<=0); elAb.classList.toggle('dim',me.teleCd>0);
+    elAb2.style.display='flex';
+    elAb2Label.textContent=me.stanceOn?(me.stanceOn==='scent'?'索敵OFF':(me.stanceOn==='dash'?'高速OFF':'遮断OFF')):'能力切替';
+    updItemHudEvt(me);
+    elCarryHands.classList.remove('on'); elWig.style.display='none'; elStun.classList.remove('on');
+  } else {
+    elActKey.textContent=(me.state==='carried')?'F / J 連打':'E';
+    elActLabel.textContent=(me.state==='carried')?'もがく':(me.state==='free'?'拾う・脱出・攻める':'—');
+    elAltLabel.textContent='乗り越え'; elAlt.classList.toggle('hot',me.state==='free');
+    elAb.style.display='none'; elAb2.style.display='none';
+    elItemHud.classList.remove('on');
+    const carriedNow=(me.state==='carried');
+    elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
+    if(carriedNow) elCarryGaugeI.style.width=((me.wig||0)*100)+'%';
+    elWig.style.display=carriedNow?'block':'none';
+    if(carriedNow) elWigI.style.width=((me.wig||0)*100)+'%';
+    if(me.trapped){ elStun.textContent='連打で罠から抜け出せ！'; elStun.classList.add('on'); }
+    else if(me.state==='carried'){ elStun.textContent='連打してもがけ！'; elStun.classList.add('on'); }
+    else if(me.state==='downed'){ elStun.textContent='仲間の救助を待て…'; elStun.classList.add('on'); }
+    else elStun.classList.remove('on');
+  }
+  elHeart.classList.toggle('on',evtRole==='student'&&evtChasers.some(function(c){return !c.defeated&&Math.hypot(c.x-me.x,c.z-me.z)<18;}));
+}
+/* =========================== タイトル画面UI =========================== */
+function evtRenderCharPane(){
+  const wrap=document.getElementById('pCharEvent');
+  if(!wrap) return;
+  let html='<p class="lbl">役割</p><div class="seg" id="evtRoleSel">'+
+    '<div data-r="student" class="'+(evtPickRole==='student'?'sel':'')+'">生徒（8人から選ぶ）</div>'+
+    '<div data-r="chaser" class="'+(evtPickRole==='chaser'?'sel':'')+'">追跡者（2種から選ぶ）</div></div>';
+  if(evtPickRole==='student'){
+    html+='<p class="lbl">キャラクター</p><div class="seg small wrap" id="evtStuSel">';
+    EVT_STU.forEach(function(def,i){
+      html+='<div data-i="'+i+'" class="'+(i===evtPickStuIdx?'sel':'')+'">'+def.name+'</div>';
+    });
+    html+='</div><p class="hint" style="text-align:left;margin-top:8px">'+
+      escHtml(EVT_STU[evtPickStuIdx].desc)+'<br>冷静'+EVT_STU[evtPickStuIdx].stat.calm+
+      ' 幸運'+EVT_STU[evtPickStuIdx].stat.luck+' 修理'+EVT_STU[evtPickStuIdx].stat.repair+
+      ' 速さ'+EVT_STU[evtPickStuIdx].stat.speed+' 体力'+EVT_STU[evtPickStuIdx].stat.hp+
+      ' 隠密'+EVT_STU[evtPickStuIdx].stat.stealth+' 力'+EVT_STU[evtPickStuIdx].stat.power+'</p>';
+  } else {
+    const keys=Object.keys(EVT_CHASER_KINDS);
+    html+='<p class="lbl">キャラクター</p><div class="seg small wrap" id="evtChSel">';
+    keys.forEach(function(k,i){
+      html+='<div data-i="'+i+'" class="'+(i===evtPickChaserIdx?'sel':'')+'">'+EVT_CHASER_KINDS[k].name+'</div>';
+    });
+    const kk=keys[evtPickChaserIdx];
+    html+='</div><p class="hint" style="text-align:left;margin-top:8px">'+escHtml(EVT_CHASER_KINDS[kk].desc)+
+      '<br>試合開始時は瞬間移動のみ。時間経過で索敵→高速移動→気配遮断→終盤強化が順に解禁される。</p>';
+  }
+  html+='<p class="hint" style="margin-top:14px">追跡者は最大2人・生徒は最大8人。人数が足りない枠はAIが埋める。<br>'+
+    'オンラインでは最大10人（追跡者2＋生徒8）まで部屋に入れる。';
+  wrap.innerHTML=html;
+  wrap.querySelectorAll('#evtRoleSel > div').forEach(function(d){
+    d.addEventListener('click',function(){ evtPickRole=d.dataset.r; evtRenderCharPane(); });
+  });
+  const stuSel=wrap.querySelector('#evtStuSel');
+  if(stuSel) stuSel.querySelectorAll('div').forEach(function(d){
+    d.addEventListener('click',function(){ evtPickStuIdx=+d.dataset.i; evtRenderCharPane(); });
+  });
+  const chSel=wrap.querySelector('#evtChSel');
+  if(chSel) chSel.querySelectorAll('div').forEach(function(d){
+    d.addEventListener('click',function(){ evtPickChaserIdx=+d.dataset.i; evtRenderCharPane(); });
+  });
+}
+function evtApplyModeUI(){
+  const isEvt=(gameMode==='event');
+  document.getElementById('pCharClassic').style.display=isEvt?'none':'block';
+  document.getElementById('pCharEvent').style.display=isEvt?'block':'none';
+  ['railWep','railItem','railPerk'].forEach(function(id){
+    const el=document.getElementById(id); if(el) el.style.display=isEvt?'none':'flex';
+  });
+  document.getElementById('tport').style.display=isEvt?'none':'';
+  document.getElementById('tport3d').style.display=isEvt?'none':'';
+  document.getElementById('pvtoggle').style.display=isEvt?'none':'';
+  if(isEvt){
+    document.getElementById('tname').textContent='イベントモード';
+    document.getElementById('tdesc').textContent='学校に取り憑いた追跡者から、8人の生徒が力を合わせて脱出する';
+    evtRenderCharPane();
+  } else {
+    try{ buildList(); }catch(e){}
+  }
+}
+(function(){
+  const bar=document.getElementById('modeSel');
+  if(!bar) return;
+  Array.prototype.forEach.call(bar.children,function(d){
+    d.addEventListener('click',function(){
+      if(netMode!=='off') return;   /* 部屋を作成/参加中はモード変更不可（役割構成が崩れるため） */
+      gameMode=d.dataset.m;
+      Array.prototype.forEach.call(bar.children,function(x){ x.classList.remove('sel'); });
+      d.classList.add('sel');
+      evtApplyModeUI();
+    });
+  });
+})();
+
+/* =========================== 試合開始（イベントモード） =========================== */
+function evtStartMatch(){
+  if(curStage==='random') curStage=STAGES[(Math.random()*STAGES.length)|0].key;
+  softReset(true); evtSoftReset(true);
+  evtRole=evtPickRole; evtMySlot=(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx;
+  evtSpawnAll();
+  evtMe=(evtRole==='chaser')?evtChasers[evtPickChaserIdx]:evtStudents[evtPickStuIdx];
+  if(netMode==='host'){
+    /* 接続中の友達に役割を割り振る。希望のeRole/eCharは'profile'メッセージで
+       受け取り済み(c.profile.eRole/eChar)。埋まらない枠はAIのまま(netSlot未設定) */
+    const wantChaser=netConns.filter(function(c){ return c.profile&&c.profile.eRole==='chaser'; });
+    let chIdx=(evtPickRole==='chaser')?(evtPickChaserIdx===0?1:0):0;
+    wantChaser.forEach(function(c){
+      if(chIdx<=1&&evtChasers[chIdx]&&evtChasers[chIdx]!==evtMe){ evtChasers[chIdx].netSlot=c.slot; chIdx++; }
+    });
+    const usedStu=(evtRole==='student')?[evtPickStuIdx]:[];
+    const studentConns=netConns.filter(function(c){
+      return !evtChasers.some(function(ch){return ch.netSlot===c.slot;}); });
+    /* まず希望のキャラ(eChar)が空いていればそれを優先して割り当てる */
+    const remaining=[];
+    studentConns.forEach(function(c){
+      const want=(c.profile&&c.profile.eRole!=='chaser'&&typeof c.profile.eChar==='number')?c.profile.eChar:-1;
+      if(want>=0&&want<8&&usedStu.indexOf(want)<0){ evtStudents[want].netSlot=c.slot; usedStu.push(want); }
+      else remaining.push(c);
+    });
+    let si=0;
+    remaining.forEach(function(c){
+      while(usedStu.indexOf(si)>=0||si>=8) si++;
+      if(si<8){ evtStudents[si].netSlot=c.slot; usedStu.push(si); si++; }
+    });
+    const payload={t:'estart', stage:curStage,
+      roles:{ chasers:evtChasers.map(function(c){ return {kindKey:c.kindKey,netSlot:c.netSlot}; }),
+        students:evtStudents.map(function(s){ return {idx:EVT_STU.indexOf(s.def),netSlot:s.netSlot}; }) },
+      partsTaken:evtPartsObjs.map(function(o){return o.taken;}),
+      talTaken:evtTalismanObjs.map(function(o){return o.taken;})};
+    netConns.forEach(function(c){
+      const mySlot=c.slot;
+      let mine=-1,mineIsChaser=false;
+      evtChasers.forEach(function(ch,i){ if(ch.netSlot===mySlot){ mine=i; mineIsChaser=true; } });
+      evtStudents.forEach(function(st,i){ if(st.netSlot===mySlot){ mine=i; mineIsChaser=false; } });
+      netSend(c.conn,Object.assign({},payload,{mySlot:mySlot,mine:mine,mineIsChaser:mineIsChaser}));
+    });
+    netBroadcastVoiceRoster();
+  }
+  document.getElementById('title').style.display='none';
+  started=true; over=false; evtOver=false; evtRunning=true;
+  camYaw=evtMe.yaw; last=performance.now();
+  startIntro();
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
+  try{ ac().resume(); }catch(e){}
+  bgmStart();
+  toast(evtRole==='chaser'?'8人の生徒を探して捕まえろ（開始時は瞬間移動のみ）':'脱出手段を探せ。応援を呼ぶか、部品を集めろ');
+}
+function evtNetOnStart(payload){
+  softReset(true); evtSoftReset(true);
+  curStage=payload.stage;
+  evtSpawnAll();
+  payload.roles.chasers.forEach(function(r,i){ if(evtChasers[i]){ evtChasers[i].kindKey=r.kindKey||evtChasers[i].kindKey;
+    if(evtChasers[i].mesh) scene.remove(evtChasers[i].mesh);
+    evtChasers[i].mesh=evtMakeChaserMesh(evtChasers[i].kindKey);
+    evtChasers[i].netSlot=r.netSlot; } });
+  payload.roles.students.forEach(function(r,i){ if(evtStudents[i]) evtStudents[i].netSlot=r.netSlot; });
+  (payload.partsTaken||[]).forEach(function(tk,i){ if(evtPartsObjs[i]){ evtPartsObjs[i].taken=tk; evtPartsObjs[i].mesh.visible=!tk; } });
+  (payload.talTaken||[]).forEach(function(tk,i){ if(evtTalismanObjs[i]){ evtTalismanObjs[i].taken=tk; evtTalismanObjs[i].mesh.visible=!tk; } });
+  evtRole=payload.mineIsChaser?'chaser':'student';
+  evtMySlot=payload.mine;
+  evtMe=payload.mineIsChaser?evtChasers[payload.mine]:evtStudents[payload.mine];
+  document.getElementById('netwait').classList.remove('on');
+  document.getElementById('title').style.display='none';
+  gameMode='event';
+  started=true; over=false; evtOver=false; evtRunning=true;
+  camYaw=evtMe?evtMe.yaw:0; last=performance.now();
+  startIntro();
+  try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
+  try{ ac().resume(); }catch(e){}
+  bgmStart();
+  toast('イベントモード開始！');
+}
+function evtNetOnEnd(payload){
+  evtOver=true; over=true; bgmStop();
+  SCORE+=payload.sc||0; COINS+=payload.co||0; refreshStats();
+  document.getElementById('rgain').textContent=payload.rgain||'';
+  document.getElementById('rtext').textContent=payload.rtext||'';
+  document.getElementById('rsub').innerHTML=payload.rsub||'';
+  document.getElementById('result').style.display='flex';
+  if(document.exitPointerLock) document.exitPointerLock();
+}
+
+function updItemHudEvt(c){
+  elItemHud.classList.add('on');
+  elItemHudIcon.textContent='🪤';
+  const pct=c.trapCd>0?Math.max(0,1-c.trapCd/8):1;
+  elItemHudBar.style.width=(pct*100)+'%';
+  elItemHudPct.textContent=c.trapCharges>0?('罠 残り'+c.trapCharges):'罠切れ';
+}
+
+/* =========================== 入力（自機） =========================== */
+function evtHandleLocalInput(dt){
+  const me=evtMe; if(!me) return;
+  let fx1=0,fz1=0;
+  if(keys.KeyW) fz1+=1; if(keys.KeyS) fz1-=1;
+  if(keys.KeyA) fx1-=1; if(keys.KeyD) fx1+=1;
+  fx1+=input.mx; fz1-=input.mz;
+  const mag=Math.hypot(fx1,fz1);
+  const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&Math.hypot(input.mx,input.mz)>deadZone);
+  elStick.classList.toggle('run',running);
+  const vf=[Math.sin(camYaw),Math.cos(camYaw)], vr=[-Math.cos(camYaw),Math.sin(camYaw)];
+  const isChaser=(evtRole==='chaser');
+  const canMove=isChaser?(me.stun<=0):(me.state==='free'&&!me.trapped&&me.freeze<=0);
+  const vaulted=(!isChaser)&&updVault(me,dt);
+  if(vaulted){ /* 乗り越え中 */ }
+  else if(mag>0.02&&canMove){
+    const nx=fx1/mag,nz=fz1/mag;
+    const dx=vf[0]*nz+vr[0]*nx, dz=vf[1]*nz+vr[1]*nx;
+    const sp=(isChaser?evtChaserSpeedNow(me):me.speed*(me.slow>0?0.5:1))*Math.min(1,mag);
+    evtMove(me,dx*sp,dz*sp,dt);
+    const turnK=(isChaser&&me.stanceOn==='dash')?dt*2.2:dt*13;
+    me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,turnK));
+    if(!isChaser&&running) evtNoise(me.x,me.z,10,me.stat.stealth,me);
+    me.lastMoveMag=mag;
+  } else me.lastMoveMag=0;
+
+  if(isChaser){
+    if(input.actEdge) evtChaserAttack(me);
+    evtUpdExecuteHold(me,dt,!!input.act);
+    if(input.altEdge) evtThrowKnife(me);
+    if(input.abHold){ me.teleCharging=true; me.teleCharge=Math.min(1,(me.teleCharge||0)+dt*1.4); }
+    else if(me.teleCharging){ me.teleCharging=false;
+      if(me.teleCd<=0) evtFireTeleport(me,me.teleCharge||0); me.teleCharge=0; }
+    if(input.ab2Edge) evtToggleStance(me);
+    const itemNow=!!input.itemHold;
+    if(itemNow&&!me._prevItemHold&&me.trapCd<=0) evtPlaceTrap(me);
+    me._prevItemHold=itemNow;
+  } else {
+    if(me.state==='carried'&&input.mash){ me.mashTick=1; }
+    if(me.trapped&&input.mash){ me.mashTick2=1; }
+    if(me.state==='free'){
+      if(input.altEdge) tryVault(me);
+      if(input.actEdge){
+        if(!evtTryPickupParts(me)&&!evtTryPickupTalisman(me)){
+          const c=evtChasers.filter(function(x){return !x.defeated&&x.sealed>0&&Math.hypot(x.x-me.x,x.z-me.z)<2.6;})[0];
+          if(c) evtTryWeakenSeal(me,c);
+          else if(!evtTryEscape(me)){
+            if(!evtTryUseTalisman(me)) evtTryCallSenpai(me);
+          }
+        }
+      }
+    }
+  }
+  input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false; input.tap=false; input.mash=false;
+}
+
 
 (function(){
   const ld=document.getElementById('loading');
