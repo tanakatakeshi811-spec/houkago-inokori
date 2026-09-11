@@ -134,6 +134,29 @@ canvas{display:block}
 #mashn{position:absolute;top:52%;left:50%;transform:translateX(-50%);font-size:26px;
   font-weight:800;color:var(--yellow);text-shadow:0 2px 10px #000;display:none;letter-spacing:.1em}
 #mashn.on{display:block}
+/* 自己治療の心得(selfcare)：立ち止まっている間だけ画面中央に出す
+   「治療開始」ボタン、治療中は代わりに「治療を中断」ボタンとゲージを出す
+   (2026-09-12追加、負傷して立ち止まると自動でゆっくり回復する仕様から、
+   明示的なボタン操作+その場から動けなくなる仕様に作り直した) */
+#selfcareUi{position:fixed;left:50%;top:58%;transform:translate(-50%,-50%);
+  display:none;flex-direction:column;align-items:center;gap:10px;z-index:6}
+#selfcareUi.on{display:flex}
+.selfcareBtn{padding:11px 26px;border-radius:24px;border:2px solid var(--yellow);
+  background:#0b120ecc;color:var(--yellow);font-size:14px;letter-spacing:.08em;
+  cursor:pointer;user-select:none;touch-action:manipulation;display:none;
+  transition:transform .08s}
+.selfcareBtn.press{transform:scale(.93)}
+.selfcareBtn.cancel{border-color:#e8735f;color:#e8a08f}
+#selfcareGauge{width:200px;height:10px;background:#00000055;border:1px solid #ffffff55;
+  border-radius:5px;overflow:hidden;display:none}
+#selfcareGauge.on{display:block}
+#selfcareGauge i{display:block;height:100%;background:var(--yellow);width:0%}
+/* 起死回生の反射(lastreflex)：負傷中に構えて直後の攻撃をかわす「疲労」
+   パークの1つ。専用の単発ボタン(2026-09-12追加) */
+#lastReflexUi{position:fixed;left:50%;top:70%;transform:translate(-50%,-50%);
+  display:none;z-index:6}
+#lastReflexUi.on{display:block}
+.selfcareBtn.dodge{display:block;border-color:#7fc6ff;color:#bfe3ff}
 #stam{position:absolute;bottom:28%;left:50%;transform:translateX(-50%);
   width:132px;height:4px;background:#ffffff22;border-radius:2px;overflow:hidden}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
@@ -586,6 +609,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div class="chHand" id="chHandR"><img src="assets/hand_r.png" alt="" draggable="false"></div>
     </div>
   </div>
+  <div id="selfcareUi" class="pe">
+    <div id="selfcareGauge"><i></i></div>
+    <div id="selfcareStart" class="selfcareBtn">治療開始</div>
+    <div id="selfcareCancel" class="selfcareBtn cancel">治療を中断</div>
+  </div>
+  <div id="lastReflexUi" class="pe"><div id="lastReflexBtn" class="selfcareBtn dodge">身構える</div></div>
   <div id="stam"><i></i></div>
   <div id="flAimGauge"><i></i></div>
   <div id="itemhud" class="pe">
@@ -4305,11 +4334,19 @@ const PERKS_STUDENT=[
  {key:'distortion',  name:'秘匿の気配', desc:'先生の索敵系の特性から、試合中3回まで見つからずに済む'},
  {key:'kindred',     name:'デジャヴ',   desc:'誰かが反省椅子に座らされた瞬間、8秒間 先生の位置がわかる'},
  {key:'deliverance', name:'決死の覚悟', desc:'反省椅子に座らされてから居残り確定までの猶予が20%延びる'},
- {key:'secondwind',  name:'息の長さ',   desc:'スタミナの回復速度が25%速くなる'},
+ {key:'secondwind',  name:'息の長さ',   desc:'スタミナの回復速度が40%速くなり、移動速度も5%上がる'},
  {key:'fixated',     name:'身のこなし', desc:'窓や板を乗り越える動作が15%速くなる'},
- {key:'selfcare',    name:'自己治療の心得',desc:'仲間がいなくても、その場に留まればゆっくり自分の傷を手当てできる'},
+ {key:'selfcare',    name:'自己治療の心得',desc:'仲間がいなくても、ボタン操作でその場に留まり自分の傷を手当てできる（治療中はどちらも動けない、中断しても進捗は保持される）'},
  {key:'wemakeit',    name:'救助の後押し',desc:'仲間を助けた直後8秒間、自分の治療速度が2倍になる'},
- {key:'calmspirit',  name:'平静の心得', desc:'課題やスキルチェックに失敗した時に響く物音が抑えられる'}
+ {key:'calmspirit',  name:'平静の心得', desc:'課題やスキルチェックに失敗した時に響く物音が抑えられる'},
+ /* 「疲労」状態を使う新パーク4種(2026-09-12追加)。DBDの該当パークの
+    「仕組み・数値」だけを参考にし、名前・世界観は完全オリジナルにした。
+    疲労の持続時間はどれも共通15秒(fatigued()/startFatigue()参照)で、
+    疲労中は他の疲労系パークを新たに発動できない */
+ {key:'lastreflex',  name:'起死回生の反射',desc:'負傷している時、画面中央のボタンで構えると直後の攻撃を短い無敵時間と前方への小さなダッシュでかわせる（発動すると15秒間疲労状態になる）'},
+ {key:'quickburst',  name:'助走要らず', desc:'しばらく立ち止まった後に走り出した瞬間、数秒間だけ移動速度が大きく上がる（発動すると15秒間疲労状態になる）'},
+ {key:'lastgasp',    name:'土壇場の底力',desc:'課題を全部やり終えた瞬間に自動発動。負傷していれば体力を1段階回復し、数秒間だけ移動速度も上がる（発動すると15秒間疲労状態になる）'},
+ {key:'catfeet',     name:'猫足の心得', desc:'窓や板を乗り越えた直後の着地が軽くなり、数秒間だけ移動速度が上がる（発動すると15秒間疲労状態になる）'}
 ];
 const PERKS_TEACHER=[
  {key:'bbq',         name:'見えざる視線',desc:'生徒を反省椅子に座らせた直後4秒間、他の生徒全員の位置がわかる'},
@@ -4319,7 +4356,7 @@ const PERKS_TEACHER=[
  {key:'save_best',    name:'反省の連鎖',desc:'同じ生徒に続けて攻撃を当てるたびに、次の攻撃までの隙が短くなる（最大25%、対象が変わるとリセット）'},
  {key:'bloodhound',   name:'執念の追跡',desc:'生徒の立てる物音に気づける範囲が25%広がる'},
  {key:'enduring',     name:'力の余韻',  desc:'板や受け流しでよろける時間が35%短くなる'},
- {key:'bamboozle',    name:'逃走遮断',  desc:'窓や板を乗り越える動作が20%速くなる'},
+ {key:'bamboozle',    name:'逃走遮断',  desc:'窓や板を乗り越える動作が30%速くなる'},
  {key:'unnerving',    name:'威圧感',    desc:'生徒のスキルチェックの成功ゾーンが15%狭くなる'},
  {key:'whispers',     name:'見張りの目',desc:'生徒が12m以内に近づくと気配で知らせてくれる'},
  {key:'sloppy',       name:'授業態度の悪化',desc:'攻撃を当てた生徒は、その後20秒間 治療速度が大きく落ちる'},
@@ -4339,6 +4376,14 @@ function perkOf(role2,key){
 }
 /* 装備中の特性を持っているか(最大4つの配列を毎回indexOfで見るだけの軽い判定) */
 function hasTrait(e,k){ return !!(e&&e.traits&&e.traits.indexOf(k)>=0); }
+/* 治療で動けなくなっているか(自己治療の心得のボタン操作中／仲間の手当て中
+   (する側・される側どちらも)／注射器使用中のいずれか、2026-09-12追加) */
+function healFrozen(e){ return !!(e&&(e.selfcareActive||e.allyHealLock||e.itemHealLock)); }
+/* 「疲労」状態(2026-09-12追加、DBDのExhaustedを参考にしたが名称は
+   出さない)。疲労中は疲労を使う新パーク4種(lastreflex/quickburst/
+   lastgasp/catfeet)を新たに発動できない。持続時間は全パーク共通15秒 */
+function fatigued(e){ return !!(e&&e.fatigue>0); }
+function startFatigue(e){ if(e) e.fatigue=15.0; }
 let itemPick='',addon1Pick='',addon2Pick='';
 let studentPerksPick=[],teacherPerksPick=[];
 /* 写真部顧問(photo)専用アドオンの選択状態(最大2つ)。持ち物用アドオンとは
@@ -5004,6 +5049,13 @@ const elCarryHands=document.getElementById('carryHands'),
       elChHandL=document.getElementById('chHandL'),elChHandR=document.getElementById('chHandR');
 bindBtn(elChHandL,function(){},null);
 bindBtn(elChHandR,function(){},null);
+/* 自己治療の心得(selfcare)：画面中央の開始/中断ボタン(2026-09-12追加)。
+   ホスト権威のオンライン対戦でも通じるよう、実際の切替はedgeフラグ経由で
+   tick()/netApplyStudentInput()側に処理させる（他の能力ボタンと同じ方式） */
+bindBtn(document.getElementById('selfcareStart'),function(){input.selfcareStartEdge=true;},null);
+bindBtn(document.getElementById('selfcareCancel'),function(){input.selfcareCancelEdge=true;},null);
+/* 起死回生の反射(lastreflex)：単発ボタン(2026-09-12追加) */
+bindBtn(document.getElementById('lastReflexBtn'),function(){input.lastReflexEdge=true;},null);
 
 /* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
    CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
@@ -5242,7 +5294,14 @@ tog('t_full',function(v){
   });
 });
 document.getElementById('t_quit').addEventListener('pointerdown',function(e){
-  e.stopPropagation(); panel.classList.remove('on'); softReset(); });
+  e.stopPropagation(); panel.classList.remove('on');
+  /* 怪異退治モード中にこの設定パネルから直接タイトルへ戻ると、
+     evtRunningがfalseにリセットされないまま残ってしまい、次に通常モードで
+     試合を始めてもtick()がevt専用ロジックへ迷い込み続けるバグがあった
+     (試合終了後の結果画面の「タイトルに戻る」はevtSoftReset()を正しく
+     呼んでいたが、設定パネル側のこのボタンだけ分岐が漏れていた。2026-09-12修正) */
+  if(evtRunning){ evtSoftReset(); return; }
+  softReset(); });
 /* 設定の自動保存・復元(localStorage)。次回訪問時も前回の調整を覚えている。
    保存対象は上のスライダー/トグルの実際のDOM状態そのもの。復元時は値をセットして
    input/pointerdownイベントを本物のように発火させ、各設定固有の副作用
@@ -5374,7 +5433,14 @@ function updVault(e,dt){
   e.x=e.vFrom.x+(e.vTo.x-e.vFrom.x)*k;
   e.z=e.vFrom.z+(e.vTo.z-e.vFrom.z)*k;
   e.vaultK=k;
-  if(e.vault<=0){ e.vault=0; e.vaultK=0; e.x=e.vTo.x; e.z=e.vTo.z; }
+  if(e.vault<=0){
+    e.vault=0; e.vaultK=0; e.x=e.vTo.x; e.z=e.vTo.z;
+    /* 猫足の心得(catfeet)：着地の瞬間、数秒間だけ速度上昇(2026-09-12追加) */
+    if(e.kind==='student'&&hasTrait(e,'catfeet')&&!fatigued(e)){
+      e.catfeetT=4.0; startFatigue(e);
+      if(e===me) toast('猫足の心得！しばらく速度が上がる');
+    }
+  }
   return true;
 }
 function angLerp(a,b,t){
@@ -5506,8 +5572,13 @@ function traitHealMul(s){
 }
 function traitVaultMul(e){
   let m=hasTrait(e,'fixated')?perkScale(e,'fixated',0.85):1;
-  if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?perkScale(e,'bamboozle',0.8):1;
-  if(e.kind==='student') m*=pdMisesimePenalty(e);
+  if(e.kind==='teacher') m*=hasTrait(e,'bamboozle')?perkScale(e,'bamboozle',0.7):1;
+  if(e.kind==='student'){
+    m*=pdMisesimePenalty(e);
+    /* 猫足の心得(catfeet)：着地が軽くなる分、乗り越え動作そのものも
+       少し速くなる(2026-09-12追加) */
+    m*=hasTrait(e,'catfeet')?perkScale(e,'catfeet',0.9):1;
+  }
   return m;
 }
 function traitCdMul(t){
@@ -5887,15 +5958,16 @@ function updItemUse(s,dt){
       }
     } else s.flCharge=Math.max(0,(s.flCharge||0)-dt*1.5);
   } else if(s.item==='syringe'){
-    if(!holding||!s.hurt||s.itemAmmo<=0){ s.syT=0; return; }
+    if(!holding||!s.hurt||s.itemAmmo<=0){ s.syT=0; s.itemHealLock=false; return; }
     const mv=Math.hypot(s.x-(s.syhpx===undefined?s.x:s.syhpx),s.z-(s.syhpz===undefined?s.z:s.syhpz));
     s.syhpx=s.x; s.syhpz=s.z;
-    if(mv>0.02){ if((s.syT||0)>0.2&&s===me) toast('動いたので注射が中断した'); s.syT=0; return; }
+    if(mv>0.02){ if((s.syT||0)>0.2&&s===me) toast('動いたので注射が中断した'); s.syT=0; s.itemHealLock=false; return; }
     s.syT=(s.syT||0)+dt;
+    s.itemHealLock=true;   /* 注射器の使用中も治療する側は動けなくする(2026-09-12) */
     const need=3.6*itemAddonVal(s,'timeMul');
     if(!itemHasAddonFlag(s,'quiet')&&Math.random()<dt*0.6) noise(s.x,s.z,noiseR(s,7));
     if(s.syT>=need){
-      s.syT=0; s.itemAmmo=Math.max(0,s.itemAmmo-1);
+      s.syT=0; s.itemHealLock=false; s.itemAmmo=Math.max(0,s.itemAmmo-1);
       healDone(s,s);
       if(itemHasAddonFlag(s,'share')){
         students.forEach(function(o){
@@ -5947,6 +6019,20 @@ function healDone(o,by){
   if(by&&by.perk==='medic'){ o.painFree=8.0; toast(o.name+'に鎮痛剤（8秒 減速無効）'); }
   beep(880,0.25,'sine',0.11); toast(o.name+'の課題をはがした');
   if(o===me||role!=='teacher') vib(30);
+}
+/* 自己治療の心得(selfcare)：2026-09-12にボタン操作式へ作り直し。
+   画面中央の「治療開始」ボタンで発動、その場から動けなくなり(healFrozen)、
+   「治療を中断」ボタンでいつでも中断できる。中断しても進捗(s.healT)は
+   0にリセットせず保持し、次に再開すれば続きから進む。毎フレーム全生徒に対して
+   呼ばれる(既存のupdItemUse()と同じ扱い)ので、ボタンを押さないAI(BOT)は
+   aiStudent()側で直接s.selfcareActiveを切り替えて代用する */
+function updSelfcare(s,dt){
+  if(!s.selfcareActive) return;
+  const ok=hasTrait(s,'selfcare')&&s.hurt&&(s.weak||0)<=0&&s.state==='free'&&!s.hide;
+  if(!ok){ s.selfcareActive=false; return; }
+  s.healT=(s.healT||0)+dt*0.42*perkLevelMul(s,'selfcare')*traitHealMul(s)*
+    ((s.dull>0)?perkScale(teacher,'sloppy',0.55):1);
+  if(s.healT>=10.5){ s.healT=0; s.selfcareActive=false; healDone(s,s); }
 }
 function noiseR(s,r){
   if(!s) return r;
@@ -6431,6 +6517,16 @@ function workTask(s,d,dt){
       endTimer=120+(hasTrait(teacher,'no_way_out')?40*perkLevelMul(teacher,'no_way_out'):0);
       say('通信','課題が全部終わった！昇降口へ！（残り120秒）','sys');
       toast('昇降口が開いた'); beep(523,0.3,'triangle',0.12);
+      /* 土壇場の底力(lastgasp)：課題を全部やり終えた瞬間に自動発動
+         (2026-09-12追加、疲労を使う新パーク)。負傷していれば回復し、
+         数秒間の速度上昇も得る */
+      students.forEach(function(x){
+        if(hasTrait(x,'lastgasp')&&x.state==='free'&&!fatigued(x)){
+          if(x.hurt) healDone(x,x);
+          x.lastgaspT=5.0; startFatigue(x);
+          if(x===me) toast('土壇場の底力！');
+        }
+      });
     }
   }
 }
@@ -6471,7 +6567,10 @@ function studentAct(s,dt,manual){
     s.rescueT=0;
     const mv=Math.hypot(s.x-(s.hpx===undefined?s.x:s.hpx),s.z-(s.hpz===undefined?s.z:s.hpz));
     s.hpx=s.x; s.hpz=s.z;
-    if(mv>0.02){ if(s.healT>0.2&&s===me) toast('動いたので手当てが中断した'); s.healT=0; return 'heal'; }
+    /* 治療中は治療する側・される側どちらも動けなくなる(2026-09-12)。
+       移動してしまった場合はその場で中断してロックも解除する */
+    if(mv>0.02){ if(s.healT>0.2&&s===me) toast('動いたので手当てが中断した');
+      s.healT=0; s.allyHealLock=false; hv.allyHealLock=false; return 'heal'; }
     let helpers=1;
     for(const o of students)
       if(o!==s&&o!==hv&&o.state==='free'&&Math.hypot(o.x-hv.x,o.z-hv.z)<2.7) helpers++;
@@ -6479,27 +6578,16 @@ function studentAct(s,dt,manual){
       (spotlightOn(s)?1.25:1)*(s.perk==='cook'?1.2:1)*
       ((s.dull>0)?perkScale(teacher,'sloppy',0.55):1)*
       (helpers>1?1.8:1)*traitHealMul(s);
+    s.allyHealLock=true; s.allyHealAge=0; hv.allyHealLock=true; hv.allyHealAge=0;
     /* 血の匂い(nurse_calling)：治療中の生徒の位置が先生に常にわかる(1秒おきに表示) */
     if(hasTrait(teacher,'nurse_calling')){
       hv.nmT=(hv.nmT||0)-dt;
       if(hv.nmT<=0){ hv.nmT=1.0; teacherRevealStudent(hv,0xff6a5a); }
     }
-    if(s.healT>10.5){ s.healT=0; healDone(hv,s); }
+    if(s.healT>10.5){ s.healT=0; s.allyHealLock=false; hv.allyHealLock=false; healDone(hv,s); }
     return 'heal';
   }
-  /* 自己治療の心得(selfcare)：仲間がいなくても、その場に留まればゆっくり
-     自分の傷を手当てできる(注射器より遅い。既存のhealT/healDone()を再利用) */
-  if(s.hurt&&hasTrait(s,'selfcare')){
-    s.rescueT=0;
-    const mv2=Math.hypot(s.x-(s.hpx===undefined?s.x:s.hpx),s.z-(s.hpz===undefined?s.z:s.hpz));
-    s.hpx=s.x; s.hpz=s.z;
-    if(mv2>0.02){ s.healT=0; return 'heal'; }
-    s.healT=(s.healT||0)+dt*0.42*perkLevelMul(s,'selfcare')*traitHealMul(s)*
-      ((s.dull>0)?perkScale(teacher,'sloppy',0.55):1);
-    if(s.healT>10.5){ s.healT=0; healDone(s,s); }
-    return 'heal';
-  }
-  s.healT=0;
+  if(!s.selfcareActive) s.healT=0;
   const d=nearTask(s); if(d){ workTask(s,d,dt); s.rescueT=0; return 'task'; }
   s.rescueT=0;
   const ex=nearExit(s);
@@ -6568,6 +6656,14 @@ function damage(s,amt,heavy,attacker){
     if(!blocked(bx,bz,BODY)){ attacker.x=bx; attacker.z=bz; }
     toast(s.name+'が仁王立ちで受け止めた！');
     beep(160,0.35,'square',0.15); vib([40,40,80]);
+    return false;
+  }
+  /* 起死回生の反射(lastreflex)：構えている間(dodgeT>0)の攻撃は無効化する
+     (2026-09-12追加、1回だけ避けたら即座に消費する) */
+  if(s.dodgeT>0){
+    s.dodgeT=0;
+    toast(s.name+'が咄嗟にかわした！');
+    beep(1100,0.15,'triangle',0.13); vib([30,30,30]);
     return false;
   }
   slam(s); stats.hits++;
@@ -8705,12 +8801,24 @@ function aiStudent(s,dt){
   }
   if(s.state!=='free') return;
   if(s.trapped) return;
+  /* 仲間に手当てされている最中(される側)は、手当てする側と同様にその場から
+     動けない(2026-09-12)。手当てする側はstudentAct()を呼んですぐreturnする
+     既存の分岐でもう動かないので、AI側で追加の分岐が要るのはされる側だけ */
+  if(s.allyHealLock) return;
   s.pathT-=dt;
   /* 2vs8モード対応：teacher/teacher2のうち近い方を「今警戒すべき先生」として
      使う(2026-09-11)。teacher2が居ない通常モードでは常にnt===teacherなので
      挙動は一切変わらない */
   const nt=(teacher2&&Math.hypot(teacher2.x-s.x,teacher2.z-s.z)<Math.hypot(teacher.x-s.x,teacher.z-s.z))?teacher2:teacher;
   const td=Math.hypot(nt.x-s.x,nt.z-s.z);
+  /* 自己治療の心得(selfcare)を持つBOT：ボタンが無いので自分で判断して
+     開始/中断する。先生が遠い(td>16)時だけ治療を始め、近づいてきたら(td<10)
+     中断して逃げる(2026-09-12) */
+  if(hasTrait(s,'selfcare')&&s.hurt&&(s.weak||0)<=0&&!nearHurt(s)){
+    if(!s.selfcareActive&&td>16) s.selfcareActive=true;
+    else if(s.selfcareActive&&td<10) s.selfcareActive=false;
+  }
+  if(s.selfcareActive) return;
   if(s.hide){ if(td>18){ s.hide=null; s.mesh.visible=true; } return; }
   if(s.chatCd===undefined) s.chatCd=8+Math.random()*20;
   s.chatCd-=dt;
@@ -8910,6 +9018,47 @@ const elTasks=document.getElementById('tasks'),elRoster=document.getElementById(
    だけ表示される。PCは右クリック長押し、スマホ/タッチはこのHUD自体を
    長押しするとアイテムを使う(2026-09-06、押しても何も起きないという
    報告を受けて見た目をボタンらしく大きく作り直した) */
+/* 自己治療の心得(selfcare)のボタンUI(2026-09-12追加)。立ち止まっていて
+   条件を満たす間だけ画面中央に「治療開始」、治療中は「治療を中断」を出す。
+   tick()/netClientTick()どちらからも同じ引数(移動入力の大きさmag、
+   nearHurt(me)の結果hv)を渡して呼ぶ共通関数にし、書き忘れを防ぐ */
+const elSelfcareUi=document.getElementById('selfcareUi'),
+      elSelfcareStart=document.getElementById('selfcareStart'),
+      elSelfcareCancel=document.getElementById('selfcareCancel'),
+      elSelfcareGauge=document.getElementById('selfcareGauge'),
+      elSelfcareGaugeI=document.querySelector('#selfcareGauge i');
+function updSelfcareUi(mag,hv){
+  const eligible=role==='student'&&me.hurt&&hasTrait(me,'selfcare')&&(me.weak||0)<=0&&
+    me.state==='free'&&!me.hide&&!hv;
+  const showStart=eligible&&mag<=0.02&&!me.selfcareActive;
+  const showCancel=role==='student'&&!!me.selfcareActive;
+  elSelfcareUi.classList.toggle('on',showStart||showCancel);
+  elSelfcareStart.style.display=showStart?'block':'none';
+  elSelfcareCancel.style.display=showCancel?'block':'none';
+  elSelfcareGauge.classList.toggle('on',showCancel);
+  if(showCancel) elSelfcareGaugeI.style.width=Math.max(0,Math.min(100,((me.healT||0)/10.5)*100))+'%';
+}
+/* 起死回生の反射(lastreflex)のボタンUI(2026-09-12追加) */
+const elLastReflexUi=document.getElementById('lastReflexUi');
+function updLastReflexUi(){
+  const show=role==='student'&&me.hurt&&hasTrait(me,'lastreflex')&&me.state==='free'&&
+    !me.hide&&!fatigued(me)&&!(me.dodgeT>0);
+  elLastReflexUi.classList.toggle('on',show);
+}
+/* 起死回生の反射(lastreflex)の発動本体。tick()側(自分/ホスト権威)と
+   netApplyStudentInput()側(参加者からのボタン入力)の両方から同じ関数を
+   呼ぶ(2026-09-12追加) */
+function activateLastReflex(s){
+  if(!(hasTrait(s,'lastreflex')&&s.hurt&&s.state==='free'&&!s.hide&&
+       !fatigued(s)&&!(s.dodgeT>0))) return false;
+  s.dodgeT=0.5; startFatigue(s);
+  const dx=Math.sin(s.yaw)*3.0, dz=Math.cos(s.yaw)*3.0;
+  const nx=s.x+dx, nz=s.z+dz;
+  if(!blocked(nx,nz,BODY)){ s.x=nx; s.z=nz; }
+  if(s===me) toast('起死回生の反射！（0.5秒だけ無敵）');
+  beep(700,0.18,'square',0.12); vib([40,30,60]);
+  return true;
+}
 function updItemHud(){
   if(role!=='student'||!me||!me.item){
     elItemHud.classList.remove('on');
@@ -9333,7 +9482,7 @@ function tick(now){
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0&&
                 teacher.dnLeap<=0&&teacher.dnBreak<=0&&(teacher.pdFinisherT||0)<=0)
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
-                  !(me.drone>0)&&!(me.tackle>0)&&!me.crowActive);
+                  !(me.drone>0)&&!(me.tackle>0)&&!me.crowActive&&!healFrozen(me));
 
   /* 画面の奥方向。三人称はカメラ→自分、一人称はカメラの視線
      （ダークノードの狼／コウモリ形態、軋車の三兄弟の車輪形態は先生でも
@@ -9368,7 +9517,7 @@ function tick(now){
       if(role!=='teacher'&&Math.random()<0.12&&!inWater(me.x,me.z)&&
          me.perk!=='nine'&&teacher.kindKey!=='chalk') mark(me.x,me.z);
     } else {
-      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.25):1));
+      me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.4):1));
       if(me.exh&&me.stam>0.65) me.exh=false;
     }
     if(role==='teacher'&&teacher.carrying)
@@ -9636,7 +9785,16 @@ function tick(now){
       if(input.act||(autoAct&&(d||ex))){
         studentAct(me,dt,input.act);
         hp=a?me.rescueT/2.4:(bc?(me.castT||0)/2.5:(hv?(me.healT||0)/10.5:(d?d.prog:0)));
-      } else { me.rescueT=0; me.healT=0; }
+      } else { me.rescueT=0; if(!me.selfcareActive) me.healT=0; if(hv) hv.allyHealLock=false; me.allyHealLock=false; }
+      /* 自己治療の心得(selfcare)：画面中央の開始/中断ボタン(2026-09-12) */
+      if(input.selfcareStartEdge){
+        if(hasTrait(me,'selfcare')&&me.hurt&&(me.weak||0)<=0&&!hv) me.selfcareActive=true;
+        input.selfcareStartEdge=false;
+      }
+      if(input.selfcareCancelEdge){ me.selfcareActive=false; input.selfcareCancelEdge=false; }
+      updSelfcareUi(mag,hv);
+      if(input.lastReflexEdge){ activateLastReflex(me); input.lastReflexEdge=false; }
+      updLastReflexUi();
       scUpdate(dt,working);
     } else if(me.state==='carried'){
       label='もがく'; hot=true; hp=me.wig||0; altLabel='もがく'; altHot=true;
@@ -9807,6 +9965,27 @@ function tick(now){
       s.crowSlowInput=!!(keys.ShiftLeft||keys.ShiftRight||input.run);
     }
     if(s.slow>0) s.slow-=dt;
+    if(s.fatigue>0) s.fatigue-=dt;
+    if(s.dodgeT>0) s.dodgeT-=dt;
+    if(s.quickBurstT>0) s.quickBurstT-=dt;
+    if(s.lastgaspT>0) s.lastgaspT-=dt;
+    if(s.catfeetT>0) s.catfeetT-=dt;
+    /* 助走要らず(quickburst)：しばらく立ち止まった後に走り出した瞬間を検出。
+       ホスト/オフライン側でだけ判定する(参加者の見た目はスナップショット
+       同期のquickBurstT/fatigueで反映される、2026-09-12追加) */
+    {
+      const qbMoved=Math.hypot(s.x-(s.qbPrevX===undefined?s.x:s.qbPrevX),
+        s.z-(s.qbPrevZ===undefined?s.z:s.qbPrevZ));
+      if(qbMoved>0.03){
+        if((s.qbStillT||0)>=0.6&&hasTrait(s,'quickburst')&&!fatigued(s)&&!(s.quickBurstT>0)){
+          s.quickBurstT=3.0; startFatigue(s);
+          if(s===me) toast('助走要らず！しばらく速度が大きく上がる');
+          beep(520,0.16,'sawtooth',0.1);
+        }
+        s.qbStillT=0;
+      } else s.qbStillT=(s.qbStillT||0)+dt;
+      s.qbPrevX=s.x; s.qbPrevZ=s.z;
+    }
     if(s.rush>0) s.rush-=dt;
     if(s.abCd>0) s.abCd-=dt;
     if(s.lock>0) s.lock-=dt;
@@ -9908,6 +10087,11 @@ function tick(now){
             (hasTrait(s,'hope')&&gateOpen?perkScale(s,'hope',1.08):1)*
             ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?perkScale(teacher,'rancor',0.94):1)*
             (s.fanRushT>0?(1.5+itemAddonAdd(s,'selfSpeedAdd')):1)*
+            (hasTrait(s,'secondwind')?perkScale(s,'secondwind',1.05):1)*
+            /* 「疲労」を使う新パーク4種のうち、速度上昇を伴う3種(2026-09-12追加) */
+            (s.quickBurstT>0?perkScale(s,'quickburst',1.5):1)*
+            (s.catfeetT>0?perkScale(s,'catfeet',1.2):1)*
+            (s.lastgaspT>0?perkScale(s,'lastgasp',1.4):1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
@@ -9915,6 +10099,12 @@ function tick(now){
         if(s.perk!=='sound') noise(s.x,s.z,4); }
     }
     updItemUse(s,dt);
+    updSelfcare(s,dt);
+    /* 仲間の手当て中ロック(allyHealLock)の安全弁：studentAct()が呼ばれない
+       フレームが続くと解除し忘れる恐れがあるため、0.2秒リフレッシュされないと
+       自動的に解除する(2026-09-12) */
+    if(s.allyHealLock){ s.allyHealAge=(s.allyHealAge||0)+dt; if(s.allyHealAge>0.2) s.allyHealLock=false; }
+    else s.allyHealAge=0;
     updItemMesh(s);
     /* 授業態度の悪化(sloppy)で治療速度を落とすデバフの持続時間だけ減っていく */
     if(s.healBoostT>0) s.healBoostT-=dt;
@@ -11079,7 +11269,7 @@ function netClientDisconnected(why){
   netSetStatus(why);
   if(started&&!over){
     toast(why);
-    setTimeout(function(){ netTeardown(); softReset(); },1500);
+    setTimeout(function(){ netTeardown(); if(evtRunning){ evtSoftReset(); } else { softReset(); } },1500);
   } else {
     document.getElementById('netwait').classList.remove('on');
   }
@@ -11122,8 +11312,10 @@ function netApplyTaskDesks(coords){
 function netClientOnStart(payload){
   /* 連戦（2試合目以降）で前の試合の残骸（板・机・チョークの粉塵など）を
      引きずらないよう、必ず一度ローカル状態を掃除してから作り直す。
-     初回の開始時は既に綺麗な状態なので、これは無害な二重掃除になる */
-  softReset(true);
+     初回の開始時は既に綺麗な状態なので、これは無害な二重掃除になる。
+     直前が怪異退治モードだった場合はevtRunningも一緒に落としておく
+     (2026-09-12、tick()がevt専用ロジックに迷い込むバグの再発防止) */
+  softReset(true); if(evtRunning) evtSoftReset(true);
   curStage=payload.stage; teacherKind=payload.teacherKind; DIFF=payload.diff;
   gameMode=payload.gameMode||'classic';
   rosterPick=payload.rosterPick; weaponPick=payload.weaponPick||'';
@@ -11311,7 +11503,7 @@ function netApplyStudentInput(s,inp,dt){
   s.crowTurnInput=(inp&&inp.crowTurn)||0;
   s.crowSlowInput=!!(inp&&inp.crowSlow);
   if(inp&&inp.fanYaw!==undefined) s.fanYaw=inp.fanYaw;
-  const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0)&&!s.crowActive);
+  const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0)&&!s.crowActive&&!healFrozen(s));
   if(updVault(s,dt)){ /* 乗り越え中 */ }
   else if(inp&&inp.mag>0.02&&canMove){
     let sp=s.speed*Math.min(1,inp.mag);
@@ -11321,7 +11513,7 @@ function netApplyStudentInput(s,inp,dt){
       sp*=1.45; s.stam=Math.max(0,s.stam-dt*0.30*(s.perk==='stam'?0.75:(s.perk==='proto'?2.2:1)));
       if(s.stam<=0) s.exh=true;
     } else {
-      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1)*(hasTrait(s,'secondwind')?perkScale(s,'secondwind',1.25):1));
+      s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.22)*(s.perk==='cook'?1.6:1)*(hasTrait(s,'secondwind')?perkScale(s,'secondwind',1.4):1));
       if(s.exh&&s.stam>0.65) s.exh=false;
     }
     move(s,inp.dx*sp,inp.dz*sp,dt);
@@ -11360,7 +11552,19 @@ function netApplyStudentInput(s,inp,dt){
       else tryVault(s);
     }
     if(inp.act) studentAct(s,dt,true);
-    else { s.rescueT=0; s.healT=0; }
+    else {
+      s.rescueT=0; if(!s.selfcareActive) s.healT=0;
+      const hv2=nearHurt(s); if(hv2) hv2.allyHealLock=false;
+      s.allyHealLock=false;
+    }
+    /* 自己治療の心得(selfcare)：参加者からのボタン入力をホストが権威判定する
+       (2026-09-12追加、他の能力ボタンと同じedge方式) */
+    if(inp.selfcareStart){
+      if(hasTrait(s,'selfcare')&&s.hurt&&(s.weak||0)<=0&&!nearHurt(s)) s.selfcareActive=true;
+    }
+    if(inp.selfcareCancel) s.selfcareActive=false;
+    /* 起死回生の反射(lastreflex)のボタン(2026-09-12追加) */
+    if(inp.lastReflex) activateLastReflex(s);
   }
   if(s.skill){
     const ready=(s.abCd<=0)&&(s.abUses!==0)&&(s.lock<=0)&&
@@ -11371,6 +11575,7 @@ function netApplyStudentInput(s,inp,dt){
   }
   if(inp.ab2Edge&&SAB2[s.perk]&&s.state==='free') useStudentSkill2(s);
   inp.altEdge=false; inp.abEdge=false; inp.ab2Edge=false;
+  inp.selfcareStart=false; inp.selfcareCancel=false; inp.lastReflex=false;
 }
 function netEmitHit(s){
   if(netMode==='host'&&s.netSlot!==undefined) netEvents.push({k:'hit',i:netStuIdx(s)});
@@ -11424,7 +11629,15 @@ function netHostBroadcastSnapshot(dt){
         cheatT:s.cheatT||0,
         crowActive:!!s.crowActive, crowX:s.crowX||0, crowZ:s.crowZ||0, crowYaw:s.crowYaw||0,
         fan:(s.item==='fan'&&!!s.itemHoldInput&&s.itemAmmo>0), fanYaw:s.fanYaw||0,
-        grabTea2:(s.grabber===teacher2&&!!teacher2) } };
+        grabTea2:(s.grabber===teacher2&&!!teacher2),
+        /* 自己治療の心得(selfcare)：参加者側でも治療中は動けなくし、進捗
+           ゲージも正しく見せるための同期(2026-09-12追加) */
+        healT:s.healT||0, selfcareActive:!!s.selfcareActive,
+        allyHealLock:!!s.allyHealLock, itemHealLock:!!s.itemHealLock,
+        /* 「疲労」を使う新パーク4種の状態(2026-09-12追加)。参加者側の
+           ボタン表示(fatigued判定)などに使う */
+        fatigue:s.fatigue||0, dodgeT:s.dodgeT||0, quickBurstT:s.quickBurstT||0,
+        catfeetT:s.catfeetT||0, lastgaspT:s.lastgaspT||0 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -11580,7 +11793,7 @@ function netClientTick(dt){
   const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&stickMag>deadZone);
   elStick.classList.toggle('run',running);
   const vf=[Math.sin(camYaw),Math.cos(camYaw)], vr=[-Math.cos(camYaw),Math.sin(camYaw)];
-  const canMove=(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&!(me.tackle>0)&&!me.crowActive);
+  const canMove=(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&!(me.tackle>0)&&!me.crowActive&&!healFrozen(me));
   let mdx=0,mdz=0,mmag=0;
   if(updVault(me,dt)){ /* 乗り越え中 */ }
   else if(mag>0.02&&canMove){
@@ -11592,7 +11805,7 @@ function netClientTick(dt){
     const canRun=running&&!me.exh&&me.stam>0;
     if(canRun){ sp*=1.45; me.stam=Math.max(0,me.stam-dt*0.30*(me.perk==='stam'?0.75:(me.perk==='proto'?2.2:1)));
       if(me.stam<=0) me.exh=true; }
-    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.25):1));
+    else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.4):1));
       if(me.exh&&me.stam>0.65) me.exh=false; }
     move(me,dx*sp,dz*sp,dt);
     me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*13));
@@ -11616,6 +11829,8 @@ function netClientTick(dt){
     /* 板を倒す判定自体はホスト権威だが、リングHUDは見た目だけなので
        ローカルで先読みして一瞬光らせる（ホストの結果を待たない） */
     if(input.altEdge&&p) me.toppleFxT=0.5;
+    updSelfcareUi(mag,hv);
+    updLastReflexUi();
   } else if(me.state==='carried'){ label='もがく'; hot=true; hp=me.wig||0; altLabel='もがく'; altHot=true; }
   else if(me.state==='seated'&&me.qte){ label='こらえる'; hot=true; hp=(me.qte.n||0)/10; }
   else label=(me.state==='seated')?'反省椅子…':((me.state==='downed')?'ダウン中…':'—');
@@ -11654,11 +11869,16 @@ function netClientTick(dt){
          一緒に自分の現在値を毎回乗せておく。ホストが自分の代わりに
          useStudentSkill()を実行する時、ホスト自身のsprintDurではなく
          こちらを使ってもらうため(2026-09-10) */
-      sprintDur:sprintDur});
+      sprintDur:sprintDur,
+      /* 自己治療の心得(selfcare)の開始/中断ボタン(2026-09-12追加) */
+      selfcareStart:!!input.selfcareStartEdge, selfcareCancel:!!input.selfcareCancelEdge,
+      /* 起死回生の反射(lastreflex)のボタン(2026-09-12追加) */
+      lastReflex:!!input.lastReflexEdge});
     netMashCount=0;
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false; input.mash=false;
+  input.selfcareStartEdge=false; input.selfcareCancelEdge=false; input.lastReflexEdge=false;
 
   elChatBtn.style.display='flex';
   elSprintHud.classList.toggle('on',me.perk==='foot');
@@ -12840,6 +13060,10 @@ function applyLoadout(){
   }
 }
 function startMatch(){
+  /* 直前が怪異退治モードだった場合、evtRunningが立ったままだとtick()が
+     evt専用ロジックに迷い込み続けてしまう。念のためここでも二重に落とす
+     (2026-09-12、本来の原因は設定パネルの「タイトルに戻る」の分岐漏れ) */
+  if(evtRunning) evtSoftReset(true);
   if(curStage==='random') curStage=STAGES[(Math.random()*STAGES.length)|0].key;
   if(role==='student'){
     if(botPick==='random'){ const ks=Object.keys(KINDS);
