@@ -13273,12 +13273,15 @@ function updAdminViz(){
 
 
 /* ===================================================================================
-   イベントモード（追跡者2 vs 生徒8、オンライン対応 最大10人）2026-09-11追加
+   怪異退治モード（追跡者1 vs 生徒最大7、オンライン対応 最大8人）
+   2026-09-11追加、2026-09-12に人数比を2vs8→1vs7へ修正
    -----------------------------------------------------------------------------------
    著作権配慮：実在の非対称対戦ゲームの「仕組み・ルール」だけを参考にし、キャラ名・
    世界観・固有名詞は一切引き継がず、「放課後の居残り」の学校の怪談として完全新規に
    作った（写真部顧問実装時と同じ方針）。参考にしたのは以下の「仕組み」のみ：
-   ・追跡者2vs生徒8の非対称対戦、時間制限つき
+   ・追跡者1vs生徒最大7の非対称対戦、時間制限つき(参考資料の「1(ジェイソン相当)vs
+     最大7(カウンセラー相当)」という人数比を踏襲。しゅんりさんの元々の依頼は
+     「2vs8モード」と「このモード」は別物で、このモードは1vs7が正しい仕様だった)
    ・追跡者は開始時は移動系能力のみ、時間経過で索敵・高速移動・隠密・終盤強化が
      段階的に解禁される
    ・生徒側はステータス制、脱出手段は複数種類（部品集め系／応援を呼ぶ系）
@@ -13287,17 +13290,21 @@ function updAdminViz(){
    実装は既存インフラ（person()/blocked()/move()/walkable/exits/mark()/PeerJS
    ホスト権威モデルなど）を最大限流用し、衝突を避けるため専用の evt* 名前空間に
    まとめ、tick()の冒頭で早期分岐して既存の4vs1モードには一切手を加えない設計にした。
+   人数比修正に伴い、追跡者は常に1体(evtChasers.length===1)・生徒は最大7人
+   (EVT_STUの8人からevtRosterPickで7人を選ぶ)に変更した。
 =================================================================================== */
 let gameMode='classic';     // 'classic'(先生1vs生徒4) | 'classic2'(先生2vs生徒8、通常モードの人数拡張版) | 'event'(怪異退治モード、追跡者1vs生徒最大7)
 let evtRunning=false;       // イベントモードの試合が今動作中か(tick分岐・後片付け判定用)
 
-/* ---- オリジナル追跡者2種(元ネタの固有名詞は一切使わず学校の怪談として新規作成) ---- */
+/* ---- オリジナル追跡者2種(元ネタの固有名詞は一切使わず学校の怪談として新規作成)。
+   1試合につきどちらか1体だけが実際に登場する(通常モードの先生選択と同じ考え方) ---- */
 const EVT_CHASER_KINDS={
   chokuin:{name:'宿直室の影',ability:'瞬間移動',color:0x2c3244,skin:0x8a95a6,hair:0x14161c,
     desc:'夜勤の宿直室に取り憑いた影。物置から物置へ瞬時に移動する。'},
   shokyaku:{name:'焼却炉の主',ability:'瞬間移動',color:0x4a2c22,skin:0x9a7a5c,hair:0x1c1410,
     desc:'裏庭の焼却炉に棲みつく何か。動きは重いが一撃が重い。'}
 };
+const EVT_CHASER_KEYS=Object.keys(EVT_CHASER_KINDS);   // ['chokuin','shokyaku']
 const EVT_CHASER_SPD={chokuin:1.0,shokyaku:0.92};
 const EVT_CHASER_POWER={chokuin:1.0,shokyaku:1.25};   // 焼却炉の主は攻撃・罠が少し強い代わりに遅い
 
@@ -13345,6 +13352,10 @@ let evtNetLastSnap=null;
 let evtSendT=0, evtNetMashCount=0;
 /* タイトル画面：役割・キャラ選択の一時状態 */
 let evtPickRole='student', evtPickStuIdx=0, evtPickChaserIdx=0;
+/* 1vs7化(2026-09-12)：実際に登場する追跡者の種類と、EVT_STU(8人)から選ばれた
+   実際の出場生徒7人分のインデックス配列。evtStartMatch()/evtNetOnStart()で
+   試合ごとに決定し、evtSpawnAll()はこの2つの値だけを見て組み立てる */
+let evtChaserKind='chokuin', evtRosterPick=[0,1,2,3,4,5,6];
 
 /* ---- 見た目：既存のperson()をそのまま流用(低ポリ人型の使い回し、時間短縮の判断) ---- */
 function evtMakeChaserMesh(kindKey){
@@ -13412,20 +13423,21 @@ function evtSpawnAll(){
   evtClearWorldObjs();
   const spots=walkable.filter(function(w){ return inStage(w[0]); })
     .sort(function(){ return Math.random()-0.5; });
-  const chKinds=['chokuin','shokyaku'];
-  evtChasers=chKinds.map(function(kk,i){
-    const sp=spots[(i*23)%spots.length]; const p=center(sp[0],sp[1]);
-    const mesh=evtMakeChaserMesh(kk);
-    return {kind:'echaser',kindKey:kk,name:EVT_CHASER_KINDS[kk].name,mesh:mesh,
-      x:p.x,z:p.z,yaw:0,speed:6.0*EVT_CHASER_SPD[kk],base:6.0*EVT_CHASER_SPD[kk],
-      stun:0,hp:3,weaken:0,sealed:0,sealedHitBy:[],defeated:false,
-      teleCd:0,teleCharge:0,scentT:0,scentCd:0,dashT:0,dashCd:0,stealthT:0,stealthCd:0,
-      stanceOn:'', endgame:false, trapCharges:2,trapCd:0,knifeCd:0,
-      carrying:null, atk:0,swing:0,alert:null,path:[],pathT:0,vault:0,
-      netSlot:undefined};
-  });
-  evtStudents=EVT_STU.map(function(def,i){
-    const sp=spots[(i*11+3)%spots.length]; const p=center(sp[0],sp[1]);
+  /* 1vs7化(2026-09-12)：追跡者は常に1体(kindKeyはevtChaserKind、evtStartMatch()/
+     evtNetOnStart()側で決定済み)。生徒はEVT_STU(8人)からevtRosterPickで
+     選ばれた最大7人だけを実際にスポーンする */
+  const kk=EVT_CHASER_KINDS[evtChaserKind]?evtChaserKind:EVT_CHASER_KEYS[0];
+  const csp=spots[0]; const cp=center(csp[0],csp[1]);
+  evtChasers=[{kind:'echaser',kindKey:kk,name:EVT_CHASER_KINDS[kk].name,mesh:evtMakeChaserMesh(kk),
+    x:cp.x,z:cp.z,yaw:0,speed:6.0*EVT_CHASER_SPD[kk],base:6.0*EVT_CHASER_SPD[kk],
+    stun:0,hp:3,weaken:0,sealed:0,sealedHitBy:[],defeated:false,
+    teleCd:0,teleCharge:0,scentT:0,scentCd:0,dashT:0,dashCd:0,stealthT:0,stealthCd:0,
+    stanceOn:'', endgame:false, trapCharges:2,trapCd:0,knifeCd:0,
+    carrying:null, atk:0,swing:0,alert:null,path:[],pathT:0,vault:0,
+    netSlot:undefined}];
+  evtStudents=evtRosterPick.map(function(defIdx,i){
+    const def=EVT_STU[defIdx]||EVT_STU[0];
+    const sp=spots[(i*11+7)%spots.length]; const p=center(sp[0],sp[1]);
     const st=def.stat;
     return {kind:'estudent',name:def.name,def:def,stat:st,
       mesh:evtMakeStudentMesh(def),
@@ -13821,7 +13833,7 @@ function evtFinish(title,detail){
   SCORE+=sc; COINS+=co; refreshStats();
   document.getElementById('rgain').textContent='＋'+sc+' スコア　＋'+co+' コイン';
   document.getElementById('rtext').textContent=title;
-  document.getElementById('rsub').innerHTML=detail+'<br>脱出 '+esc+' / 脱落 '+out+' / 生徒8　経過 '+Math.floor(evtElapsed)+'秒';
+  document.getElementById('rsub').innerHTML=detail+'<br>脱出 '+esc+' / 脱落 '+out+' / 生徒'+evtStudents.length+'　経過 '+Math.floor(evtElapsed)+'秒';
   document.getElementById('result').style.display='flex';
   if(document.exitPointerLock) document.exitPointerLock();
   if(netMode==='host') netBroadcast({t:'eend',
@@ -14200,8 +14212,8 @@ function evtRenderCharPane(){
   const wrap=document.getElementById('pCharEvent');
   if(!wrap) return;
   let html='<p class="lbl">役割</p><div class="seg" id="evtRoleSel">'+
-    '<div data-r="student" class="'+(evtPickRole==='student'?'sel':'')+'">生徒（8人から選ぶ）</div>'+
-    '<div data-r="chaser" class="'+(evtPickRole==='chaser'?'sel':'')+'">追跡者（2種から選ぶ）</div></div>';
+    '<div data-r="student" class="'+(evtPickRole==='student'?'sel':'')+'">生徒（8人から選ぶ、実際に出場するのは7人）</div>'+
+    '<div data-r="chaser" class="'+(evtPickRole==='chaser'?'sel':'')+'">追跡者（2種から選ぶ、出場は1人）</div></div>';
   if(evtPickRole==='student'){
     html+='<p class="lbl">キャラクター</p><div class="seg small wrap" id="evtStuSel">';
     EVT_STU.forEach(function(def,i){
@@ -14222,8 +14234,8 @@ function evtRenderCharPane(){
     html+='</div><p class="hint" style="text-align:left;margin-top:8px">'+escHtml(EVT_CHASER_KINDS[kk].desc)+
       '<br>試合開始時は瞬間移動のみ。時間経過で索敵→高速移動→気配遮断→終盤強化が順に解禁される。</p>';
   }
-  html+='<p class="hint" style="margin-top:14px">追跡者は最大2人・生徒は最大8人。人数が足りない枠はAIが埋める。<br>'+
-    'オンラインでは最大10人（追跡者2＋生徒8）まで部屋に入れる。';
+  html+='<p class="hint" style="margin-top:14px">追跡者は1人・生徒は最大7人。人数が足りない枠はAIが埋める。<br>'+
+    'オンラインでは最大8人（追跡者1＋生徒7）まで部屋に入れる。';
   wrap.innerHTML=html;
   wrap.querySelectorAll('#evtRoleSel > div').forEach(function(d){
     d.addEventListener('click',function(){ evtPickRole=d.dataset.r; evtRenderCharPane(); });
@@ -14248,8 +14260,8 @@ function evtApplyModeUI(){
   document.getElementById('tport3d').style.display=isEvt?'none':'';
   document.getElementById('pvtoggle').style.display=isEvt?'none':'';
   if(isEvt){
-    document.getElementById('tname').textContent='イベントモード';
-    document.getElementById('tdesc').textContent='学校に取り憑いた追跡者から、8人の生徒が力を合わせて脱出する';
+    document.getElementById('tname').textContent='怪異退治モード';
+    document.getElementById('tdesc').textContent='学校に取り憑いた追跡者から、最大7人の生徒が力を合わせて脱出する';
     evtRenderCharPane();
   } else {
     try{ buildList(); }catch(e){}
@@ -14270,44 +14282,78 @@ function evtApplyModeUI(){
 })();
 
 /* =========================== 試合開始（イベントモード） =========================== */
+/* 1vs7化(2026-09-12)：出場する生徒7人を決める。自分が生徒でプレイするなら
+   自分の希望キャラを最優先、次にオンライン参加者(ゲスト)の希望キャラ、
+   残りは未使用のキャラからランダムに埋める(希望が7件を超える場合は
+   先着優先で溢れた分だけAI/ランダム編成にフォールバックする) */
+function evtBuildStudentRoster(){
+  const want=[];
+  if(evtPickRole!=='chaser'&&want.indexOf(evtPickStuIdx)<0) want.push(evtPickStuIdx);
+  if(netMode==='host'){
+    netConns.forEach(function(c){
+      if(c.profile&&c.profile.eRole!=='chaser'&&typeof c.profile.eChar==='number'&&
+         want.indexOf(c.profile.eChar)<0) want.push(c.profile.eChar);
+    });
+  }
+  const rest=[];
+  for(let i=0;i<EVT_STU.length;i++) if(want.indexOf(i)<0) rest.push(i);
+  rest.sort(function(){ return Math.random()-0.5; });
+  return want.concat(rest).slice(0,7);
+}
+/* 追跡者は1体だけ。自分が追跡者志望ならevtPickChaserIdxで選んだ種類を優先、
+   次にオンライン参加者の希望、どちらも無ければAI操作でランダムに選ぶ */
+function evtDecideChaserKind(){
+  if(evtPickRole==='chaser') return EVT_CHASER_KEYS[evtPickChaserIdx]||EVT_CHASER_KEYS[0];
+  if(netMode==='host'){
+    const wantC=netConns.filter(function(c){ return c.profile&&c.profile.eRole==='chaser'; })[0];
+    if(wantC&&typeof wantC.profile.eChar==='number'&&EVT_CHASER_KEYS[wantC.profile.eChar])
+      return EVT_CHASER_KEYS[wantC.profile.eChar];
+  }
+  return EVT_CHASER_KEYS[(Math.random()*EVT_CHASER_KEYS.length)|0];
+}
 function evtStartMatch(){
   if(curStage==='random') curStage=STAGES[(Math.random()*STAGES.length)|0].key;
   softReset(true); evtSoftReset(true);
-  evtRole=evtPickRole; evtMySlot=(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx;
+  evtRole=evtPickRole;
+  evtChaserKind=evtDecideChaserKind();
+  evtRosterPick=evtBuildStudentRoster();
   evtSpawnAll();
-  evtMe=(evtRole==='chaser')?evtChasers[evtPickChaserIdx]:evtStudents[evtPickStuIdx];
+  evtMySlot=(evtRole==='chaser')?0:Math.max(0,evtRosterPick.indexOf(evtPickStuIdx));
+  evtMe=(evtRole==='chaser')?evtChasers[0]:evtStudents[evtMySlot];
   if(netMode==='host'){
     /* 接続中の友達に役割を割り振る。希望のeRole/eCharは'profile'メッセージで
-       受け取り済み(c.profile.eRole/eChar)。埋まらない枠はAIのまま(netSlot未設定) */
-    const wantChaser=netConns.filter(function(c){ return c.profile&&c.profile.eRole==='chaser'; });
-    let chIdx=(evtPickRole==='chaser')?(evtPickChaserIdx===0?1:0):0;
-    wantChaser.forEach(function(c){
-      if(chIdx<=1&&evtChasers[chIdx]&&evtChasers[chIdx]!==evtMe){ evtChasers[chIdx].netSlot=c.slot; chIdx++; }
-    });
-    const usedStu=(evtRole==='student')?[evtPickStuIdx]:[];
-    const studentConns=netConns.filter(function(c){
-      return !evtChasers.some(function(ch){return ch.netSlot===c.slot;}); });
-    /* まず希望のキャラ(eChar)が空いていればそれを優先して割り当てる */
+       受け取り済み(c.profile.eRole/eChar)。埋まらない枠はAIのまま(netSlot未設定)。
+       追跡者は1枠だけなので、自分が追跡者ならゲストは誰も追跡者になれない */
+    if(evtRole!=='chaser'){
+      const wantChaser=netConns.filter(function(c){ return c.profile&&c.profile.eRole==='chaser'; })[0];
+      if(wantChaser) evtChasers[0].netSlot=wantChaser.slot;
+    }
+    const usedStu=[evtMySlot!==undefined&&evtRole==='student'?evtMySlot:-1].filter(function(i){return i>=0;});
+    const studentConns=netConns.filter(function(c){ return evtChasers[0].netSlot!==c.slot; });
+    /* まず希望のキャラ(eChar、EVT_STUの元インデックス)が出場7人の中にいれば
+       そのスロットを優先して割り当てる */
     const remaining=[];
     studentConns.forEach(function(c){
       const want=(c.profile&&c.profile.eRole!=='chaser'&&typeof c.profile.eChar==='number')?c.profile.eChar:-1;
-      if(want>=0&&want<8&&usedStu.indexOf(want)<0){ evtStudents[want].netSlot=c.slot; usedStu.push(want); }
+      const slotIdx=want>=0?evtRosterPick.indexOf(want):-1;
+      if(slotIdx>=0&&usedStu.indexOf(slotIdx)<0){ evtStudents[slotIdx].netSlot=c.slot; usedStu.push(slotIdx); }
       else remaining.push(c);
     });
     let si=0;
     remaining.forEach(function(c){
-      while(usedStu.indexOf(si)>=0||si>=8) si++;
-      if(si<8){ evtStudents[si].netSlot=c.slot; usedStu.push(si); si++; }
+      while(usedStu.indexOf(si)>=0||si>=evtStudents.length) si++;
+      if(si<evtStudents.length){ evtStudents[si].netSlot=c.slot; usedStu.push(si); si++; }
     });
     const payload={t:'estart', stage:curStage,
-      roles:{ chasers:evtChasers.map(function(c){ return {kindKey:c.kindKey,netSlot:c.netSlot}; }),
-        students:evtStudents.map(function(s){ return {idx:EVT_STU.indexOf(s.def),netSlot:s.netSlot}; }) },
+      chaserKind:evtChasers[0].kindKey, rosterPick:evtRosterPick.slice(),
+      roles:{ chaserNetSlot:evtChasers[0].netSlot,
+        students:evtStudents.map(function(s){ return {netSlot:s.netSlot}; }) },
       partsTaken:evtPartsObjs.map(function(o){return o.taken;}),
       talTaken:evtTalismanObjs.map(function(o){return o.taken;})};
     netConns.forEach(function(c){
       const mySlot=c.slot;
       let mine=-1,mineIsChaser=false;
-      evtChasers.forEach(function(ch,i){ if(ch.netSlot===mySlot){ mine=i; mineIsChaser=true; } });
+      if(evtChasers[0].netSlot===mySlot){ mine=0; mineIsChaser=true; }
       evtStudents.forEach(function(st,i){ if(st.netSlot===mySlot){ mine=i; mineIsChaser=false; } });
       netSend(c.conn,Object.assign({},payload,{mySlot:mySlot,mine:mine,mineIsChaser:mineIsChaser}));
     });
@@ -14320,16 +14366,15 @@ function evtStartMatch(){
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
   try{ ac().resume(); }catch(e){}
   bgmStart();
-  toast(evtRole==='chaser'?'8人の生徒を探して捕まえろ（開始時は瞬間移動のみ）':'脱出手段を探せ。応援を呼ぶか、部品を集めろ');
+  toast(evtRole==='chaser'?'最大7人の生徒を探して捕まえろ（開始時は瞬間移動のみ）':'脱出手段を探せ。応援を呼ぶか、部品を集めろ');
 }
 function evtNetOnStart(payload){
   softReset(true); evtSoftReset(true);
   curStage=payload.stage;
+  evtChaserKind=payload.chaserKind||EVT_CHASER_KEYS[0];
+  evtRosterPick=payload.rosterPick||[0,1,2,3,4,5,6];
   evtSpawnAll();
-  payload.roles.chasers.forEach(function(r,i){ if(evtChasers[i]){ evtChasers[i].kindKey=r.kindKey||evtChasers[i].kindKey;
-    if(evtChasers[i].mesh) scene.remove(evtChasers[i].mesh);
-    evtChasers[i].mesh=evtMakeChaserMesh(evtChasers[i].kindKey);
-    evtChasers[i].netSlot=r.netSlot; } });
+  evtChasers[0].netSlot=payload.roles.chaserNetSlot;
   payload.roles.students.forEach(function(r,i){ if(evtStudents[i]) evtStudents[i].netSlot=r.netSlot; });
   (payload.partsTaken||[]).forEach(function(tk,i){ if(evtPartsObjs[i]){ evtPartsObjs[i].taken=tk; evtPartsObjs[i].mesh.visible=!tk; } });
   (payload.talTaken||[]).forEach(function(tk,i){ if(evtTalismanObjs[i]){ evtTalismanObjs[i].taken=tk; evtTalismanObjs[i].mesh.visible=!tk; } });
@@ -14345,7 +14390,7 @@ function evtNetOnStart(payload){
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
   try{ ac().resume(); }catch(e){}
   bgmStart();
-  toast('イベントモード開始！');
+  toast('怪異退治モード開始！');
 }
 function evtNetOnEnd(payload){
   evtOver=true; over=true; bgmStop();
