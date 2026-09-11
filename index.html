@@ -667,7 +667,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 
   <div id="modeSel" class="seg" style="margin:8px 10px 0">
     <div data-m="classic" class="sel" style="flex:1">通常（先生1vs生徒4）</div>
-    <div data-m="event" style="flex:1">イベント（追跡者2vs生徒8）</div>
+    <div data-m="classic2" style="flex:1">2vs8（先生2vs生徒8）</div>
+    <div data-m="event" style="flex:1">怪異退治（追跡者1vs生徒最大7）</div>
   </div>
   <div id="rail">
     <div class="rbtn sel" data-pane="p_char"><i>&#128100;</i>キャラ</div>
@@ -4556,8 +4557,91 @@ const STAGES=[
 function inStage(c){ const st=STAGES.filter(function(x){return x.key===curStage;})[0];
   return c>=st.c0&&c<=st.c1; }
 let teacherKind='pe';
-let students=[],teacher=null,players=[],me=null,role='student';
+let students=[],teacher=null,teacher2=null,players=[],me=null,role='student';
 const stats={hits:0,downs:0,seats:0,pallets:0,vaults:0,perfect:0,fails:0};
+
+/* 先生オブジェクトの生成を切り出した共通関数(2026-09-11、2vs8モード対応)。
+   元は spawnAll() の中に直接書かれていて先生1人分しか作れなかったが、
+   引数化することで2人目の先生(teacher2、常にAI・固有能力は使わない)も
+   同じ関数から作れるようにした。applyWeaponはプレイヤー本人が選んだ
+   武器スキン(weaponPick)を反映するかどうか(2人目の先生には適用しない) */
+function buildTeacherObj(kind,spawnPoint,applyWeapon){
+  const K=KINDS[kind];
+  const LK=Object.assign({propKey:kind},LOOK[kind]||{});
+  if(applyWeapon&&weaponPick) LK.weapon=weaponPick;
+  const SPD={teke:1.06,wolf:1.03,mask:1.02,cat:1.04,monk:1.03,wheel:0.96,
+             clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
+             dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
+             fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
+             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0,
+             mirror:1.0,sakasa:1.0,doll:0.98};
+  const t={kind:'teacher',name:K.name,
+    mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
+    x:spawnPoint.x,z:spawnPoint.z,yaw:0,speed:DIFF.tSpeed*(SPD[kind]||1),
+    base:DIFF.tSpeed*(SPD[kind]||1),path:[],pathT:0,
+    carrying:null,swing:0,cool:0,lunge:0,patrol:null,alert:null,vault:0,stam:1,
+    vTo:null,vFrom:null,stun:0,wipe:0,abCd:0,charge:0,dash:0,breakT:0,
+    kindKey:kind,px:0,pz:0,dive:0,diveTo:null,boost:0,stealth:0,exh:false,ab2Cd:0,
+    beastT:0,leap:0,leapCharge:0,presence:0,scentBonus:0,scentT:0,
+    bladeCd:0,idleT:0,cloak:0,wheelOn:false,wheelStun:0,clownColor:0,clone2:null,
+    nCharge:0,blink:0,blinkLeft:2,atkWindow:0,rush2:0,rope:null,aim:0,oniAllies:[],
+    ammo:1,reloadT:0,hist:[],histT:0,clone:null,
+    aiCharge:0,dashHit:[],miss:0,frenzy:0,revealT:0,
+    phase:0,crawl:0,blind:0,blend:0,stillT:0,fateT:0,fatePhase:0,fateMark:0,pounce:0,
+    invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
+    dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
+    dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0,
+    dnBreak:0,dnBreakTarget:null,traits:[],comboStacks:0,lastHitTarget:null,whisperNear:false,
+    /* 写真部顧問(photo)専用フィールド。pdMode:0=暗室/1=現像、
+       pdGauge:0〜5の観察(シャッターチャンス)ゲージ、pdAwakeT>0で
+       「決定的瞬間」中、charge/pdFinisherTは焼き付け(必殺技)の溜め・
+       持続に既存のteacher.chargeを流用 */
+    pdMode:0,pdGauge:0,pdSwitchCd:0,pdObsHold:false,pdObsIdleT:0,pdSoundFired:false,
+    pdAwakeCastT:0,pdAwakeT:0,pdFinisherT:0,pdFinisherHit:[],pdChargeYaw0:0,
+    pdBreakSlowT:0,pdExtendUsed:false,pdMuseIdx:-1,
+    pdTokensA:0,pdTokensB:0,pdTokensC:0,pdMuseNearT:0,pdMuseFarT:0,pdRushB:0,
+    /* にせもの(mirror)専用。mrForm:0=擬態/1=正体、mrMimicIdx=化けている生徒の
+       students配列index、mrReveal>0で変身モーション中(teacher.stunと連動)、
+       mrGaugeは侵食ゲージ(0〜3)、mrDualTは二重人格状態の残り秒数 */
+    mrForm:0,mrMimicIdx:-1,mrReveal:0,mrGauge:0,mrDualT:0,mrDualUsed:false,
+    mrBlendT:0,mrDecoys:[],
+    /* 渡り廊下の逆さ女(sakasa)専用。saForm:0=床/1=壁走り/2=天井、
+       saFearは恐怖ゲージ(0〜3)、saTwinTは双子状態の残り秒数、
+       saDiveは落下奇襲の突進タイマー(狼のleapと同じ方式) */
+    saForm:0,saFear:0,saTwinT:0,saCeilIdx:-1,saDive:0,saDiveMax:0,
+    saDiveFrom:null,saDiveTo:null,saDiveHit:false,saDiveTarget:null,saHoldReady:false,
+    /* 人形塚の番人(doll)専用。dlLevelは自動昇格する1〜3の段階、
+       dlDollsは所持中の人形(0か1)、dlDownsはこの先生がダウンさせた人数 */
+    dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0};
+  if(kind==='darknode'){
+    /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
+       teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
+       当たり判定コードは全部teacher.meshを見ているので、参照を差し替える
+       方式なら他のコードを一切変えずに済む） */
+    const wolfMesh=person({body:'beast',beast:'wolf',hairStyle:'wild',acc:'wolfface',tall:true,
+      uniform:0x9a8f7a,hair:0x6f6354,accent:0x7a6f5c,skin:0x8c8170,eye:0xd4b876});
+    const batMesh=person({body:'batform',acc:'batface',tall:false,
+      uniform:0x4a2f6b,wing:0x232a52,accent:0xd97a2a,hair:0x2a1f3f,skin:0x4a3a5c});
+    wolfMesh.visible=false; batMesh.visible=false;
+    t.dnMeshes=[t.mesh,wolfMesh,batMesh];
+  }
+  if(kind==='mirror'){
+    /* 擬態形態の見た目はダークノードのdnMeshes方式を流用。生徒分の
+       そっくりさんメッシュを全部先に作っておき、参照を差し替えるだけで
+       誰に化けても既存のアニメーション/当たり判定コードに触らずに済む */
+    const trueMesh=t.mesh; trueMesh.visible=false;
+    const disguiseMeshes=students.map(function(s){
+      const dm=person(Object.assign({uniform:s.color,hair:s.hairC,accent:0xe4e0d4,
+        tall:false,propKey:s.perk},SLOOK[s.perk]||{}));
+      dm.visible=false; return dm;
+    });
+    const idx=students.length?((Math.random()*students.length)|0):0;
+    if(disguiseMeshes[idx]) disguiseMeshes[idx].visible=true;
+    t.mrMeshes=disguiseMeshes; t.mrTrueMesh=trueMesh;
+    t.mrMimicIdx=idx; t.mesh=disguiseMeshes[idx]||trueMesh; t.mrForm=0;
+  }
+  return t;
+}
 
 function spawnAll(){
   applyStage();
@@ -4591,87 +4675,28 @@ function spawnAll(){
       cheatT:0,itemHoldPrevInput:false,crowActive:false,crowX:0,crowZ:0,crowYaw:0,
       crowSpd:0,crowTurnInput:0,crowSlowInput:false,crowToughUsed:false,
       fanYaw:0,fanAimInput:0,
-      traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0,pdDownCount:0};
+      traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0,pdDownCount:0,
+      /* 2vs8モード用：今つかまっている/運ばれている相手がteacher/teacher2の
+         どちらかを覚えておくフィールド(2026-09-11)。通常モード(先生1人)では
+         常にteacherのままなので既存動作に影響しない */
+      grabber:null};
   });
   const far=spots.filter(function(w){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
   const gs=far.length?far[0]:spots[spots.length-1];
   const gp=center(gs[0],gs[1]);
-  const K=KINDS[teacherKind];
-  const LK=Object.assign({propKey:teacherKind},LOOK[teacherKind]||{});
-  if(weaponPick) LK.weapon=weaponPick;
-  const SPD={teke:1.06,wolf:1.03,mask:1.02,cat:1.04,monk:1.03,wheel:0.96,
-             clown:1.08,ripper:0.98,nurse:0.95,beet:0.96,vice:0.97,oni:0.98,
-             dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
-             fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
-             garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0,
-             mirror:1.0,sakasa:1.0,doll:0.98};
-  teacher={kind:'teacher',name:K.name,
-    mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
-    x:gp.x,z:gp.z,yaw:0,speed:DIFF.tSpeed*(SPD[teacherKind]||1),
-    base:DIFF.tSpeed*(SPD[teacherKind]||1),path:[],pathT:0,
-    carrying:null,swing:0,cool:0,lunge:0,patrol:null,alert:null,vault:0,stam:1,
-    vTo:null,vFrom:null,stun:0,wipe:0,abCd:0,charge:0,dash:0,breakT:0,
-    kindKey:teacherKind,px:0,pz:0,dive:0,diveTo:null,boost:0,stealth:0,exh:false,ab2Cd:0,
-    beastT:0,leap:0,leapCharge:0,presence:0,scentBonus:0,scentT:0,
-    bladeCd:0,idleT:0,cloak:0,wheelOn:false,wheelStun:0,clownColor:0,clone2:null,
-    nCharge:0,blink:0,blinkLeft:2,atkWindow:0,rush2:0,rope:null,aim:0,oniAllies:[],
-    ammo:1,reloadT:0,hist:[],histT:0,clone:null,
-    aiCharge:0,dashHit:[],miss:0,frenzy:0,revealT:0,
-    phase:0,crawl:0,blind:0,blend:0,stillT:0,fateT:0,fatePhase:0,fateMark:0,pounce:0,
-    invis:0,spears:1,dreamMode:false,shadow:0,wrath:0,wrathGauge:0,slash:false,
-    dnForm:0,dnLeap:0,dnLeapMax:0,dnLeapFrom:null,dnLeapTo:null,dnLeapHit:[],
-    dnPounceStage:0,dnPounceWindow:0,dnScentT:0,dnScentBoostT:0,dnFootT:0,dnWarpCd:0,
-    dnBreak:0,dnBreakTarget:null,traits:[],comboStacks:0,lastHitTarget:null,whisperNear:false,
-    /* 写真部顧問(photo)専用フィールド。pdMode:0=暗室/1=現像、
-       pdGauge:0〜5の観察(シャッターチャンス)ゲージ、pdAwakeT>0で
-       「決定的瞬間」中、charge/pdFinisherTは焼き付け(必殺技)の溜め・
-       持続に既存のteacher.chargeを流用 */
-    pdMode:0,pdGauge:0,pdSwitchCd:0,pdObsHold:false,pdObsIdleT:0,pdSoundFired:false,
-    pdAwakeCastT:0,pdAwakeT:0,pdFinisherT:0,pdFinisherHit:[],pdChargeYaw0:0,
-    pdBreakSlowT:0,pdExtendUsed:false,pdMuseIdx:-1,
-    pdTokensA:0,pdTokensB:0,pdTokensC:0,pdMuseNearT:0,pdMuseFarT:0,pdRushB:0,
-    /* にせもの(mirror)専用。mrForm:0=擬態/1=正体、mrMimicIdx=化けている生徒の
-       students配列index、mrReveal>0で変身モーション中(teacher.stunと連動)、
-       mrGaugeは侵食ゲージ(0〜3)、mrDualTは二重人格状態の残り秒数 */
-    mrForm:0,mrMimicIdx:-1,mrReveal:0,mrGauge:0,mrDualT:0,mrDualUsed:false,
-    mrBlendT:0,mrDecoys:[],
-    /* 渡り廊下の逆さ女(sakasa)専用。saForm:0=床/1=壁走り/2=天井、
-       saFearは恐怖ゲージ(0〜3)、saTwinTは双子状態の残り秒数、
-       saDiveは落下奇襲の突進タイマー(狼のleapと同じ方式) */
-    saForm:0,saFear:0,saTwinT:0,saCeilIdx:-1,saDive:0,saDiveMax:0,
-    saDiveFrom:null,saDiveTo:null,saDiveHit:false,saDiveTarget:null,saHoldReady:false,
-    /* 人形塚の番人(doll)専用。dlLevelは自動昇格する1〜3の段階、
-       dlDollsは所持中の人形(0か1)、dlDownsはこの先生がダウンさせた人数 */
-    dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0};
-  if(teacherKind==='darknode'){
-    /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
-       teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
-       当たり判定コードは全部teacher.meshを見ているので、参照を差し替える
-       方式なら他のコードを一切変えずに済む） */
-    const wolfMesh=person({body:'beast',beast:'wolf',hairStyle:'wild',acc:'wolfface',tall:true,
-      uniform:0x9a8f7a,hair:0x6f6354,accent:0x7a6f5c,skin:0x8c8170,eye:0xd4b876});
-    const batMesh=person({body:'batform',acc:'batface',tall:false,
-      uniform:0x4a2f6b,wing:0x232a52,accent:0xd97a2a,hair:0x2a1f3f,skin:0x4a3a5c});
-    wolfMesh.visible=false; batMesh.visible=false;
-    teacher.dnMeshes=[teacher.mesh,wolfMesh,batMesh];
-  }
-  if(teacherKind==='mirror'){
-    /* 擬態形態の見た目はダークノードのdnMeshes方式を流用。生徒4人分の
-       そっくりさんメッシュを全部先に作っておき、参照を差し替えるだけで
-       誰に化けても既存のアニメーション/当たり判定コードに触らずに済む */
-    const trueMesh=teacher.mesh; trueMesh.visible=false;
-    const disguiseMeshes=students.map(function(s){
-      const dm=person(Object.assign({uniform:s.color,hair:s.hairC,accent:0xe4e0d4,
-        tall:false,propKey:s.perk},SLOOK[s.perk]||{}));
-      dm.visible=false; return dm;
-    });
-    const idx=students.length?((Math.random()*students.length)|0):0;
-    if(disguiseMeshes[idx]) disguiseMeshes[idx].visible=true;
-    teacher.mrMeshes=disguiseMeshes; teacher.mrTrueMesh=trueMesh;
-    teacher.mrMimicIdx=idx; teacher.mesh=disguiseMeshes[idx]||trueMesh; teacher.mrForm=0;
-  }
-  players=students.concat([teacher]);
+  teacher=buildTeacherObj(teacherKind,gp,true);
+  if(gameMode==='classic2'){
+    /* 2vs8モード：2人目の先生(常にAI、汎用の追跡+運搬AIのみで固有能力は
+       使わせない、2026-09-11)。見た目のバリエーションだけ出すため
+       teacher1とは別のキャラ見た目をランダムで割り当てる */
+    const gs2=far.length>1?far[1]:(far.length?far[0]:spots[Math.max(0,spots.length-2)]);
+    const gp2=center(gs2[0],gs2[1]);
+    const pool2=Object.keys(KINDS).filter(function(k){return k!==teacherKind;});
+    const kind2=pool2.length?pool2[(Math.random()*pool2.length)|0]:teacherKind;
+    teacher2=buildTeacherObj(kind2,gp2,false);
+  } else teacher2=null;
+  players=students.concat([teacher]).concat(teacher2?[teacher2]:[]);
   refreshVentLook();
   refreshCeilLook();
   oniAllies.forEach(function(o){ scene.remove(o.mesh); }); oniAllies.length=0;
@@ -4693,21 +4718,26 @@ heldPaper.position.set(-0.1,0.08,-1.95); heldPaper.rotation.set(-1.3,0,0.3); rul
 ruler.position.set(0.5,-0.4,-0.35); camera.add(ruler); ruler.visible=false;
 setFPWeapon('ruler');
 
-/* 先生の赤い光（生徒側からのみ見える） */
-const redStain=new THREE.Group();
-(function(){
+/* 先生の赤い光（生徒側からのみ見える）。2vs8モードのteacher2用に
+   makeRedStain()として切り出し、2つ目のインスタンスも作れるようにした
+   (2026-09-11) */
+function makeRedStain(){
+  const g=new THREE.Group();
   for(let i=0;i<4;i++){
     const m=new THREE.Mesh(new THREE.PlaneGeometry(2.4+i*0.9,3.2),
       new THREE.MeshBasicMaterial({color:0xff2a1c,transparent:true,
         opacity:0.24-i*0.045,depthWrite:false}));
     m.rotation.x=-Math.PI/2; m.position.set(0,0.07+i*0.01,1.8+i*2.6);
-    redStain.add(m);
+    g.add(m);
   }
   const halo=new THREE.Mesh(new THREE.SphereGeometry(1.9,14,10),
     new THREE.MeshBasicMaterial({color:0xff2a1c,transparent:true,opacity:0.16,depthWrite:false}));
-  halo.position.y=1.4; redStain.add(halo);
-  redStain.visible=false; scene.add(redStain);
-})();
+  halo.position.y=1.4; g.add(halo);
+  g.visible=false; scene.add(g);
+  return g;
+}
+const redStain=makeRedStain();
+const redStain2=makeRedStain();
 /* 突進の予告（溜め中に床が光る） */
 const dashWarn=new THREE.Group();
 const dwPlane=new THREE.Mesh(new THREE.PlaneGeometry(2.8,1),
@@ -6478,13 +6508,14 @@ function studentAct(s,dt,manual){
   return null;
 }
 function escapeCarry(s){
-  teacher.carrying=null;
+  const g=s.grabber||teacher;   /* 2vs8モード：teacher2に運ばれていた場合はそちらを解放する */
+  g.carrying=null; s.grabber=null;
   s.state='free'; s.hurt=true; s.dmg=Math.max(1,s.dmg||1); paperLook(s);
   s.speed=s.base*0.86; s.wig=0; s.mesh.visible=true; s.mesh.rotation.z=0;
-  let ex=teacher.x-Math.sin(teacher.yaw)*2.2, ez=teacher.z-Math.cos(teacher.yaw)*2.2;
-  if(blocked(ex,ez,BODY)){ ex=teacher.x; ez=teacher.z; }
+  let ex=g.x-Math.sin(g.yaw)*2.2, ez=g.z-Math.cos(g.yaw)*2.2;
+  if(blocked(ex,ez,BODY)){ ex=g.x; ez=g.z; }
   s.x=ex; s.z=ez;
-  teacher.stun=2.0*stunMul(); teacher.path=[]; s.rush=3.0;
+  g.stun=2.0*stunMul(); g.path=[]; s.rush=3.0;
   toast(s.name+'がもがいて振りほどいた');
   beep(520,0.25,'triangle',0.12); vib([40,50,40]);
 }
@@ -6508,8 +6539,12 @@ function paperLook(s){
   if(u.paperMat&&u.paperMat.color&&u.paperMat.color.setHex)
     u.paperMat.color.setHex(d>=1.5?0xff6a5a:0xffffff);
 }
-function hit(s,heavy){ return damage(s,1,heavy); }
-function damage(s,amt,heavy){
+function hit(s,heavy,attacker){ return damage(s,1,heavy,attacker); }
+/* attacker: どの先生が当てたか(省略時は従来通りteacher、2vs8モードの
+   teacher2が当てた時はteacher2を渡す。2026-09-11追加、既存の呼び出し元は
+   全て引数省略のままなので通常モードの挙動は一切変わらない) */
+function damage(s,amt,heavy,attacker){
+  attacker=attacker||teacher;
   if(s.state!=='free'||s.hide) return false;
   if(s===me&&adminGod) return false;   /* 管理者モード：無敵 */
   if(s.tomeShield){
@@ -6520,17 +6555,17 @@ function damage(s,amt,heavy){
   }
   if(s.parry>0){
     s.parry=0; s.rush=3.0;
-    teacher.stun=Math.max(teacher.stun,1.6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+    attacker.stun=Math.max(attacker.stun,1.6); attacker.path=[]; attacker.dash=0; attacker.charge=0;
     toast(s.name+'が受け流した！');
     beep(1200,0.2,'square',0.14); vib([30,40,60]);
     return false;
   }
   if(s.guard>0){
     s.guard=0; s.rush=3.0;
-    teacher.stun=Math.max(teacher.stun,1.8); teacher.path=[]; teacher.dash=0; teacher.charge=0;
-    const dx=teacher.x-s.x,dz=teacher.z-s.z,d=Math.hypot(dx,dz)||1;
-    const bx=teacher.x+dx/d*3.2, bz=teacher.z+dz/d*3.2;
-    if(!blocked(bx,bz,BODY)){ teacher.x=bx; teacher.z=bz; }
+    attacker.stun=Math.max(attacker.stun,1.8); attacker.path=[]; attacker.dash=0; attacker.charge=0;
+    const dx=attacker.x-s.x,dz=attacker.z-s.z,d=Math.hypot(dx,dz)||1;
+    const bx=attacker.x+dx/d*3.2, bz=attacker.z+dz/d*3.2;
+    if(!blocked(bx,bz,BODY)){ attacker.x=bx; attacker.z=bz; }
     toast(s.name+'が仁王立ちで受け止めた！');
     beep(160,0.35,'square',0.15); vib([40,40,80]);
     return false;
@@ -6539,11 +6574,11 @@ function damage(s,amt,heavy){
   netEmitHit(s);
   /* 被弾ノックバック（見た目だけ。当たり判定用のs.x/s.zには触らない） */
   {
-    const kdx=s.x-teacher.x,kdz=s.z-teacher.z,kd=Math.hypot(kdx,kdz)||1;
+    const kdx=s.x-attacker.x,kdz=s.z-attacker.z,kd=Math.hypot(kdx,kdz)||1;
     s.knockDX=kdx/kd; s.knockDZ=kdz/kd; s.knockT=0.32;
   }
-  teacher.wrathGauge=(teacher.wrathGauge||0)+34*amt;
-  if(teacher.kindKey==='dream'){ s.sleep=1; s.awakeT=0; }
+  attacker.wrathGauge=(attacker.wrathGauge||0)+34*amt;
+  if(attacker.kindKey==='dream'){ s.sleep=1; s.awakeT=0; }
   s.rush=3.0;                       /* 攻撃されると3秒だけ足が速くなる */
   /* 管理者モード：耐久力+（ダウンするまでのヒット数を増やす。対象は自分のみ） */
   const dmgCap=2+(s===me?adminExtraHp:0);
@@ -6556,19 +6591,19 @@ function damage(s,amt,heavy){
     s.pdDownCount=(s.pdDownCount||0)+1;
     /* にせもの：正体形態でダウンさせるたび侵食ゲージが貯まる。満ちると
        60秒「二重人格」状態になり、化け直しが1回使えるようになる */
-    if(teacher.kindKey==='mirror'&&teacher.mrForm===1){
-      teacher.mrGauge=Math.min(3,(teacher.mrGauge||0)+1);
-      if(teacher.mrGauge>=3){
-        teacher.mrGauge=0; teacher.mrDualT=60; teacher.mrDualUsed=false;
+    if(attacker.kindKey==='mirror'&&attacker.mrForm===1){
+      attacker.mrGauge=Math.min(3,(attacker.mrGauge||0)+1);
+      if(attacker.mrGauge>=3){
+        attacker.mrGauge=0; attacker.mrDualT=60; attacker.mrDualUsed=false;
         toast('侵食が満ちた…二重人格状態(60秒)');
       }
     }
     /* 人形塚の番人：レベル自動昇格の判定に使うダウン数カウンタ */
-    if(teacher.kindKey==='doll') teacher.dlDowns=(teacher.dlDowns||0)+1;
+    if(attacker.kindKey==='doll') attacker.dlDowns=(attacker.dlDowns||0)+1;
     /* 見せしめ(misesime)：本命以外がダウンするたびトークンが貯まる */
-    if(hasTrait(teacher,'misesime')){
+    if(hasTrait(attacker,'misesime')){
       const muse=pdMuse();
-      if(!muse||s!==muse) teacher.pdTokensC=Math.min(3,(teacher.pdTokensC||0)+1);
+      if(!muse||s!==muse) attacker.pdTokensC=Math.min(3,(attacker.pdTokensC||0)+1);
     }
     paperLook(s); toast(s.name+'がダウン');
   } else {
@@ -6580,26 +6615,28 @@ function damage(s,amt,heavy){
   }
   /* 授業態度の悪化(sloppy)：攻撃を当てた生徒はしばらく治療速度が大きく落ちる
      (既存のs.dullフィールドをそのまま再利用) */
-  if(hasTrait(teacher,'sloppy')) s.dull=Math.max(s.dull||0,20*perkLevelMul(teacher,'sloppy'));
+  if(hasTrait(attacker,'sloppy')) s.dull=Math.max(s.dull||0,20*perkLevelMul(attacker,'sloppy'));
   /* 反省の連鎖(save_best)：同じ生徒を続けて攻撃するほど次の攻撃までの隙が短くなる */
-  if(hasTrait(teacher,'save_best')){
-    teacher.comboStacks=(teacher.lastHitTarget===s)?Math.min(5,(teacher.comboStacks||0)+1):1;
-    teacher.lastHitTarget=s;
+  if(hasTrait(attacker,'save_best')){
+    attacker.comboStacks=(attacker.lastHitTarget===s)?Math.min(5,(attacker.comboStacks||0)+1):1;
+    attacker.lastHitTarget=s;
   }
   /* 脇役狩り(yakuyakugari)：本命の被写体以外を攻撃するとトークンが貯まり、
      本命を攻撃すると失う */
-  if(hasTrait(teacher,'yakuyakugari')){
+  if(hasTrait(attacker,'yakuyakugari')){
     const muse=pdMuse();
-    if(muse&&s===muse) teacher.pdTokensA=0;
-    else teacher.pdTokensA=Math.min(5,(teacher.pdTokensA||0)+1);
+    if(muse&&s===muse) attacker.pdTokensA=0;
+    else attacker.pdTokensA=Math.min(5,(attacker.pdTokensA||0)+1);
   }
   if(s===me){ flash(); vib([50,50,80]); }
   return true;
 }
-function seat(s,ch){
+function seat(s,ch,attacker){
+  attacker=attacker||teacher;
   say(s.name,'反省椅子に座らされた！助けて','warn');
   s.seatCount++; s.state='seated'; ch.taken=s; stats.seats++;
-  teacher.wrathGauge=(teacher.wrathGauge||0)+40;
+  attacker.wrathGauge=(attacker.wrathGauge||0)+40;
+  s.grabber=null;
   s.x=ch.x; s.z=ch.z; s.mesh.visible=true; s.mesh.rotation.z=0;
   beep(200,0.4,'square',0.1);
   /* 椅子ルール（2026-08確定分）:
@@ -8590,6 +8627,62 @@ function aiTeacher(dt){
   }
   follow(t,dt,0.78);
 }
+/* 2vs8モード専用：2人目の先生(teacher2)の汎用AI(2026-09-11)。
+   40種の先生固有能力(useAbility()等)は一切使わせず、追跡→ダウンした生徒を
+   運ぶ→反省椅子に座らせる、という汎用の巡回ロジックだけを持つ簡略版。
+   固有能力を実装している40種のコードは通常モードのteacher(1人目)にしか
+   触らないため、この関数を追加しても既存モードには一切影響しない。
+   移動・索敵・追跡・運搬は既存の共通関数(follow/repath/los/nearestChair/
+   updVault/seat)をそのまま再利用している */
+function aiTeacher2(dt){
+  const t=teacher2; if(!t) return;
+  t.cool=Math.max(0,t.cool-dt);
+  t.stun=Math.max(0,t.stun-dt);
+  t.swing=Math.max(0,t.swing-dt*3.4);
+  if(updVault(t,dt)) return;
+  if(t.stun>0) return;
+  t.pathT-=dt;
+  if(t.carrying){
+    const ch=nearestChair(t.x,t.z);
+    if(ch){
+      if(Math.hypot(ch.x-t.x,ch.z-t.z)<3.2){ const s=t.carrying; t.carrying=null; seat(s,ch,t); return; }
+      if(t.pathT<=0){ repath(t,ch.x,ch.z); t.pathT=0.55; }
+      follow(t,dt,0.76); return;
+    }
+  }
+  const dn=students.filter(function(s){return s.state==='downed';})
+    .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+  if(dn){
+    if(Math.hypot(dn.x-t.x,dn.z-t.z)<2.8){ t.carrying=dn; dn.state='carried'; dn.grabber=t; dn.wig=0; dn.grabWindow=1.0; return; }
+    if(t.pathT<=0){ repath(t,dn.x,dn.z); t.pathT=0.5; }
+    follow(t,dt); return;
+  }
+  const tgt=students.filter(function(s){
+      return s.state==='free'&&!s.hide&&Math.hypot(s.x-t.x,s.z-t.z)<52&&los(t.x,t.z,s.x,s.z); })
+    .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+  if(tgt){
+    t.patrol=null;
+    if(t.pathT<=0){ repath(t,tgt.x,tgt.z); t.pathT=0.45; }
+    follow(t,dt,0.98);
+    return;
+  }
+  /* 追う相手がいない間はランダムに校内を巡回する(1人目のteacherと同じ
+     考え方、課題机を優先しつつたまに気まぐれに動く) */
+  if(!t.patrol||Math.hypot(t.patrol.x-t.x,t.patrol.z-t.z)<2.5||t.pathT<=0){
+    const open=tasks.filter(function(x){ return x.prog<1; });
+    let g=null,bs=-1e9;
+    for(const o of open){
+      const sc=o.prog*40-Math.hypot(o.x-t.x,o.z-t.z)*0.35+Math.random()*12;
+      if(sc>bs){ bs=sc; g=o; }
+    }
+    if(!g||Math.random()<0.2){
+      const pool=walkable.filter(function(w){ return inStage(w[0]); });
+      const w=pool[(Math.random()*pool.length)|0]||walkable[0]; g=center(w[0],w[1]);
+    }
+    t.patrol=g; repath(t,g.x,g.z); t.pathT=0.6;
+  }
+  follow(t,dt,0.78);
+}
 function aiTryVault(e,gx,gz){
   if(e.vault>0) return false;
   const dx=gx-e.x,dz=gz-e.z,d=Math.hypot(dx,dz)||1;
@@ -8613,7 +8706,11 @@ function aiStudent(s,dt){
   if(s.state!=='free') return;
   if(s.trapped) return;
   s.pathT-=dt;
-  const td=Math.hypot(teacher.x-s.x,teacher.z-s.z);
+  /* 2vs8モード対応：teacher/teacher2のうち近い方を「今警戒すべき先生」として
+     使う(2026-09-11)。teacher2が居ない通常モードでは常にnt===teacherなので
+     挙動は一切変わらない */
+  const nt=(teacher2&&Math.hypot(teacher2.x-s.x,teacher2.z-s.z)<Math.hypot(teacher.x-s.x,teacher.z-s.z))?teacher2:teacher;
+  const td=Math.hypot(nt.x-s.x,nt.z-s.z);
   if(s.hide){ if(td>18){ s.hide=null; s.mesh.visible=true; } return; }
   if(s.chatCd===undefined) s.chatCd=8+Math.random()*20;
   s.chatCd-=dt;
@@ -8626,14 +8723,14 @@ function aiStudent(s,dt){
   if(SAB2[s.perk]&&s.ab2Cd<=0&&s.lock<=0&&Math.random()<0.01) useStudentSkill2(s);
   if(s.skill&&s.abCd<=0&&s.lock<=0&&s.abUses!==0){
     if(s.skill==='sprint'&&td<11) useStudentSkill(s);
-    else if(s.skill==='flash'&&td<7) { s.yaw=Math.atan2(teacher.x-s.x,teacher.z-s.z); useStudentSkill(s); }
+    else if(s.skill==='flash'&&td<7) { s.yaw=Math.atan2(nt.x-s.x,nt.z-s.z); useStudentSkill(s); }
     else if(s.skill==='selfheal'&&s.hurt&&td>26) useStudentSkill(s);
     else if(s.skill==='reveal'&&Math.random()<0.004) useStudentSkill(s);
     else if(s.skill==='revive'&&students.some(function(x){ return x!==s&&x.state==='downed'&&
       Math.hypot(x.x-s.x,x.z-s.z)<3.4; })) useStudentSkill(s);
     else if(s.skill==='unbound'&&td<12&&s.stam<0.4) useStudentSkill(s);
     else if(s.skill==='announce'&&Math.random()<0.003) useStudentSkill(s);
-    else if(s.skill==='snipe'&&td>8&&td<24&&los(teacher.x,teacher.z,s.x,s.z)) useStudentSkill(s);
+    else if(s.skill==='snipe'&&td>8&&td<24&&los(nt.x,nt.z,s.x,s.z)) useStudentSkill(s);
     else if(s.skill==='mirage'&&td<10) useStudentSkill(s);
     else if(s.skill==='possum'&&!s.hurt&&td>10&&td<30&&(s.tnCd||0)<=0&&Math.random()<0.02) useStudentSkill(s);
     else if(s.skill==='tome'&&td>22&&Math.random()<0.03) useStudentSkill(s);
@@ -8645,23 +8742,23 @@ function aiStudent(s,dt){
      逃げるのをやめてその場で先生に向き直り、懐中電灯を構える。
      命中すればescapeCarry等の効果は既存のupdItemUse()側でそのまま発動する */
   if(s.item==='flashlight'&&(s.itemAmmo||0)>2&&td>2&&td<8&&
-     los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0&&!teacher.carrying){
+     los(nt.x,nt.z,s.x,s.z)&&nt.stun<=0&&!nt.carrying){
     s.itemHoldInput=true;
-    s.yaw=Math.atan2(teacher.x-s.x,teacher.z-s.z);
+    s.yaw=Math.atan2(nt.x-s.x,nt.z-s.z);
     return;
   }
   s.itemHoldInput=false;
-  if(td<16&&los(teacher.x,teacher.z,s.x,s.z)&&teacher.stun<=0){
+  if(td<16&&los(nt.x,nt.z,s.x,s.z)&&nt.stun<=0){
     s.chased=(s.chased||0)+dt;
     /* 板：先生が板の向こう側にいる時だけ倒す */
     const p=nearPallet(s,'up');
     if(p){
-      const dp=Math.hypot(p.x-teacher.x,p.z-teacher.z);
+      const dp=Math.hypot(p.x-nt.x,p.z-nt.z);
       if(td<6.0&&dp<7.5&&dp<td+2.5){ dropPallet(p,s); return; }
     }
     /* 障害物を挟むように乗り越える */
     if(s.vault<=0&&td<12&&Math.random()<0.14){
-      const away=Math.atan2(s.x-teacher.x,s.z-teacher.z);
+      const away=Math.atan2(s.x-nt.x,s.z-nt.z);
       if(aiTryVault(s,s.x+Math.sin(away)*5,s.z+Math.cos(away)*5)) return;
     }
     const lk=nearLocker(s);
@@ -8678,7 +8775,7 @@ function aiStudent(s,dt){
       }
       for(const w of cand){
         const wx=w[0]*T+T/2, wz=w[1]*T+T/2;
-        const dt2=Math.hypot(wx-teacher.x,wz-teacher.z);
+        const dt2=Math.hypot(wx-nt.x,wz-nt.z);
         const ds=Math.hypot(wx-s.x,wz-s.z);
         if(ds<6) continue;
         let sc=dt2*1.0-ds*0.55;
@@ -8722,7 +8819,7 @@ function aiStudent(s,dt){
   if(hv2&&td>20){ studentAct(s,dt,false); return; }
   const hurtMate=students.filter(function(o){
     return o!==s&&o.state==='free'&&o.hurt&&!o.hide&&
-           Math.hypot(teacher.x-o.x,teacher.z-o.z)>22; })[0];
+           Math.hypot(nt.x-o.x,nt.z-o.z)>22; })[0];
   if(hurtMate&&!s.hurt&&Math.hypot(hurtMate.x-s.x,hurtMate.z-s.z)<26){
     if(Math.hypot(hurtMate.x-s.x,hurtMate.z-s.z)<3.0){ studentAct(s,dt,false); return; }
     if(s.pathT<=0){ repath(s,hurtMate.x,hurtMate.z); s.pathT=0.9; }
@@ -8734,7 +8831,7 @@ function aiStudent(s,dt){
       const rb=(b.state==='seated')?((b.seatLimit===undefined?62:b.seatLimit)-b.seatT):(32-b.downT);
       return (ra+Math.hypot(a.x-s.x,a.z-s.z)*0.35)-(rb+Math.hypot(b.x-s.x,b.z-s.z)*0.35);
     })[0];
-  if(ally&&Math.hypot(teacher.x-ally.x,teacher.z-ally.z)>12){
+  if(ally&&Math.hypot(nt.x-ally.x,nt.z-ally.z)>12){
     if(Math.hypot(ally.x-s.x,ally.z-s.z)<3.2){ studentAct(s,dt,false); return; }
     if(s.pathT<=0){ repath(s,ally.x,ally.z); s.pathT=0.8; }
     follow(s,dt); return;
@@ -8767,6 +8864,10 @@ function aiStudent(s,dt){
 function danger(x,z){
   let d=Math.hypot(teacher.x-x,teacher.z-z);
   if(teacher.alert) d=Math.min(d,Math.hypot(teacher.alert.x-x,teacher.alert.z-z));
+  if(teacher2){
+    d=Math.min(d,Math.hypot(teacher2.x-x,teacher2.z-z));
+    if(teacher2.alert) d=Math.min(d,Math.hypot(teacher2.alert.x-x,teacher2.alert.z-z));
+  }
   return Math.max(0,30-d);
 }
 /* 課題の分担：他の子が付いている机は避ける */
@@ -8960,6 +9061,11 @@ function drawMini(){
     vents.forEach(function(v){ mg.fillRect(OX(v.c),v.r*sy,sx,sy); });
     mg.fillStyle='#c7452f';
     const p=tileOf(teacher.x,teacher.z); mg.fillRect(OX(p[0])-1,p[1]*sy-1,sx+2,sy+2);
+    /* 2vs8モード：もう1人の先生も自分視点のミニマップに出す(2026-09-11) */
+    if(teacher2){
+      mg.fillStyle='#e07a3a';
+      const p2b=tileOf(teacher2.x,teacher2.z); mg.fillRect(OX(p2b[0])-1,p2b[1]*sy-1,sx+2,sy+2);
+    }
   } else {
     /* 放送室の主「偽の終業チャイム」：作動中はミニマップ上の位置表示を
        隠す/ずらす(実際のs.x/s.zには一切触れない、見た目だけの偽装) */
@@ -8974,6 +9080,11 @@ function drawMini(){
     if(adminWallhack||Math.hypot(teacher.x-me.x,teacher.z-me.z)<26){   /* 管理者モード：壁越し表示 */
       mg.fillStyle=adminWallhack?'#ff5fe0':'#c7452f';
       const p=tileOf(teacher.x,teacher.z); mg.fillRect(OX(p[0])-1,p[1]*sy-1,sx+2,sy+2);
+    }
+    /* 2vs8モード：teacher2も同じ条件でミニマップに出す(2026-09-11) */
+    if(teacher2&&(adminWallhack||Math.hypot(teacher2.x-me.x,teacher2.z-me.z)<26)){
+      mg.fillStyle=adminWallhack?'#ff5fe0':'#e07a3a';
+      const p2c=tileOf(teacher2.x,teacher2.z); mg.fillRect(OX(p2c[0])-1,p2c[1]*sy-1,sx+2,sy+2);
     }
   }
   /* 座らされている人はミニマップでも金色の輪で強調 */
@@ -9118,9 +9229,12 @@ function hud(dt){
     if(t.prog>=1) el.classList.add('done'); else el.classList.remove('done');
   });
   updRoster();
-  const d=(role==='teacher')?99:Math.hypot(teacher.x-me.x,teacher.z-me.z);
+  /* 2vs8モード：心音は近い方の先生に反応させる(2026-09-11、teacher2は
+     常にstealth<=0なので、teacher2が近ければ確実に心音が鳴る) */
+  const heartT=(teacher2&&Math.hypot(teacher2.x-me.x,teacher2.z-me.z)<Math.hypot(teacher.x-me.x,teacher.z-me.z))?teacher2:teacher;
+  const d=(role==='teacher')?99:Math.hypot(heartT.x-me.x,heartT.z-me.z);
   const hbRange=terrorRadius(me);
-  const inHbRange=(role!=='teacher'&&d<hbRange&&teacher.stealth<=0);
+  const inHbRange=(role!=='teacher'&&d<hbRange&&heartT.stealth<=0);
   if(inHbRange){
     elHeart.style.display='flex'; elHeart.classList.add('on');
     heartbeat(d,dt,hbRange);
@@ -9667,6 +9781,8 @@ function tick(now){
     move(teacher,Math.sin(teacher.yaw)*1.5,Math.cos(teacher.yaw)*1.5,dt);
     teacher.yaw+=dt*0.8;
   }
+  /* 2vs8モード：2人目の先生は常にAI(2026-09-11) */
+  if(teacher2) aiTeacher2(dt);
   for(const s of students){
     if(s===me) continue;
     if(updVault(s,dt)) continue;
@@ -9899,6 +10015,14 @@ function tick(now){
     for(const s of students){
       if(s.state==='free'&&!s.hide&&Math.hypot(s.x-teacher.x,s.z-teacher.z)<2.1){
         teacher.cool=1.0; teacher.swing=1; hit(s);
+      }
+    }
+  }
+  /* 2vs8モード：2人目の先生の基本攻撃(常にAIなのでrole判定は不要、2026-09-11) */
+  if(teacher2&&teacher2.cool<=0&&teacher2.stun<=0){
+    for(const s of students){
+      if(s.state==='free'&&!s.hide&&Math.hypot(s.x-teacher2.x,s.z-teacher2.z)<2.1){
+        teacher2.cool=1.0; teacher2.swing=1; hit(s,false,teacher2);
       }
     }
   }
@@ -10203,6 +10327,18 @@ function tick(now){
       redStain.scale.set(pl,1,pl);
     }
   }
+  /* 2vs8モード：2人目の先生の赤い光(常に固有能力の隠密系が0のままなので
+     show条件は単純、2026-09-11) */
+  if(teacher2){
+    const show2=(role==='student');
+    redStain2.visible=show2;
+    if(show2){
+      redStain2.position.set(teacher2.x,0,teacher2.z);
+      redStain2.rotation.y=teacher2.yaw;
+      const pl2=0.85+Math.sin(elapsed*3.4+1.7)*0.15;
+      redStain2.scale.set(pl2,1,pl2);
+    }
+  } else redStain2.visible=false;
   /* 突進の溜め表示 */
   if(teacher.charge>0.05){
     const len=4+teacher.charge*16;
@@ -10220,11 +10356,12 @@ function tick(now){
     e.px=e.x; e.pz=e.z;
     e.stillT=(moved>0.02)?0:(e.stillT||0)+dt;
     if(e.kind==='student'&&e.state==='carried'){
-      const sx=Math.sin(teacher.yaw),sz=Math.cos(teacher.yaw);
+      const g=e.grabber||teacher;   /* 2vs8モード：teacher2に運ばれている場合はそちらに追従(2026-09-11) */
+      const sx=Math.sin(g.yaw),sz=Math.cos(g.yaw);
       const sh=Math.sin(elapsed*22)*0.16*(e.wig||0);
       e.mesh.visible=true;
-      e.mesh.position.set(teacher.x-sx*0.15,1.45,teacher.z-sz*0.15);
-      e.mesh.rotation.set(0,teacher.yaw+sh,1.5);
+      e.mesh.position.set(g.x-sx*0.15,1.45,g.z-sz*0.15);
+      e.mesh.rotation.set(0,g.yaw+sh,1.5);
       u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
       u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
       continue;
@@ -10712,7 +10849,11 @@ function voiceUpdateVolumes(){
   });
 }
 
-function netMaxSlots(){ if(gameMode==='event') return 9; return role==='teacher'?4:3; }
+function netMaxSlots(){
+  if(gameMode==='event') return 7;   /* 怪異退治モード：追跡者1+生徒最大7=8人まで(host含む) */
+  if(gameMode==='classic2') return role==='teacher'?8:7;   /* 2vs8モード：2人目の先生は常にAIなので枠不要 */
+  return role==='teacher'?4:3;
+}
 function netStudentIndexForSlot(slot){ return role==='teacher'?slot:(slot+1); }
 function netStuIdx(s){ return students.indexOf(s); }
 function netPickCode(){
@@ -10984,9 +11125,20 @@ function netClientOnStart(payload){
      初回の開始時は既に綺麗な状態なので、これは無害な二重掃除になる */
   softReset(true);
   curStage=payload.stage; teacherKind=payload.teacherKind; DIFF=payload.diff;
+  gameMode=payload.gameMode||'classic';
   rosterPick=payload.rosterPick; weaponPick=payload.weaponPick||'';
   netClientSlot=payload.mySlot;
   spawnAll(); buildRoster();
+  /* 2vs8モード：2人目の先生の見た目(キャラ種類)をホストと合わせる。
+     spawnAll()内ではteacher2の見た目をランダムに決めてしまうため、
+     ホストが実際に割り当てたteacherKind2で作り直す(2026-09-11) */
+  if(gameMode==='classic2'&&payload.teacherKind2&&teacher2){
+    scene.remove(teacher2.mesh);
+    if(teacher2.dnMeshes) teacher2.dnMeshes.forEach(function(m){ scene.remove(m); });
+    const pos={x:teacher2.x,z:teacher2.z};
+    teacher2=buildTeacherObj(payload.teacherKind2,pos,false);
+    players=students.concat([teacher]).concat([teacher2]);
+  }
   netApplyTaskDesks(payload.taskDesks);
   applyItemBoxRoll(payload.itemBoxRoll);
   role='student'; me=students[netClientSlot];
@@ -11247,6 +11399,10 @@ function netHostBroadcastSnapshot(dt){
       mrBlend:!!(teacher.mrBlendT>0),
       mrBlendIdx:(teacher.mrBlendMesh&&teacher.mrMeshes)?teacher.mrMeshes.indexOf(teacher.mrBlendMesh):-1,
       saForm:teacher.saForm||0, dlLevel:teacher.dlLevel||1 } },
+    /* 2vs8モード：2人目の先生は固有能力を使わないので同期する情報は最小限
+       (座標・向き・運搬中かどうか)のみで足りる(2026-09-11) */
+    tea2: teacher2?{ x:teacher2.x, z:teacher2.z, yaw:teacher2.yaw,
+      carrying: teacher2.carrying?netStuIdx(teacher2.carrying):-1 } : null,
     stu: students.map(function(s){
       return { x:s.x, z:s.z, yaw:s.yaw, f:{
         state:s.state, dmg:s.dmg, hurt:s.hurt, hide:!!s.hide, sleep:s.sleep, confuse:s.confuse,
@@ -11267,7 +11423,8 @@ function netHostBroadcastSnapshot(dt){
            専用モデルを飛ばして見せる必要があるので位置・向きごと配信する */
         cheatT:s.cheatT||0,
         crowActive:!!s.crowActive, crowX:s.crowX||0, crowZ:s.crowZ||0, crowYaw:s.crowYaw||0,
-        fan:(s.item==='fan'&&!!s.itemHoldInput&&s.itemAmmo>0), fanYaw:s.fanYaw||0 } };
+        fan:(s.item==='fan'&&!!s.itemHoldInput&&s.itemAmmo>0), fanYaw:s.fanYaw||0,
+        grabTea2:(s.grabber===teacher2&&!!teacher2) } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -11304,6 +11461,7 @@ function netInterpolate(dt){
   for(let i=0;i<students.length;i++){
     const s=students[i], tgt=snap.stu&&snap.stu[i]; if(!tgt) continue;
     Object.assign(s,tgt.f);
+    s.grabber=(tgt.f.grabTea2&&teacher2)?teacher2:null;
     s.mesh.visible=!tgt.f.hide&&!tgt.f.crowActive;
     updItemMesh(s);
     /* 参加者(クライアント)側は自分でupdItemUse()を回さないため、
@@ -11368,6 +11526,11 @@ function netInterpolate(dt){
       if(wantIdx>=0){ teacher.mrTrueMesh.visible=false; teacher.mesh=teacher.mrMeshes[wantIdx]; }
       else { teacher.mrTrueMesh.visible=true; teacher.mesh=teacher.mrTrueMesh; }
     }
+  }
+  if(snap.tea2&&teacher2){
+    teacher2.carrying=(snap.tea2.carrying>=0)?students[snap.tea2.carrying]:null;
+    teacher2.x+=(snap.tea2.x-teacher2.x)*rate; teacher2.z+=(snap.tea2.z-teacher2.z)*rate;
+    teacher2.yaw=angLerp(teacher2.yaw,snap.tea2.yaw,rate);
   }
   if(snap.tasks) snap.tasks.forEach(function(p,i){
     const d=tasks[i]; if(!d) return;
@@ -11531,11 +11694,12 @@ function netClientTick(dt){
     e.px=e.x; e.pz=e.z;
     e.stillT=(moved>0.02)?0:(e.stillT||0)+dt;
     if(e.kind==='student'&&e.state==='carried'){
-      const sx=Math.sin(teacher.yaw),sz=Math.cos(teacher.yaw);
+      const g=e.grabber||teacher;   /* 2vs8モード：teacher2に運ばれている場合はそちらに追従(2026-09-11) */
+      const sx=Math.sin(g.yaw),sz=Math.cos(g.yaw);
       const sh=Math.sin(elapsed*22)*0.16*(e.wig||0);
       e.mesh.visible=true;
-      e.mesh.position.set(teacher.x-sx*0.15,1.45,teacher.z-sz*0.15);
-      e.mesh.rotation.set(0,teacher.yaw+sh,1.5);
+      e.mesh.position.set(g.x-sx*0.15,1.45,g.z-sz*0.15);
+      e.mesh.rotation.set(0,g.yaw+sh,1.5);
       u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
       u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
       continue;
@@ -12685,7 +12849,9 @@ function startMatch(){
   const others=[];
   for(let i=0;i<STU.length;i++) if(i!==myIndex) others.push(i);
   others.sort(function(){ return Math.random()-0.5; });
-  rosterPick=[myIndex,others[0],others[1],others[2]];
+  /* 2vs8モードは生徒8人、通常モードは従来通り4人(2026-09-11) */
+  const needStu=(gameMode==='classic2')?8:4;
+  rosterPick=[myIndex].concat(others.slice(0,needStu-1));
   spawnAll();
   rollItemBoxes();
   applyLoadout();
@@ -12700,6 +12866,7 @@ function startMatch(){
     const itemBoxRoll=itemBoxes.map(function(b){ return b.item; });
     netConns.forEach(function(c){
       netSend(c.conn,{t:'start', stage:curStage, teacherKind:teacherKind, diff:DIFF,
+        gameMode:gameMode, teacherKind2:(teacher2?teacher2.kindKey:''),
         rosterPick:rosterPick, weaponPick:weaponPick, taskDesks:taskDesks,
         itemBoxRoll:itemBoxRoll, mySlot:netStudentIndexForSlot(c.slot)});
     });
@@ -12738,7 +12905,8 @@ function softReset(keepNet){
   /* ダークノードの狼/コウモリ用の予備メッシュは現在表示中でない分が
      players側のループでは消えないので、ここでまとめて片付ける */
   if(teacher&&teacher.dnMeshes) teacher.dnMeshes.forEach(function(m){ scene.remove(m); });
-  students=[]; teacher=null; players=[]; me=null;
+  if(teacher2&&teacher2.dnMeshes) teacher2.dnMeshes.forEach(function(m){ scene.remove(m); });
+  students=[]; teacher=null; teacher2=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
   chemTraps.forEach(function(c){ scene.remove(c.m); }); chemTraps.length=0;
   snares.forEach(function(n){ scene.remove(n.m); }); snares.length=0;
@@ -12763,7 +12931,7 @@ function softReset(keepNet){
   possessT=0; possessor=null; puppet=null;
   revealPillars.forEach(function(m){ scene.remove(m); }); revealPillars.length=0; revealT=0;
   if(teacher&&teacher.clone) scene.remove(teacher.clone.g);
-  redStain.visible=false;
+  redStain.visible=false; redStain2.visible=false;
   walls.forEach(function(w){ w.tiles.forEach(function(q){ if(grid[q[1]][q[0]]==='K') grid[q[1]][q[0]]='.'; });
     scene.remove(w.g); }); walls.length=0;
   oniAllies.forEach(function(o){ scene.remove(o.mesh); }); oniAllies.length=0;
@@ -13120,7 +13288,7 @@ function updAdminViz(){
    ホスト権威モデルなど）を最大限流用し、衝突を避けるため専用の evt* 名前空間に
    まとめ、tick()の冒頭で早期分岐して既存の4vs1モードには一切手を加えない設計にした。
 =================================================================================== */
-let gameMode='classic';     // 'classic'(先生1vs生徒4) | 'event'(追跡者2vs生徒8)
+let gameMode='classic';     // 'classic'(先生1vs生徒4) | 'classic2'(先生2vs生徒8、通常モードの人数拡張版) | 'event'(怪異退治モード、追跡者1vs生徒最大7)
 let evtRunning=false;       // イベントモードの試合が今動作中か(tick分岐・後片付け判定用)
 
 /* ---- オリジナル追跡者2種(元ネタの固有名詞は一切使わず学校の怪談として新規作成) ---- */
