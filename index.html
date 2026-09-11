@@ -9134,6 +9134,29 @@ function hud(dt){
   drawMini();
 }
 
+/* 歩行アニメの共通ヘルパー：進んだ距離(moved)から脚・腕の振り＋胴体の呼吸＋
+   スカート揺れを計算する。classicモード(tick()/netClientTick())とイベント
+   モード(evtHostTick()/evtNetInterpolate())の両方から呼ぶ共通処理にすることで、
+   「片方だけ直して片方に反映し忘れる」重複バグを防ぐ(2026-09-11)。
+   戻り値は頭の上下ブレ量(br)。呼び出し側で頭の姿勢(通常/負傷/相手を見る等)に使う */
+function animateWalk(u,moved,dt){
+  u.phase+=moved*1.5;
+  /* 振り幅を滑らかに補間して、動き出し・止まり際のカクつきを無くす */
+  const walkTarget=Math.min(1,moved*24);
+  u.walkAmp=(u.walkAmp===undefined?walkTarget:u.walkAmp)+
+    (walkTarget-(u.walkAmp||0))*Math.min(1,dt*9);
+  const sw=Math.sin(u.phase)*0.62*u.walkAmp;
+  u.legL.rotation.x=sw; u.legR.rotation.x=-sw;
+  u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
+  const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
+  if(u.torso) u.torso.scale.set(1+br,1-br*0.5,1+br);
+  if(u.skirt){
+    u.skirt.rotation.x=-Math.min(0.34,moved*11);
+    u.skirt.rotation.z=Math.sin(u.phase)*Math.min(0.16,moved*7);
+  }
+  return br;
+}
+
 /* ===== ループ ===== */
 let last=performance.now();
 function tick(now){
@@ -10270,15 +10293,8 @@ function tick(now){
     } else {
       e.mesh.rotation.x=0;
       u.armL.rotation.z=0; u.armR.rotation.z=0;
-      /* 歩行アニメ：進んだ距離で位相を回す */
-      u.phase+=moved*1.5;
-      /* 振り幅を滑らかに補間して、動き出し・止まり際のカクつきを無くす */
-      const walkTarget=Math.min(1,moved*24);
-      u.walkAmp=(u.walkAmp===undefined?walkTarget:u.walkAmp)+
-        (walkTarget-(u.walkAmp||0))*Math.min(1,dt*9);
-      const sw=Math.sin(u.phase)*0.62*u.walkAmp;
-      u.legL.rotation.x=sw; u.legR.rotation.x=-sw;
-      u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
+      /* 歩行アニメ：進んだ距離で位相を回す（共通ヘルパーanimateWalk()、2026-09-11） */
+      const br=animateWalk(u,moved,dt);
       if(e===teacher&&teacher.crawl>0){
         e.mesh.rotation.x=-1.15; e.mesh.position.y=0.35;
         if(teacher.oneshot>0&&Math.random()<0.4){
@@ -10312,12 +10328,6 @@ function tick(now){
         const w=1-teacher.wipe/(teacher.kindKey==='teke'?21.84:3.64);
         u.armR.rotation.x=-1.1+Math.sin(w*Math.PI*3)*0.5;
         u.armL.rotation.x=-0.7;
-      }
-      const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
-      if(u.torso) u.torso.scale.set(1+br,1-br*0.5,1+br);
-      if(u.skirt){
-        u.skirt.rotation.x=-Math.min(0.34,moved*11);
-        u.skirt.rotation.z=Math.sin(u.phase)*Math.min(0.16,moved*7);
       }
       if(e.kind==='student'&&e.hurt) u.head.rotation.x=0.18+br; else u.head.rotation.x=br;
       if(e.kind==='student'&&teacher&&Math.hypot(teacher.x-e.x,teacher.z-e.z)<18){
@@ -11577,19 +11587,7 @@ function netClientTick(dt){
       u.armL.rotation.x=-1.5; u.armR.rotation.x=-1.5;
     } else {
       e.mesh.rotation.x=0;
-      u.phase+=moved*1.5;
-      const walkTarget=Math.min(1,moved*24);
-      u.walkAmp=(u.walkAmp===undefined?walkTarget:u.walkAmp)+
-        (walkTarget-(u.walkAmp||0))*Math.min(1,dt*9);
-      const sw=Math.sin(u.phase)*0.62*u.walkAmp;
-      u.legL.rotation.x=sw; u.legR.rotation.x=-sw;
-      u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
-      const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
-      if(u.torso) u.torso.scale.set(1+br,1-br*0.5,1+br);
-      if(u.skirt){
-        u.skirt.rotation.x=-Math.min(0.34,moved*11);
-        u.skirt.rotation.z=Math.sin(u.phase)*Math.min(0.16,moved*7);
-      }
+      const br=animateWalk(u,moved,dt);
       if(e.kind==='student'&&e.hurt) u.head.rotation.x=0.18+br; else u.head.rotation.x=br;
     }
   }
@@ -13797,7 +13795,41 @@ function evtApplyRemoteStudentInput(s,inp,dt){
 }
 
 /* =========================== ホスト権威メインループ =========================== */
+/* イベントモードのキャラアニメ(歩行/ダウン/拘束中/担がれ中)の共通ヘルパー。
+   classicモードのtick()/netClientTick()にある足のアニメ計算をanimateWalk()に
+   切り出したのと同じ考え方で、evtHostTick()とevtNetInterpolate()の両方から
+   呼ぶ(2026-09-11、歩行アニメが抜けていたバグの修正)。carrierは追跡者に
+   捕まっている場合の運搬役(chaser)、無ければnull */
+function evtAnimateEntity(e,carrier,dt){
+  const u=e.mesh.userData;
+  const moved=Math.hypot(e.x-(e.px||e.x),e.z-(e.pz||e.z));
+  e.px=e.x; e.pz=e.z;
+  if(carrier){
+    const sx=Math.sin(carrier.yaw),sz=Math.cos(carrier.yaw);
+    const sh=Math.sin(elapsed*22)*0.16*(e.wig||0);
+    e.mesh.position.set(carrier.x-sx*0.15,1.45,carrier.z-sz*0.15);
+    e.mesh.rotation.set(0,carrier.yaw+sh,1.5);
+    u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
+    u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
+    return;
+  }
+  if(e.state==='downed'){
+    e.mesh.rotation.z=1.35; e.mesh.position.y=0.55;
+    u.legL.rotation.x=0.25; u.legR.rotation.x=-0.15;
+    u.armL.rotation.x=0.5; u.armR.rotation.x=-0.4;
+  } else if(e.trapped){
+    const w=Math.sin(elapsed*18);
+    e.mesh.rotation.z=w*0.1; e.mesh.rotation.x=0;
+    u.legL.rotation.x=0.2; u.legR.rotation.x=-0.2;
+    u.armL.rotation.x=-1.2+w*0.6; u.armR.rotation.x=-1.2-w*0.6;
+  } else {
+    e.mesh.rotation.x=0; e.mesh.rotation.z=0;
+    const br=animateWalk(u,moved,dt);
+    if(u.head) u.head.rotation.x=br;
+  }
+}
 function evtHostTick(dt){
+  elapsed+=dt;
   evtElapsed+=dt;
   if(evtTimer>0){ evtTimer=Math.max(0,evtTimer-dt); }
   if(netMode!=='client') evtHandleLocalInput(dt);
@@ -13812,7 +13844,8 @@ function evtHostTick(dt){
     evtUpdChaserAbilities(c,dt); evtScentReveal(c);
     if(c.sealed>0){ c.sealed=Math.max(0,c.sealed-dt); setAura(c,'rainbow',0.5); }
     updAura(c,dt);
-    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated; }
+    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated;
+      evtAnimateEntity(c,null,dt); }
   });
   evtStudents.forEach(function(s){
     if(s.state==='free'){ evtUpdRescue(s,dt); evtTryRepairHelp(s,dt); }
@@ -13824,7 +13857,9 @@ function evtHostTick(dt){
     if(s.senpai&&s.state==='free') setAura(s,'reveal',0.6);
     updAura(s,dt);
     if(s.mesh){ s.mesh.position.set(s.x,0,s.z); s.mesh.rotation.y=s.yaw;
-      s.mesh.visible=(s.state!=='out'&&s.state!=='escaped'); }
+      s.mesh.visible=(s.state!=='out'&&s.state!=='escaped');
+      const carrier=evtChasers.filter(function(c){return c.carrying===s;})[0]||null;
+      evtAnimateEntity(s,carrier,dt); }
   });
   evtUpdTraps(dt); evtUpdKnifeFx(dt); evtUpdHelp(dt); updFx(dt);
   evtCheckEnd();
@@ -13862,19 +13897,23 @@ function evtNetInterpolate(dt){
     c.x=f.x; c.z=f.z; c.yaw=f.yaw; c.stanceOn=f.stanceOn; c.endgame=f.endgame;
     c.defeated=f.defeated; c.sealed=f.sealed; c.swing=f.swing; c.atk=f.atk;
     c.carrying=(f.carrying>=0)?evtStudents[f.carrying]:null;
-    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated; }
+    if(c.mesh){ c.mesh.position.set(c.x,0,c.z); c.mesh.rotation.y=c.yaw; c.mesh.visible=!c.defeated;
+      evtAnimateEntity(c,null,dt); }
   });
   s.stu.forEach(function(f,i){
     const st=evtStudents[i]; if(!st) return;
     st.x=f.x; st.z=f.z; st.yaw=f.yaw; st.state=f.state; st.hpCur=f.hpCur;
     st.wig=f.wig; st.trapped=f.trapped; st.senpai=f.senpai; st.fear=f.fear;
     if(st.mesh){ st.mesh.position.set(st.x,0,st.z); st.mesh.rotation.y=st.yaw;
-      st.mesh.visible=(st.state!=='out'&&st.state!=='escaped'); }
+      st.mesh.visible=(st.state!=='out'&&st.state!=='escaped');
+      const carrier=evtChasers.filter(function(c){return c.carrying===st;})[0]||null;
+      evtAnimateEntity(st,carrier,dt); }
   });
   (s.parts_taken||[]).forEach(function(tk,i){ if(evtPartsObjs[i]){ evtPartsObjs[i].taken=tk; evtPartsObjs[i].mesh.visible=!tk; } });
   (s.tal_taken||[]).forEach(function(tk,i){ if(evtTalismanObjs[i]){ evtTalismanObjs[i].taken=tk; evtTalismanObjs[i].mesh.visible=!tk; } });
 }
 function evtClientTick(dt){
+  elapsed+=dt;
   evtNetInterpolate(dt);
   const me=evtMe; if(!me){ renderScene(); return; }
   let fx1=0,fz1=0;
