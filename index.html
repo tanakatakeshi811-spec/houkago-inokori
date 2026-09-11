@@ -466,6 +466,13 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #dronehud.on{display:block}
 #dronehud i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   font-style:normal;font-size:10px;color:#7fd4a2;letter-spacing:.2em;white-space:nowrap}
+/* 使いカラス視点のHUD。#dronehudと全く同じ構造・位置で色だけ変えている
+   (2026-09-11追加) */
+#crowhud{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:150px;height:150px;border:2px dashed #bfe8ffaa;border-radius:6px;display:none}
+#crowhud.on{display:block}
+#crowhud i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-style:normal;font-size:10px;color:#bfe8ff;letter-spacing:.2em;white-space:nowrap}
 #vig{position:absolute;inset:0;opacity:0;transition:opacity .3s;
   background:radial-gradient(120% 90% at 50% 50%,transparent 40%,#c7452f66 100%)}
 /* 常時うっすら効かせる周辺減光。ホラー映画っぽい画面の締まりを出す（被弾時の#vigとは別枠） */
@@ -519,6 +526,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <div id="blind"></div>
   <div id="fate">運命の旋律<b id="fatetxt"></b></div>
   <div id="dronehud"><i>ドローン視点</i></div>
+  <div id="crowhud"><i>カラス視点</i></div>
   <div id="vig"></div>
   <div id="moodvig"></div>
   <div id="micind" class="pe"><i></i><span id="micindtxt">マイク OFF</span></div>
@@ -2655,8 +2663,13 @@ function applyItemBoxRoll(arr){
 function itemAmmoMax(s){
   if(s.item==='flashlight') return 100*itemAddonVal(s,'battMul');
   if(s.item==='syringe') return 2+itemAddonAdd(s,'usesAdd');
+  if(s.item==='cheatsheet') return 1+itemAddonAdd(s,'usesAdd');
+  if(s.item==='crow') return 50*itemAddonVal(s,'timeMul');
+  if(s.item==='fan') return 100;
   return 0;
 }
+/* カンニングペーパー1回分の効果時間(アドオンのdurMulで伸縮) */
+function cheatDurFor(s){ return 10*itemAddonVal(s,'durMul'); }
 function updItemBoxes(dt){
   itemBoxes.forEach(function(b){
     if(!b.item||b.taken) return;
@@ -3217,12 +3230,54 @@ function makeWeapon(kind,S){
     const lens=new THREE.Mesh(new THREE.CircleGeometry(0.14*S,10),
       new THREE.MeshBasicMaterial({color:0xfff2c0}));
     lens.position.set(0,0,1.16*S); g.add(lens);
+  } else if(kind==='cheatsheet'){
+    /* カンニングペーパー：手のひらサイズの紙切れ+文字っぽい線 */
+    bx(g,LM(0xf4f0e0),0.62*S,0.02*S,0.8*S,0,0,0.4*S);
+    for(let i=0;i<4;i++) bx(g,LM(0x8a8270),0.4*S,0.01*S,0.03*S,0,0.012*S,0.18*S+i*0.15*S);
+  } else if(kind==='crowcall'){
+    /* 使いカラス：まだ飛ばしていない間、手に持たせる小さな鳥笛/止まり木 */
+    bx(g,LM(0x6b4a2a),0.1*S,0.1*S,0.7*S,0,0,0.35*S);
+    bx(g,LM(0x1a1a1e),0.24*S,0.2*S,0.3*S,0,0.12*S,0.7*S);
+  } else if(kind==='fan'){
+    /* ハンディファン：柄+丸い送風口(輪っかで簡易表現) */
+    bx(g,LM(0x2a2e32),0.14*S,0.14*S,0.7*S,0,0,0.35*S);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.3*S,0.05*S,8,14),LM(0xb9c2c6));
+    ring.position.set(0,0,0.85*S); g.add(ring);
+    for(let i=0;i<3;i++){
+      const blade=bx(g,LM(0xdfe6ea),0.28*S,0.03*S,0.08*S,0,0,0.85*S);
+      blade.rotation.z=i*Math.PI*2/3;
+    }
   } else if(kind==='sword'){
     bx(g,LM(0xdfe6ea),0.09*S,0.36*S,3.2*S,0,0.1*S,1.9*S);
     bx(g,LM(0x24272b),0.15*S,0.15*S,0.9*S,0,0,0.35*S);
     bx(g,LM(0xc9a24a),0.55*S,0.1*S,0.14*S,0,0,0.82*S);
     bx(g,LM(0x8a2f28),0.16*S,0.16*S,0.16*S,0,0,-0.1*S);
   }
+  return g;
+}
+/* 使いカラス(crow)専用の低ポリ3Dモデル。人型person()の使い回しではなく、
+   このプロジェクトの他モデルと同じ「箱+球+円錐」の低ポリ組み合わせで
+   新規に作った専用モデル(2026-09-11追加)。三人称視点で見えるのはこの
+   モデルのみで、生徒本体のmeshは飛行中hideする。翼は左右別グループにして
+   羽ばたきアニメ(updCrowFlight側でrotation.zを揺らす)を掛けられるように
+   している */
+function makeCrowModel(){
+  const g=new THREE.Group();
+  const body=LM(0x18181c), beakC=LM(0x3a2c1a), eyeC=new THREE.MeshBasicMaterial({color:0xffcf4a});
+  bx(g,body,0.34,0.3,0.66,0,0,0);                       /* 胴体 */
+  bx(g,body,0.24,0.22,0.26,0,0.1,0.4);                  /* 頭 */
+  bx(g,beakC,0.09,0.08,0.22,0,0.06,0.58);                /* くちばし */
+  bx(g,eyeC,0.04,0.04,0.02,-0.09,0.15,0.5);
+  bx(g,eyeC,0.04,0.04,0.02, 0.09,0.15,0.5);
+  bx(g,body,0.05,0.05,0.28,-0.05,-0.18,0.5).rotation.x=0.5; /* 足(左) */
+  bx(g,body,0.05,0.05,0.28, 0.05,-0.18,0.5).rotation.x=0.5; /* 足(右) */
+  const tail=bx(g,body,0.3,0.05,0.32,0,-0.02,-0.44);
+  tail.rotation.x=-0.2;
+  const wingL=new THREE.Group(); wingL.position.set(-0.15,0.04,0.02); g.add(wingL);
+  bx(wingL,body,0.55,0.05,0.32,-0.28,0,0);
+  const wingR=new THREE.Group(); wingR.position.set(0.15,0.04,0.02); g.add(wingR);
+  bx(wingR,body,0.55,0.05,0.32,0.28,0,0);
+  g.userData.wingL=wingL; g.userData.wingR=wingR;
   return g;
 }
 /* opt: uniform,hair,accent,tall,body,head,weapon,acc */
@@ -4137,7 +4192,16 @@ const ITEMS=[
   addons:['fl_batt','fl_narrow','fl_wide','fl_quick','fl_long']},
  {key:'syringe',name:'注射器',cost:55,
   desc:'その場に留まって注射すると自分の傷を手当てできる。中身がなくなるまで複数回使える',
-  addons:['sy_extra','sy_fast','sy_share','sy_quiet']}
+  addons:['sy_extra','sy_fast','sy_share','sy_quiet']},
+ {key:'cheatsheet',name:'カンニングペーパー',cost:60,
+  desc:'使うと課題の進行速度が11倍(+1000%)になる。効果は基本10秒で、切れると使い切り',
+  addons:['cs_long','cs_short','cs_share','cs_stealth']},
+ {key:'crow',name:'使いカラス',cost:85,
+  desc:'放つと視点がカラスに切り替わり、向いていた方向へ自動で飛んでいく（左右に方向転換できる）。壁や障害物にぶつかると強制終了。先生にぶつけると4秒スタンさせられるが、逆に先生に撃ち落とされると自分がその場でスタンする。飛行時間の合計には限りがある',
+  addons:['crow_speed','crow_agile','crow_battery','crow_stun','crow_tough']},
+ {key:'fan',name:'ハンディファン',cost:50,
+  desc:'構えている間だけ送風する。左右の入力で向きを調整可能。静止中に相手へ当てると風下方向へ50%の速度で押し流せる。歩行/走行中に構えると反動で自分の移動速度が+50%になり、風下にいる先生の速度を10%落とす',
+  addons:['fan_range','fan_wide','fan_power','fan_teacher_slow','fan_efficient']}
 ];
 function itemOf(key){ return ITEMS.filter(function(i){return i.key===key;})[0]; }
 const ADDONS={
@@ -4153,6 +4217,26 @@ const ADDONS={
   {key:'sy_fast',  name:'速効性の薬液',   cost:20,desc:'手当てにかかる時間が短くなる',timeMul:0.6},
   {key:'sy_share', name:'共有キット',     cost:30,desc:'2.5m以内にいる仲間にも同時に効果が及ぶが、使える回数が1回減る',share:true,usesAdd:-1},
   {key:'sy_quiet', name:'消音キャップ',   cost:15,desc:'使用中に鳴る物音が小さくなる',quiet:true}
+ ],
+ cheatsheet:[
+  {key:'cs_long',   name:'予備の写し',       cost:30,desc:'効果時間が50%伸びる',durMul:1.5},
+  {key:'cs_short',  name:'急ごしらえの走り書き',cost:30,desc:'1回の効果時間は40%短くなるが、使える回数が1回増える',durMul:0.6,usesAdd:1},
+  {key:'cs_share',  name:'覗き見の相談',     cost:35,desc:'2.5m以内にいる仲間にも同時に効果が及ぶが、使える回数が1回減る',share:true,usesAdd:-1},
+  {key:'cs_stealth',name:'陰で読む',         cost:20,desc:'使用中、物音が伝わる範囲が20%小さくなる',noiseMul:0.8}
+ ],
+ crow:[
+  {key:'crow_speed', name:'風切り羽根',   cost:30,desc:'飛行速度が20%上がるが、飛行時間の消費も早くなる',speedMul:1.2,drainMul:1.25},
+  {key:'crow_agile', name:'身軽な体',     cost:25,desc:'方向転換の速さが30%上がる',turnMul:1.3},
+  {key:'crow_battery',name:'予備の止まり木',cost:30,desc:'合計の飛行時間が40%伸びる',timeMul:1.4},
+  {key:'crow_stun',  name:'鋭い爪',       cost:35,desc:'先生に命中させた時のスタン時間が1秒延びる',stunAdd:1},
+  {key:'crow_tough', name:'硬い羽',       cost:40,desc:'先生に一度撃ち落とされても、自分がスタンせずに済む（1回だけ）',tough:true}
+ ],
+ fan:[
+  {key:'fan_range',  name:'延長ノズル',     cost:25,desc:'風の届く距離が30%伸びる',rangeMul:1.3},
+  {key:'fan_wide',   name:'広角羽根',       cost:20,desc:'風の幅が広がるが、押し流す勢いは弱くなる',coneMul:1.3,pushMul:0.8},
+  {key:'fan_power',  name:'高出力モーター', cost:30,desc:'押し流す勢いが30%強くなるが、自分の移動時の速度上昇は少し控えめになる',pushMul:1.3,selfSpeedAdd:-0.1},
+  {key:'fan_teacher_slow',name:'冷却送風',  cost:30,desc:'移動しながら使った時の先生減速効果が10%→15%に強化される',slowAdd:0.05},
+  {key:'fan_efficient',name:'省電力ファン', cost:20,desc:'バッテリーの減りが30%遅くなる',drainMul:0.7}
  ],
  /* 写真部顧問(photo)専用の「アドオン」＝キャラクター固有能力の強化パーツ。
     上のflashlight/syringeは持ち物(アイテム)のアドオンだが、こちらはキャラの
@@ -4492,6 +4576,14 @@ function spawnAll(){
       downT:0,seatT:0,stam:1,path:[],pathT:0,rescueT:0,hide:null,vault:0,
       vTo:null,vFrom:null,slow:0,wig:0,px:0,pz:0,toppleFxT:0,
       item:'',itemAmmo:0,itemAddons:[],itemHoldInput:false,flCharge:0,syT:0,
+      /* 2026-09-11追加：新アイテム3種(カンニングペーパー/使いカラス/
+         ハンディファン)の状態フィールド。crowTurnInput/crowSlowInput/
+         fanAimInputは「今どちらへ入力しているか」を毎フレーム上書きする
+         だけの軽いフィールド(itemHoldInputと同じ扱い)、オンライン参加者は
+         netApplyStudentInput()側で自分の入力パケットの値を書き込む */
+      cheatT:0,itemHoldPrevInput:false,crowActive:false,crowX:0,crowZ:0,crowYaw:0,
+      crowSpd:0,crowTurnInput:0,crowSlowInput:false,crowToughUsed:false,
+      fanYaw:0,fanAimInput:0,
       traits:[],campT:0,campBroke:false,healBoostT:0,distortLeft:0,pdDownCount:0};
   });
   const far=spots.filter(function(w){
@@ -5525,7 +5617,9 @@ function updAura(s,dt){
 }
 const elFlash=document.getElementById('flash'),elVig=document.getElementById('vig'),
       elBlind=document.getElementById('blind'),elFate=document.getElementById('fate'),
-      elFateTxt=document.getElementById('fatetxt'),elDrone=document.getElementById('dronehud');
+      elFateTxt=document.getElementById('fatetxt'),elDrone=document.getElementById('dronehud'),
+      elCrowHud=document.getElementById('crowhud'),
+      elCrowHudTxt=document.querySelector('#crowhud i');
 function flashWhite(){
   elFlash.style.background='#ffffff'; elFlash.style.opacity='0.75';
   setTimeout(function(){ elFlash.style.opacity='0';
@@ -5579,21 +5673,144 @@ function updFlBeam(s,visible,range){
   m.rotation.y=s.yaw; m.scale.set(1,1,range);
   m.visible=true;
 }
+/* ハンディファン(fan)の送風ビーム。makeFlBeam()と全く同じ円錐ジオメトリの
+   仕組みを流用し、色だけ「風」らしい水色寄りに変えている(2026-09-11追加、
+   しゅんりさんの依頼文で名指しされた通りmakeFlBeam()の仕組みを再利用) */
+const fanBeams=[];
+function makeFanBeam(){
+  const geo=new THREE.CylinderGeometry(0.9,0.08,1,12,1,true);
+  geo.translate(0,0.5,0); geo.rotateX(Math.PI/2);
+  const mat=new THREE.MeshBasicMaterial({color:0xbfe8ff,transparent:true,opacity:0.22,
+    depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
+  const m=new THREE.Mesh(geo,mat); m.visible=false; m.renderOrder=980; scene.add(m);
+  fanBeams.push(m);
+  return m;
+}
+function updFanBeam(s,visible,range,yaw){
+  if(!visible){ if(s.fanBeam) s.fanBeam.visible=false; return; }
+  if(!s.fanBeam) s.fanBeam=makeFanBeam();
+  const m=s.fanBeam;
+  m.position.set(s.x+Math.sin(yaw)*0.35,1.25,s.z+Math.cos(yaw)*0.35);
+  m.rotation.y=yaw; m.scale.set(1,1,range);
+  m.visible=true;
+}
+const ITEM_WEAPON_KIND={flashlight:'flashlight',syringe:'syringe',
+  cheatsheet:'cheatsheet',crow:'crowcall',fan:'fan'};
 function updItemMesh(s){
-  const want=s.item||'';
+  /* カラス飛行中は本体ごと隠れる(=手持ちアイテムも見せない) */
+  const want=(s.item&&!s.crowActive)?s.item:'';
   if(s.itemMeshKind===want) return;
   const armR=s.mesh&&s.mesh.userData&&s.mesh.userData.armR;
   if(s.itemMesh&&armR){ armR.remove(s.itemMesh); }
   s.itemMesh=null; s.itemMeshKind=want;
   if(!want||!armR) return;
-  const w=makeWeapon(want==='flashlight'?'flashlight':'syringe',0.62);
+  const w=makeWeapon(ITEM_WEAPON_KIND[want]||'syringe',0.62);
   w.position.set(0,-0.68,0.22);
   armR.add(w); s.itemMesh=w;
+}
+/* ===== 使いカラス(crow) ===== 押すと視点/操作がカラスに切り替わり、
+   自動前進+左右操舵で自由に飛べる(2026-09-11追加)。ホスト権威モデルの
+   ため、この一式(start/upd/end)はホスト側のupdItemUse()からのみ呼ばれ、
+   参加者はcrowTurnInput/crowSlowInputを入力パケット経由で渡すだけにする
+   (netApplyStudentInput参照)。位置はnetHostBroadcastSnapshot()で他の
+   参加者にも配信し、netInterpolate()側で専用モデルを表示する */
+const CROW_SPD=9.0, CROW_TURN=2.0, CROW_R=0.4, CROW_HIT_R=1.5;
+const crowMeshes=[];   /* 試合終了時にまとめてscene.removeするための一覧 */
+function startCrow(s){
+  s.crowActive=true; s.crowX=s.x; s.crowZ=s.z; s.crowYaw=s.yaw; s.crowSpd=0;
+  if(s.mesh) s.mesh.visible=false;
+  if(!s.crowMesh){ s.crowMesh=makeCrowModel(); scene.add(s.crowMesh); crowMeshes.push(s.crowMesh); }
+  s.crowMesh.visible=true;
+  updItemMesh(s);
+  if(s===me){ toast('カラスを放った！(戻す:F　減速:走るボタン)'); }
+  beep(520,0.16,'sine',0.09);
+}
+function endCrow(s,success){
+  if(!s.crowActive) return;
+  s.crowActive=false;
+  if(s.crowMesh) s.crowMesh.visible=false;
+  if(s.mesh) s.mesh.visible=(s.state==='free'&&!s.hide);
+  updItemMesh(s);
+}
+function updCrowFlight(s,dt){
+  if(s.itemAmmo<=0){ if(s===me) toast('カラスの飛行時間を使い切った'); endCrow(s,false); return; }
+  s.itemAmmo=Math.max(0,s.itemAmmo-dt*itemAddonVal(s,'drainMul'));
+  const turnSpd=CROW_TURN*itemAddonVal(s,'turnMul');
+  s.crowYaw+=(s.crowTurnInput||0)*turnSpd*dt;
+  const spd=CROW_SPD*itemAddonVal(s,'speedMul')*(s.crowSlowInput?0.5:1);
+  const nx=s.crowX+Math.sin(s.crowYaw)*spd*dt, nz=s.crowZ+Math.cos(s.crowYaw)*spd*dt;
+  if(blocked(nx,nz,CROW_R)){
+    if(s===me) toast('カラスが何かにぶつかった！');
+    beep(140,0.22,'square',0.12);
+    endCrow(s,false);
+    return;
+  }
+  s.crowX=nx; s.crowZ=nz;
+  if(s.crowMesh){
+    s.crowMesh.position.set(s.crowX,2.3+Math.sin(elapsed*10)*0.08,s.crowZ);
+    s.crowMesh.rotation.y=s.crowYaw;
+    const u=s.crowMesh.userData;
+    if(u.wingL&&u.wingR){ const flap=Math.sin(elapsed*16)*0.6; u.wingL.rotation.z=flap; u.wingR.rotation.z=-flap; }
+  }
+  if(teacher&&Math.hypot(teacher.x-s.crowX,teacher.z-s.crowZ)<CROW_HIT_R){
+    const stunDur=4.0+itemAddonAdd(s,'stunAdd');
+    teacher.stun=Math.max(teacher.stun,stunDur);
+    if(teacher.atk){ teacher.atk=null; teacher.swing=0; }
+    teacher.path=[]; teacher.dash=0; teacher.charge=0;
+    toast((s===me?'カラスが命中！':s.name+'のカラスが命中！')+'先生を'+stunDur.toFixed(0)+'秒スタン');
+    beep(900,0.2,'triangle',0.12); bigNoise(0.2,0.5);
+    endCrow(s,true);
+  }
+}
+/* ===== ハンディファン(fan) ===== 構えている間だけ発動。狙う方向(fanYaw)は
+   呼び出し側(tick()/netApplyStudentInput)が「見ている向き(カメラyaw)」を
+   毎フレームs.fanYawにセットしてから呼ぶ約束にしている。WASD(移動)とは
+   独立してカメラを左右に振るだけで狙いを変えられるようにするため、
+   移動方向計算に使うs.yawではなくカメラ方向を使う(2026-09-11追加)。
+   静止中は「対象を風下へ押し流す」、移動中は「反動で自分が加速+狙った
+   先生を減速させる」の2モード切替。ビジュアルはmakeFlBeam()の仕組みを
+   流用したmakeFanBeam() */
+function updFanUse(s,dt,moving){
+  const range=9*itemAddonVal(s,'rangeMul');
+  const halfCone=0.3*itemAddonVal(s,'coneMul');
+  updFanBeam(s,true,range,s.fanYaw);
+  const drain=5*itemAddonVal(s,'drainMul');
+  s.itemAmmo=Math.max(0,s.itemAmmo-drain*dt);
+  if(s.itemAmmo<=0){ updFanBeam(s,false); return; }
+  if(!moving){
+    /* 静止モード：狙った相手を風下方向へ押し流す */
+    const pushSpd=3.2*itemAddonVal(s,'pushMul');
+    const targets=students.filter(function(o){ return o!==s&&o.state==='free'&&!o.hide; })
+      .concat(teacher?[teacher]:[]);
+    targets.forEach(function(o){
+      const dx=o.x-s.x,dz=o.z-s.z,d=Math.hypot(dx,dz);
+      if(d>range) return;
+      const ang=Math.atan2(dx,dz);
+      const diff=Math.abs(((ang-s.fanYaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+      if(diff>=halfCone) return;
+      if(!los(s.x,s.z,o.x,o.z)) return;
+      move(o,Math.sin(s.fanYaw)*pushSpd,Math.cos(s.fanYaw)*pushSpd,dt);
+    });
+  } else {
+    /* 移動モード：反動で自分が加速し、風下にいる先生を減速させる */
+    s.fanRushT=0.3;
+    if(teacher){
+      const dx=teacher.x-s.x,dz=teacher.z-s.z,d=Math.hypot(dx,dz);
+      if(d<range){
+        const ang=Math.atan2(dx,dz);
+        const diff=Math.abs(((ang-s.fanYaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+        if(diff<halfCone&&los(s.x,s.z,teacher.x,teacher.z)){
+          teacher.fanSlowT=0.3; teacher.fanSlowAmt=itemAddonAdd(s,'slowAdd');
+        }
+      }
+    }
+  }
 }
 function updItemUse(s,dt){
   if(!s.item||s.state!=='free'||s.hide){ s.flCharge=0; updFlBeam(s,false); return; }
   const holding=!!s.itemHoldInput;
   if(s.item!=='flashlight') updFlBeam(s,false);
+  if(s.item!=='fan') updFanBeam(s,false);
   if(s.item==='flashlight'){
     if(!holding||s.itemAmmo<=0){ s.flCharge=Math.max(0,(s.flCharge||0)-dt*2); updFlBeam(s,false); return; }
     const drain=9*itemAddonVal(s,'drainMul');
@@ -5650,6 +5867,41 @@ function updItemUse(s,dt){
       }
       if(s.itemAmmo<=0&&s===me) toast('注射器を使い切った');
     }
+  } else if(s.item==='cheatsheet'){
+    /* アイテムボタンを「押した瞬間」だけ発動する消費アイテム。押しっぱなしでも
+       連続発動しないようエッジ検出する(holdingは瞬間の状態、edgeが立った
+       時だけ発動判定に使う) */
+    const edge=holding&&!s.itemHoldPrevInput;
+    s.itemHoldPrevInput=holding;
+    if(s.cheatT>0){
+      s.cheatT=Math.max(0,s.cheatT-dt);
+    } else if(edge){
+      if(s.itemAmmo<=0){ if(s===me) toast('カンニングペーパーを使い切った'); }
+      else{
+        s.itemAmmo=Math.max(0,s.itemAmmo-1);
+        s.cheatT=cheatDurFor(s);
+        if(itemHasAddonFlag(s,'share')){
+          students.forEach(function(o){
+            if(o!==s&&o.state==='free'&&!o.hide&&Math.hypot(o.x-s.x,o.z-s.z)<2.5) o.cheatT=Math.max(o.cheatT||0,s.cheatT);
+          });
+        }
+        if(s===me) toast('カンニングペーパーを使った！（'+s.cheatT.toFixed(0)+'秒、課題が11倍速）');
+        beep(660,0.18,'square',0.1);
+      }
+    }
+  } else if(s.item==='crow'){
+    const edge=holding&&!s.itemHoldPrevInput;
+    s.itemHoldPrevInput=holding;
+    if(!s.crowActive&&edge){
+      if(s.itemAmmo<=0){ if(s===me) toast('カラスの飛行時間が残っていない'); }
+      else startCrow(s);
+    }
+    if(s.crowActive) updCrowFlight(s,dt);
+  } else if(s.item==='fan'){
+    const mv=Math.hypot(s.x-(s.fanpx===undefined?s.x:s.fanpx),s.z-(s.fanpz===undefined?s.z:s.fanpz));
+    s.fanpx=s.x; s.fanpz=s.z;
+    if(!holding||s.itemAmmo<=0){ updFanBeam(s,false); return; }
+    updFanUse(s,dt,mv>0.02);
   }
 }
 function healDone(o,by){
@@ -5667,6 +5919,8 @@ function noiseR(s,r){
   if(s.perk==='nine') return r*0.5;
   if(s.perk==='zanshin'&&(s.stillT||0)>0.4) return r*0.15;
   if((s.tnCloakT||0)>0) return r*0.3;
+  /* カンニングペーパーの「陰で読む」アドオン：使用中だけ物音を抑える */
+  if((s.cheatT||0)>0&&s.item==='cheatsheet') r*=itemAddonVal(s,'noiseMul');
   return r;
 }
 const SAB2={ medic:'鎮痛剤', chem:'煙幕', tank:'風紀粛清', ghost:'粉爆弾',
@@ -6106,6 +6360,8 @@ function workTask(s,d,dt){
     (s.perk==='work'?1.12:(s.perk==='read'?1.10:(s.perk==='proto'?5.0:
       ((s.perk==='focus'||s.perk==='read2'||s.perk==='tome')?1.10:1))))*
     ((s.tnBoostT||0)>0?1.15:1)*
+    /* カンニングペーパー(cheatsheet)：発動中は課題の進行速度が11倍(+1000%) */
+    ((s.cheatT||0)>0?11:1)*
     (spotlightOn(s)?1.25:1)*traitTaskMul(s));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
   /* 共同作業感知(discordance)：2人以上が同じ机で一緒に作業していると位置がわかる */
@@ -7210,6 +7466,26 @@ function swingHits(force){
   const R=(force?5.4:5.0)*(pdActiveBoost()?1.2:1);   /* 届く距離（1マス=4） */
   const A=force?1.45:1.30;             /* 振り幅（左右それぞれ約75度） */
   for(const s of students){
+    /* 使いカラス(crow)を飛ばしている間は、生徒本体ではなくカラスの現在位置に
+       攻撃が当たるかを判定する。命中したらダメージではなく「カラス強制終了
+       ＋操作者スタン」（硬い羽アドオン所持・未消費なら1回だけ無効化）にする
+       (2026-09-11追加) */
+    if(s.crowActive){
+      const dxc=s.crowX-teacher.x,dzc=s.crowZ-teacher.z,dc=Math.hypot(dxc,dzc);
+      if(dc>R) continue;
+      const angc=Math.atan2(dxc,dzc);
+      const diffc=Math.abs(((angc-teacher.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+      if(dc>2.4){
+        if(diffc>=A) continue;
+        if(!los(teacher.x,teacher.z,s.crowX,s.crowZ)) continue;
+      }
+      const spared=itemHasAddonFlag(s,'tough')&&!s.crowToughUsed;
+      if(spared){ s.crowToughUsed=true; toast('硬い羽のおかげで無傷で済んだ'); }
+      else{ s.freeze=Math.max(s.freeze||0,3.0); toast((s===me?'カラスが':s.name+'のカラスが')+'撃ち落とされた！'); }
+      endCrow(s,false);
+      beep(160,0.22,'sawtooth',0.13); landed=true;
+      continue;
+    }
     if(s.state!=='free'||s.hide) continue;
     const dx=s.x-teacher.x,dz=s.z-teacher.z,d=Math.hypot(dx,dz);
     if(d>R) continue;
@@ -8134,7 +8410,7 @@ function aiTeacher(dt){
     follow(t,dt); return;
   }
   let tgt=(t.blind>0)?null:students.filter(function(s){
-      return s.state==='free'&&!s.hide&&!(s.drone>0&&s.exposed<=0)&&
+      return s.state==='free'&&!s.hide&&!(s.drone>0&&s.exposed<=0)&&!s.crowActive&&
         Math.hypot(s.x-t.x,s.z-t.z)<52&&los(t.x,t.z,s.x,s.z); })
     .sort(function(a,b){
       return (Math.hypot(a.x-t.x,a.z-t.z)-(a.dmg||0)*7-(a.mark>0?9:0)-(a.spikes||0)*5)-
@@ -8563,6 +8839,24 @@ function updItemHud(){
       const max=itemAmmoMax(me)||1;
       elItemHudBar.style.width=Math.max(0,Math.min(100,(me.itemAmmo||0)/max*100))+'%';
       elItemHudBar.style.background='var(--yellow)';
+    } else if(me.item==='cheatsheet'){
+      elItemHudIcon.textContent='📝';
+      elItemHudPct.textContent=(me.cheatT>0)?(Math.ceil(me.cheatT)+'秒'):('×'+Math.round(me.itemAmmo||0));
+      elItemHudBar.style.width=(me.cheatT>0?
+        Math.max(0,Math.min(100,me.cheatT/cheatDurFor(me)*100)):
+        Math.max(0,Math.min(100,(me.itemAmmo||0)/(itemAmmoMax(me)||1)*100)))+'%';
+      elItemHudBar.style.background=(me.cheatT>0)?'#7fd4a2':'var(--yellow)';
+    } else if(me.item==='crow'){
+      elItemHudIcon.textContent='🐦';
+      elItemHudPct.textContent=Math.round(me.itemAmmo||0)+'秒';
+      const max=itemAmmoMax(me)||1;
+      elItemHudBar.style.width=Math.max(0,Math.min(100,(me.itemAmmo||0)/max*100))+'%';
+      elItemHudBar.style.background=me.crowActive?'#bfe8ff':'var(--yellow)';
+    } else if(me.item==='fan'){
+      elItemHudIcon.textContent='🌀';
+      elItemHudPct.textContent=Math.round(me.itemAmmo||0)+'%';
+      elItemHudBar.style.width=Math.max(0,Math.min(100,me.itemAmmo||0))+'%';
+      elItemHudBar.style.background='var(--yellow)';
     }
   }
   /* 表示され始める瞬間、内容(サイズに影響する文言)を入れ終わってから
@@ -8696,6 +8990,11 @@ function updHearts(dt){
     }
     if(s.drone>0&&s.exposed<=0){ const u2=s.mesh.userData;
       u2.heart.visible=false; u2.hglow.visible=false; s.mesh.visible=false; continue; }
+    /* 使いカラス飛行中も本体を隠したままにする(2026-09-11追加、
+       ドローンの上と全く同じ「本体を隠す」パターンを踏襲) */
+    if(s.crowActive){ const u2=s.mesh.userData;
+      if(u2.heart) u2.heart.visible=false; if(u2.hglow) u2.hglow.visible=false;
+      s.mesh.visible=false; continue; }
     if(s.drone<=0&&s.state==='free'&&!s.hide) s.mesh.visible=true;
     const u=s.mesh.userData;
     if(s.state==='out'||s.state==='escaped'||stealth||s.hide||teacher.blend>0||
@@ -8889,7 +9188,7 @@ function tick(now){
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0&&
                 teacher.dnLeap<=0&&teacher.dnBreak<=0&&(teacher.pdFinisherT||0)<=0)
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
-                  !(me.drone>0)&&!(me.tackle>0));
+                  !(me.drone>0)&&!(me.tackle>0)&&!me.crowActive);
 
   /* 画面の奥方向。三人称はカメラ→自分、一人称はカメラの視線
      （ダークノードの狼／コウモリ形態、軋車の三兄弟の車輪形態は先生でも
@@ -9160,6 +9459,11 @@ function tick(now){
         me.leakT=0;
       }
       if(input.altEdge){ me.hide=null; me.mesh.visible=true; me.holdBreath=false; }
+    } else if(me.crowActive){
+      label='カラス飛行中'; hot=false;
+      altLabel='カラスを戻す'; altHot=true;
+      hp=Math.max(0,Math.min(1,(me.itemAmmo||0)/(itemAmmoMax(me)||1)));
+      if(input.altEdge||input.stopEdge){ endCrow(me,false); toast('カラスを呼び戻した'); }
     } else if(me.drone>0){
       const chg=me.bombHold||0;
       label=chg>0.05?('ため '+Math.round(Math.min(1,chg)*100)+'%'):('粉爆弾 x'+me.bombs);
@@ -9344,7 +9648,17 @@ function tick(now){
   /* --- タイマー --- */
   const whisperWas=teacher.whisperNear; teacher.whisperNear=false;
   for(const s of students){
-    if(s===me&&role==='student') s.itemHoldInput=!!input.itemHold;
+    if(s===me&&role==='student'){
+      s.itemHoldInput=!!input.itemHold;
+      /* ハンディファンの狙う方向はWASD(移動)と独立させたいので、移動方向の
+         s.yawではなくカメラの向き(camYaw)を使う(2026-09-11追加) */
+      s.fanYaw=camYaw;
+      /* 使いカラスの操舵・減速入力。A/D・スティック横軸で左右旋回、
+         走るボタンで減速(降下ではなく単純な低速モード) */
+      let ct=(keys.KeyA?-1:0)+(keys.KeyD?1:0)+input.mx;
+      s.crowTurnInput=Math.max(-1,Math.min(1,ct));
+      s.crowSlowInput=!!(keys.ShiftLeft||keys.ShiftRight||input.run);
+    }
     if(s.slow>0) s.slow-=dt;
     if(s.rush>0) s.rush-=dt;
     if(s.abCd>0) s.abCd-=dt;
@@ -9437,11 +9751,16 @@ function tick(now){
     if(s.tnCd>0) s.tnCd=Math.max(0,s.tnCd-dt);
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
+    /* ハンディファン(fan)の反動推進：移動中に使うと自分の速度+50%
+       (fan_powerアドオンでやや控えめになる代わりに押し出す力が強くなる)。
+       毎フレームupdItemUse()側で0.3秒だけ立て直す方式(2026-09-11追加) */
+    if(s.fanRushT>0) s.fanRushT=Math.max(0,s.fanRushT-dt);
     s.speed=s.base*(s.hurt?0.86:1)*(s.rush>0?1.7:1)*
             (s.sprintT>0?(s.sprintMulActive||sprintMul):1)*(s.tiredT>0?0.85:1)*
             (inWater(s.x,s.z)?0.7:1)*((s.rush>0&&s.rushMul)?s.rushMul/1.7:1)*
             (hasTrait(s,'hope')&&gateOpen?perkScale(s,'hope',1.08):1)*
             ((soloLeft&&s.state!=='out'&&s.state!=='escaped')?perkScale(teacher,'rancor',0.94):1)*
+            (s.fanRushT>0?(1.5+itemAddonAdd(s,'selfSpeedAdd')):1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
@@ -9623,10 +9942,15 @@ function tick(now){
   }
   teacher.stealth=Math.max(0,(teacher.stealth||0)-dt);
   teacher.slowT=Math.max(0,(teacher.slowT||0)-dt);
+  /* ハンディファン(fan)の移動モード：反動推進中の生徒が風下に捉えていると
+     10%減速(fan_teacher_slowアドオンで15%まで強化)。fanRushTと同じく
+     updItemUse()側で0.3秒ずつ立て直す方式(2026-09-11追加) */
+  teacher.fanSlowT=Math.max(0,(teacher.fanSlowT||0)-dt);
   teacher.speed=teacher.base*(teacher.boost>0?1.5:1)*((teacher.slowT>0)?0.8:1)*
     (teacher.shadow>0?0.86:1)*(teacher.invis>0?1.35:1)*(teacher.wrath>0?1.1:1)*
     (teacher.crouch>0?0.82:1)*(1+(teacher.scentBonus||0))*(1+(teacher.blood||0))*
     (teacher.cloak>0?1.32:1)*(teacher.mistBoost||1)*
+    (teacher.fanSlowT>0?(1-(0.1+(teacher.fanSlowAmt||0))):1)*
     (teacher.wheelOn?1.9:1)*(teacher.kindKey==='clown'?1.08:1)*
     (teacher.beastT>0?1.18:1)*
     (inWater(teacher.x,teacher.z)?0.7:1)*
@@ -10014,6 +10338,12 @@ function tick(now){
     droneObj.m.position.set(droneObj.x,9.5+Math.sin(elapsed*4)*0.15,droneObj.z);
     droneObj.m.rotation.y+=dt*3;
   }
+  /* 使いカラス視点：三人称のチェイスカメラ(自分の少し後ろ上空からカラスを
+     追う)。専用モデルの回転・位置更新自体はupdCrowFlight()側で毎フレーム
+     行っている(2026-09-11追加) */
+  const crowOn=(role==='student'&&me.crowActive);
+  if(elCrowHud) elCrowHud.classList.toggle('on',crowOn);
+  if(crowOn&&elCrowHudTxt) elCrowHudTxt.textContent='カラス視点 '+Math.ceil(me.itemAmmo||0)+'秒';
 
   /* 先生の擬態 */
   teacherStatue.visible=false;
@@ -10062,6 +10392,10 @@ function tick(now){
   } else if(droneOn){
     camera.position.set(droneObj.x,30,droneObj.z+9);
     camera.lookAt(droneObj.x,0,droneObj.z);
+    ruler.visible=false; teacher.mesh.visible=(teacher.blend<=0);
+  } else if(crowOn){
+    camera.position.set(me.crowX-Math.sin(me.crowYaw)*5,4.6,me.crowZ-Math.cos(me.crowYaw)*5);
+    camera.lookAt(me.crowX,2.3,me.crowZ);
     ruler.visible=false; teacher.mesh.visible=(teacher.blend<=0);
   } else {
     const camT=(puppet&&puppet!==me)?puppet:
@@ -10796,7 +11130,13 @@ function netMashN(s){
 }
 function netApplyStudentInput(s,inp,dt){
   s.itemHoldInput=!!(inp&&inp.itemHold);
-  const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0));
+  /* 使いカラス/ハンディファンの個人入力(2026-09-11追加)。ラストスパートの
+     個人設定と同じ理由で、ホストが代行実行する時は必ず参加者本人が送って
+     きた値を使う(ホスト自身の値で上書きしない) */
+  s.crowTurnInput=(inp&&inp.crowTurn)||0;
+  s.crowSlowInput=!!(inp&&inp.crowSlow);
+  if(inp&&inp.fanYaw!==undefined) s.fanYaw=inp.fanYaw;
+  const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0)&&!s.crowActive);
   if(updVault(s,dt)){ /* 乗り越え中 */ }
   else if(inp&&inp.mag>0.02&&canMove){
     let sp=s.speed*Math.min(1,inp.mag);
@@ -10899,7 +11239,12 @@ function netHostBroadcastSnapshot(dt){
         flK:Math.round(Math.min(1,(s.flCharge||0)/(1.3*itemAddonVal(s,'chargeMul')))*100)/100,
         miniHideMap:!!s.miniHideMap, miniFakeDX:s.miniFakeDX||0, miniFakeDZ:s.miniFakeDZ||0,
         dkNeed:s.dkNeed||0, dkCount:s.dkCount||0, dkT:s.dkT||0, dkFailT:s.dkFailT||0,
-        bcastSlowT:s.bcastSlowT||0, bleed:s.bleed||0, grabWindow:s.grabWindow||0 } };
+        bcastSlowT:s.bcastSlowT||0, bleed:s.bleed||0, grabWindow:s.grabWindow||0,
+        /* 新アイテム3種(2026-09-11追加)。カラスは他の参加者の画面にも
+           専用モデルを飛ばして見せる必要があるので位置・向きごと配信する */
+        cheatT:s.cheatT||0,
+        crowActive:!!s.crowActive, crowX:s.crowX||0, crowZ:s.crowZ||0, crowYaw:s.crowYaw||0,
+        fan:(s.item==='fan'&&!!s.itemHoldInput&&s.itemAmmo>0), fanYaw:s.fanYaw||0 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -10936,12 +11281,23 @@ function netInterpolate(dt){
   for(let i=0;i<students.length;i++){
     const s=students[i], tgt=snap.stu&&snap.stu[i]; if(!tgt) continue;
     Object.assign(s,tgt.f);
-    s.mesh.visible=!tgt.f.hide;
+    s.mesh.visible=!tgt.f.hide&&!tgt.f.crowActive;
     updItemMesh(s);
     /* 参加者(クライアント)側は自分でupdItemUse()を回さないため、
        懐中電灯ビームの見た目はホストのスナップショット(f.fl)に
        乗せてもらう簡易版(アドオン無しの基本射程13mで固定表示) */
     updFlBeam(s,!!tgt.f.fl,13);
+    updFanBeam(s,!!tgt.f.fan,9,tgt.f.fanYaw||0);
+    /* 使いカラス：他の参加者の画面にも専用モデルを表示する
+       (2026-09-11追加、位置・向きはスナップショットの値をそのまま使う) */
+    if(tgt.f.crowActive){
+      if(!s.crowMesh){ s.crowMesh=makeCrowModel(); scene.add(s.crowMesh); crowMeshes.push(s.crowMesh); }
+      s.crowMesh.visible=true;
+      s.crowMesh.position.set(s.crowX,2.3+Math.sin(elapsed*10)*0.08,s.crowZ);
+      s.crowMesh.rotation.y=s.crowYaw;
+      const u=s.crowMesh.userData;
+      if(u.wingL&&u.wingR){ const flap=Math.sin(elapsed*16)*0.6; u.wingL.rotation.z=flap; u.wingR.rotation.z=-flap; }
+    } else if(s.crowMesh) s.crowMesh.visible=false;
     if(i===netClientSlot){
       const err=Math.hypot(s.x-tgt.x,s.z-tgt.z);
       if(err>1.6){ s.x=tgt.x; s.z=tgt.z; }
@@ -11038,7 +11394,7 @@ function netClientTick(dt){
   const running=keys.ShiftLeft||keys.ShiftRight||input.run||(runToggle&&stickMag>deadZone);
   elStick.classList.toggle('run',running);
   const vf=[Math.sin(camYaw),Math.cos(camYaw)], vr=[-Math.cos(camYaw),Math.sin(camYaw)];
-  const canMove=(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&!(me.tackle>0));
+  const canMove=(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&!(me.tackle>0)&&!me.crowActive);
   let mdx=0,mdz=0,mmag=0;
   if(updVault(me,dt)){ /* 乗り越え中 */ }
   else if(mag>0.02&&canMove){
@@ -11100,9 +11456,14 @@ function netClientTick(dt){
   if(input.mash){ netMashCount++; }
   if(netSendT<=0&&netHostConn&&netHostConn.open){
     netSendT=1/18;
+    /* 使いカラスの操舵・減速、ハンディファンの狙う向き(カメラyaw)も個人入力
+       として毎回乗せる(2026-09-11追加、ラストスパートのsprintDurと同じ理由。
+       ホストが代行実行する時にホスト自身の値で上書きされないようにする) */
+    const ct=Math.max(-1,Math.min(1,(keys.KeyA?-1:0)+(keys.KeyD?1:0)+input.mx));
     netSend(netHostConn,{t:'inp',dx:mdx,dz:mdz,mag:mmag,run:running,
       act:!!input.act, altEdge:!!input.altEdge, abEdge:!!input.abEdge, ab2Edge:!!input.ab2Edge,
       itemHold:!!input.itemHold, mashN:netMashCount,
+      crowTurn:ct, crowSlow:running, fanYaw:camYaw,
       /* 一ノ瀬「ラストスパート」の持続時間は個人設定なので、発動フラグと
          一緒に自分の現在値を毎回乗せておく。ホストが自分の代わりに
          useStudentSkill()を実行する時、ホスト自身のsprintDurではなく
@@ -11223,16 +11584,25 @@ function netClientTick(dt){
   ruler.visible=false;
   teacher.mesh.visible=(teacher.blend<=0)&&(teacher.invis<=0)&&!(teacher.cloak>0)&&!teacher.wheelOn;
   teacher.mesh.scale.set(1,(teacher.shadow>0&&teacher.mesh.visible)?0.82:1,1);
-  let dist=7.4;
-  const bx=-Math.sin(camYaw),bz=-Math.cos(camYaw);
-  for(let d2=1.4;d2<dist;d2+=0.6){
-    const p=tileOf(me.x+bx*d2,me.z+bz*d2);
-    const tt=at(p[0],p[1]);
-    if(tt==='#'||tt==='L'||tt==='B'){ dist=Math.max(2.4,d2-0.8); break; }
+  if(me.crowActive){
+    /* 使いカラス視点(参加者側)。ホストから届いたcrowX/crowZ/crowYawを
+       そのまま追う簡易版(参加者独自のローカル予測はしない、2026-09-11追加) */
+    camera.position.set(me.crowX-Math.sin(me.crowYaw)*5,4.6,me.crowZ-Math.cos(me.crowYaw)*5);
+    camera.lookAt(me.crowX,2.3,me.crowZ);
+  } else {
+    let dist=7.4;
+    const bx=-Math.sin(camYaw),bz=-Math.cos(camYaw);
+    for(let d2=1.4;d2<dist;d2+=0.6){
+      const p=tileOf(me.x+bx*d2,me.z+bz*d2);
+      const tt=at(p[0],p[1]);
+      if(tt==='#'||tt==='L'||tt==='B'){ dist=Math.max(2.4,d2-0.8); break; }
+    }
+    const k=Math.cos(pitch*0.5);
+    camera.position.set(me.x+bx*dist*k,Math.max(1.5,3.7-pitch*5.2),me.z+bz*dist*k);
+    camera.lookAt(me.x,1.7,me.z);
   }
-  const k=Math.cos(pitch*0.5);
-  camera.position.set(me.x+bx*dist*k,Math.max(1.5,3.7-pitch*5.2),me.z+bz*dist*k);
-  camera.lookAt(me.x,1.7,me.z);
+  if(elCrowHud) elCrowHud.classList.toggle('on',!!me.crowActive);
+  if(me.crowActive&&elCrowHudTxt) elCrowHudTxt.textContent='カラス視点 '+Math.ceil(me.itemAmmo||0)+'秒';
   const b=me.blind||0;
   if(b>0){ elBlind.className='chalk'; elBlind.style.opacity=String(Math.min(0.9,b/2.4*0.9)); }
   else if(me.sleep>0){ elBlind.className='chalk'; elBlind.style.opacity='0.3'; }
@@ -11664,15 +12034,17 @@ function unlockAddon(itemKey,key){
    形で解釈して実装した。パーク自体を新たにコインで買い切りロックする変更は
    行っていない(既存の無料選択という前提を壊さないため)。
 
-   ・レベルNの効果強化倍率 = 1.2^N の複利式（PERK_LV_MUL）
-     例: 元の効果が+100%ならLv1で+120%相当になる、という依頼の例に一致する
+   ・レベルNの効果強化倍率 = 1.15^N の複利式（2026-09-11続報で1.2→1.15に変更。
+     効果は「20%ずつ」ではなく「15%ずつ」の複利強化になる）
    ・レベルNへのアップ価格 = 基準価格(PERK_LV_BASE_COST) × 1.2^(N-1) の複利式
-   ・最大Lv99、到達済み最大レベル(perkLvMax)の範囲内なら現在レベル
-     (perkLvCur)を無料で自由に上げ下げできる
+     （値段の上昇率は変更指示が無かったのでそのまま1.2倍/レベルを維持）
+   ・最大Lv5（2026-09-11続報で99→5に変更）、到達済み最大レベル(perkLvMax)の
+     範囲内なら現在レベル(perkLvCur)を無料で自由に上げ下げできる
    ・保存はhi_perklv_v1に{max:{student:{key:lv},teacher:{key:lv}},cur:{...}}の
      形でJSON保存する(hi_unlocks_v1とは別キー。既存の永久アンロックの保存
-     フォーマットを壊さないよう分離した) */
-const PERK_LV_BASE_COST=50, PERK_LV_MAX=99;
+     フォーマットを壊さないよう分離した)。読み込み時、旧仕様(最大Lv99)で
+     Lv6以上に到達していた保存データがあれば自動でLv5にクランプする */
+const PERK_LV_BASE_COST=50, PERK_LV_MAX=5, PERK_LV_EFFECT_STEP=1.15;
 let perkLvMax={student:{},teacher:{}}, perkLvCur={student:{},teacher:{}};
 try{
   const savedPL=JSON.parse(localStorage.getItem('hi_perklv_v1')||'null');
@@ -11680,6 +12052,21 @@ try{
     if(savedPL.max){ perkLvMax.student=savedPL.max.student||{}; perkLvMax.teacher=savedPL.max.teacher||{}; }
     if(savedPL.cur){ perkLvCur.student=savedPL.cur.student||{}; perkLvCur.teacher=savedPL.cur.teacher||{}; }
   }
+  /* 最大レベル引き下げ(99→5)に伴うクランプ。旧データがLv5超のままだと
+     getPerkMaxLv/getPerkCurLvのMath.min(max,...)には引っかからず「6以上の
+     max」がそのまま残ってしまう(cur側は毎回clampされるが、maxの保存値
+     自体はクランプされないため)ので、読み込み直後に明示的に切り詰めて
+     保存し直す(次回以降は毎回このクランプ処理をしなくて済むように) */
+  let clamped=false;
+  ['student','teacher'].forEach(function(rk){
+    Object.keys(perkLvMax[rk]||{}).forEach(function(k){
+      if(perkLvMax[rk][k]>PERK_LV_MAX){ perkLvMax[rk][k]=PERK_LV_MAX; clamped=true; }
+    });
+    Object.keys(perkLvCur[rk]||{}).forEach(function(k){
+      if(perkLvCur[rk][k]>PERK_LV_MAX){ perkLvCur[rk][k]=PERK_LV_MAX; clamped=true; }
+    });
+  });
+  if(clamped) localStorage.setItem('hi_perklv_v1',JSON.stringify({max:perkLvMax,cur:perkLvCur}));
 }catch(e){}
 function savePerkLv(){
   try{ localStorage.setItem('hi_perklv_v1',JSON.stringify({max:perkLvMax,cur:perkLvCur})); }catch(e){}
@@ -11699,8 +12086,10 @@ function getPerkCurLv(role2,key){
   return Math.max(0,Math.min(max,c));
 }
 function perkLvCost(level){ return Math.round(PERK_LV_BASE_COST*Math.pow(1.2,level-1)); }
-/* 現在の選択レベルに応じた強化倍率(複利式)。Lv0なら1(=元の効果のまま) */
-function perkLevelMul(e,key){ return Math.pow(1.2,getPerkCurLv(e,key)); }
+/* 現在の選択レベルに応じた強化倍率(複利式)。Lv0なら1(=元の効果のまま)。
+   効果の伸び率はPERK_LV_EFFECT_STEP(1.15=15%/レベル)、値段の伸び率とは
+   別の係数にしている(2026-09-11続報：効果20%→15%、値段は1.2倍のまま据え置き) */
+function perkLevelMul(e,key){ return Math.pow(PERK_LV_EFFECT_STEP,getPerkCurLv(e,key)); }
 /* 「元の効果がbase倍(例:1.08=+8%、0.85=-15%)」という既存の数値を、そのまま
    perkLevelMulで複利強化した値に変換するヘルパー。1からの差分(delta)だけに
    レベル倍率をかけるので、base=1(無効果)を渡した場合は常に1のまま */
@@ -12072,7 +12461,7 @@ function buildPerkLvRow(p){
   }
   lvRow.appendChild(upBtn);
   bindTip(lvRow,p.name+'のレベル',
-    'レベルを上げるほど効果が複利で強くなる代わりに次のレベルの価格も上がる（最大Lv99）。'+
+    'レベルを上げるほど効果が複利で強くなる代わりに次のレベルの価格も上がる（最大Lv'+PERK_LV_MAX+'）。'+
     '＋/−はこれまでに到達したレベルの範囲内なら無料でいつでも切り替えられる。');
   return lvRow;
 }
@@ -12348,6 +12737,9 @@ function softReset(keepNet){
   inkPools.forEach(function(ip){ scene.remove(ip.m); }); inkPools.length=0;
   scents.forEach(function(c){ scene.remove(c.m); }); scents.length=0;
   flBeams.forEach(function(m){ scene.remove(m); }); flBeams.length=0;
+  fanBeams.forEach(function(m){ scene.remove(m); }); fanBeams.length=0;
+  crowMeshes.forEach(function(m){ scene.remove(m); }); crowMeshes.length=0;
+  if(elCrowHud) elCrowHud.classList.remove('on');
   dnFireLines.forEach(function(l){
     if(l.pillars) l.pillars.forEach(function(pg){ scene.remove(pg); });
     if(l.mat) l.mat.dispose(); }); dnFireLines.length=0;
