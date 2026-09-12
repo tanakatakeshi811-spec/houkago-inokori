@@ -517,6 +517,28 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #netwait .code{font-size:30px;letter-spacing:.3em;color:var(--yellow)}
 #netwait button{padding:11px 26px;border:1px solid var(--chalk);color:var(--chalk);background:transparent;
   font-family:inherit;font-size:12px;letter-spacing:.2em}
+/* クイックプレイの動的ロビー(DBD/第五人格風)。タイトル画面(キャラ/特性選択)を
+   隠さず横に浮かせるパネルにして、既存のキャラ・特性選択UIをそのまま使い
+   ながら選択内容がリアルタイムで他の参加者にも見える形にする */
+#qpLobby{position:fixed;right:10px;top:10px;bottom:10px;width:230px;z-index:21;
+  display:none;flex-direction:column;background:#0b120ef2;border:1px solid var(--yellow);
+  border-radius:4px;padding:10px;box-sizing:border-box}
+#qpLobby.on{display:flex}
+#qpLobby h3{font-size:12px;letter-spacing:.15em;color:var(--yellow);margin:0 0 6px}
+#qpLobby .qpTimer{font-size:20px;color:var(--yellow);text-align:center;margin-bottom:6px}
+#qpMembers{flex:1;overflow-y:auto;font-size:10.5px;line-height:1.5}
+.qpRow{border:1px solid #ffffff2b;border-radius:3px;padding:5px 6px;margin-bottom:5px;
+  display:flex;flex-wrap:wrap;gap:2px 6px;align-items:center}
+.qpRow.ready{border-color:var(--ok);background:#7fd4a21a}
+.qpRow .ic{font-size:13px}
+.qpRow .nm{font-weight:600;flex-basis:100%}
+.qpRow .rl,.qpRow .ch,.qpRow .pk,.qpRow .rd{opacity:.75}
+.qpRow.ready .rd{color:var(--ok);opacity:1}
+#qpReadyBtn{width:100%;padding:9px 0;margin-top:8px;border:1px solid var(--yellow);
+  color:var(--yellow);background:transparent;font-family:inherit;font-size:12px;letter-spacing:.15em}
+#qpReadyBtn.on{background:#e8c547;color:#211}
+#qpLeaveBtn{width:100%;padding:7px 0;margin-top:6px;border:1px solid var(--chalk);
+  color:var(--chalk);background:transparent;font-family:inherit;font-size:11px;opacity:.8}
 .icongrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
 .icongrid div{aspect-ratio:1;display:flex;align-items:center;justify-content:center;
   font-size:16px;border:1px solid #ffffff2e;border-radius:3px;background:#0b120e99;cursor:pointer}
@@ -847,6 +869,14 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <p id="netWaitMsg">ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…</p>
   <div id="netWaitPeers" style="width:220px"></div>
   <button id="netWaitLeave">退室する</button>
+</div>
+
+<div id="qpLobby">
+  <h3>クイックプレイ ロビー</h3>
+  <div class="qpTimer" id="qpTimerTxt">--</div>
+  <div id="qpMembers"></div>
+  <button id="qpReadyBtn">準備OK</button>
+  <button id="qpLeaveBtn">ロビーを抜ける</button>
 </div>
 
 <script>
@@ -11002,7 +11032,7 @@ function cloudLobbySocket(cb){
 }
 function cloudSend(obj){ if(cloudWs&&cloudWsReady){ try{ cloudWs.send(JSON.stringify(obj)); }catch(e){} } }
 let cloudHostPendingGen=0, cloudHostCode='';
-let cloudJoinPendingGen=0;
+let cloudJoinPendingGen=0, cloudJoinResolved=false;
 let cloudSearchCb=null;
 function cloudOnMessage(msg){
   if(!msg||!msg.t) return;
@@ -11017,7 +11047,8 @@ function cloudOnMessage(msg){
        進行中のコードを勝手に変えたくないのでここでは諦める */
     if(!netRoomCode) cloudHostRegisterAttempt(cloudHostPendingGen);
   } else if(msg.t==='join_result'){
-    if(netConnGen!==cloudJoinPendingGen||netHostConn) return;
+    if(netConnGen!==cloudJoinPendingGen||cloudJoinResolved) return;
+    cloudJoinResolved=true;
     if(msg.found) netJoinConnectToPeer(msg.peerId,msg.code,cloudJoinPendingGen);
     else netJoinLegacy(msg.code,cloudJoinPendingGen);
   } else if(msg.t==='public_rooms'){
@@ -11141,6 +11172,13 @@ function voiceAttachIncoming(peer){
 }
 function voiceCallPeer(peerId){
   if(!netPeer||peerId===voiceMyId||voiceCalls[peerId]) return;
+  /* 通話は文字コードが小さい側だけが発信する(二重通話防止)。voiceOnRoster側にも
+     同じ判定があるが、voiceToggle()からロスター全員へ呼ぶ経路など判定を経ずに
+     ここへ来る場合もあるため、最終防衛としてここでも必ず確認する
+     (2026-09-12: ここに判定が無かったせいで、着信側がマイクをONにした瞬間に
+     二重に発信してしまい、本来繋がるはずの通話とは別の宙に浮いた接続ができて
+     ボイスチャットが機能しない原因の一つになっていた) */
+  if(voiceMyId&&voiceMyId>peerId) return;
   try{
     const call=netPeer.call(peerId,voiceAnswerStream());
     if(!call) return;
@@ -11149,6 +11187,23 @@ function voiceCallPeer(peerId){
     call.on('close',function(){ voiceDrop(peerId); });
     call.on('error',function(){ voiceDrop(peerId); });
   }catch(e){}
+}
+function voiceApplyLocalTrack(track){
+  /* 通話はロスター受信時(=マイクONより前のことが多い)に、まだマイク許可が無い
+     場合はダミーの無音トラックで確立してしまう。あとから本物のマイクトラックに
+     差し替えないと、相手には永久に無音しか届かない
+     (2026-09-12発覚: ボイスチャットが実装当初から一度も使えなかった根本原因)。
+     PeerJSのcall.peerConnectionは素のRTCPeerConnectionなので、
+     RTCRtpSender.replaceTrack()で繋ぎ直しなしに音声トラックだけ差し替える */
+  if(!track) return;
+  Object.keys(voiceCalls).forEach(function(id){
+    try{
+      const pc=voiceCalls[id].peerConnection;
+      if(!pc||!pc.getSenders) return;
+      const sender=pc.getSenders().find(function(s){ return s.track&&s.track.kind==='audio'; });
+      if(sender) sender.replaceTrack(track);
+    }catch(e){}
+  });
 }
 function voiceOnRoster(ids,slots){
   voiceIdToSlot=slots||{};
@@ -11181,15 +11236,20 @@ function voiceTeardown(){
 async function voiceToggle(){
   if(netMode==='off'){ toast('ボイスチャットはオンライン対戦専用'); return; }
   if(!micOn){
+    let firstTime=false;
     if(!localVoiceStream){
       try{
         localVoiceStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
       }catch(e){ toast('マイクを使えなかった（権限を確認して）'); return; }
       /* 許可が下りるまでの間に切断されていたら諦める */
       if(netMode==='off'){ voiceTeardown(); return; }
+      firstTime=true;
     }
     micOn=true;
     localVoiceStream.getAudioTracks().forEach(function(t){ t.enabled=true; });
+    /* 既にダミー(無音)トラックで確立済みの通話があれば、本物のマイクトラックに
+       差し替える(voiceApplyLocalTrackのコメント参照) */
+    if(firstTime) voiceApplyLocalTrack(localVoiceStream.getAudioTracks()[0]);
     Object.keys(voiceIdToSlot).forEach(voiceCallPeer);
   } else {
     micOn=false;
@@ -11444,17 +11504,26 @@ function netJoinRoom(codeRaw){
   netSetStatus('接続しています…',true);
   const joinGen=++netConnGen;
   cloudJoinPendingGen=joinGen;
+  cloudJoinResolved=false;
   /* まずクラウド(Cloudflare Worker)に「このコードのホストは今どのpeer IDか」を
      問い合わせる。応答が来ない/繋がらない場合は旧方式（部屋コード＝peer ID
-     という前提での直接接続）にフォールバックする */
+     という前提での直接接続）にフォールバックする。
+     (2026-09-13) タイムアウトは3秒→8秒に延長し、判定も`netHostConn`（実際に
+     PeerJSの接続が確立するまでnullのまま＝クラウドの応答を待つ間ずっと
+     フォールバック条件を満たしてしまっていた）ではなく`cloudJoinResolved`
+     （応答パケットを受け取った時点で即true）に変更した。Durable Objectの
+     スリープからの復帰等でクラウド応答に3秒以上かかることがあり、旧実装だと
+     「応答は来ているのにフォールバックのタイマーの方が先に発火し、
+     本来つながるはずの本物のpeer IDではなく間違った旧方式のIDに接続を
+     試みて必ず失敗する」という再現性の高い接続失敗があった */
   cloudLobbySocket(function(ws){
     if(netConnGen!==joinGen) return;
     if(!ws){ netJoinLegacy(code,joinGen); return; }
     cloudSend({t:'join_lookup',code:code});
     setTimeout(function(){
-      if(netConnGen!==joinGen||netHostConn) return;
+      if(netConnGen!==joinGen||cloudJoinResolved) return;
       netJoinLegacy(code,joinGen);
-    },3000);
+    },8000);
   });
 }
 function netJoinLegacy(code,joinGen){
@@ -11751,21 +11820,27 @@ function netRenderSearchResults(rooms){
 }
 
 /* ===== クイックプレイ（世界中の初対面プレイヤーと自動マッチング） =====
-   Cloudflare Durable Objectの公開待合キュー(MatchQueue)を使う。今回は
-   「通常モード（先生1vs生徒4=最大5人）」だけを対象にした最小実装。
-   キューに最初に入った人が先生役（ホスト）になり、他の人は生徒として
-   合流する。5人集まれば待ち時間ゼロで即開始、集まらなくても20秒経てば
-   その時点のメンバー＋AIで開始する（既存の「空き枠はAIが埋める」仕組みを
-   そのまま利用、待ち合わせ自体は新規）。マッチング後の実際の接続確立は
-   上のクラウド部屋登録・参加の仕組み（netOpenHost/netJoinRoom）にそのまま
-   乗せる。部屋コードを画面に見せる必要はないが、隠す理由もないので
-   ホスト側は普通の部屋画面がそのまま出る。 */
+   Cloudflare Durable Objectの「動的ロビー」(MatchQueue、DBD/第五人格を参考に
+   仕組みだけ真似た独自実装)を使う。今回は「通常モード（先生1vs生徒4=最大5人）」
+   だけを対象にした実装。
+   クイックプレイを押した瞬間に(誰も来ていなくても)ロビーへ入り、その後
+   参加者が増えるたびにロビーの様子(#qpLobby)がリアルタイムに更新される。
+   ロビー内では役割(先生/生徒)・キャラ・特性を自由に選べ(既存のタイトル画面の
+   キャラ/特性選択パネルをそのまま使う。#qpLobbyはそれを覆わない浮きパネル)、
+   「準備OK」を押すか60秒経過すると試合を開始する。60秒経っても人数が
+   足りなければ既存の「空き枠はAIが埋める」仕組みでそのまま開始する。
+   ロビーが確定すると、以後は今まで通りのクラウド部屋登録・参加の仕組み
+   （netOpenHost/netJoinRoom）にそのまま乗せる。 */
 let qpWs=null, qpPending=false, qpTimeoutT=null, qpExpected=0;
+let qpInLobby=false, qpReady=false, qpSyncT=null, qpCountdownT=null, qpEndsAt=0, qpLastSentSel='';
 function qpTeardownQueueSocket(){
-  qpPending=false;
+  qpPending=false; qpReady=false; qpLastSentSel='';
   if(qpTimeoutT){ clearTimeout(qpTimeoutT); qpTimeoutT=null; }
+  if(qpSyncT){ clearInterval(qpSyncT); qpSyncT=null; }
+  if(qpCountdownT){ clearInterval(qpCountdownT); qpCountdownT=null; }
   try{ if(qpWs) qpWs.close(); }catch(e){}
   qpWs=null;
+  qpHideLobby();
 }
 function netQuickplayHostStart(){
   qpTeardownQueueSocket();
@@ -11779,23 +11854,102 @@ function netQuickplayMaybeAutostart(){
 function netQuickplayHostReady(code){
   if(qpWs){ try{ qpWs.send(JSON.stringify({t:'quickplay_ready',code:code})); }catch(e){} }
 }
+/* ---- ロビー画面：役割/キャラ/特性の選択はタイトル画面の既存パネルをそのまま
+   使わせ、1秒ごとに現在の選択状態をサーバーへ送って全員に同期する ---- */
+function qpCurrentSelection(){
+  const perks=(function(){ try{ return currentPerkPick().slice(0,4); }catch(e){ return []; } })();
+  return {role:role,charIdx:(role==='student')?myIndex:kindIndex,perkIdx:perks,ready:qpReady};
+}
+function qpSendSelf(){
+  if(!qpWs||qpWs.readyState!==1) return;
+  const sel=qpCurrentSelection();
+  const key=JSON.stringify(sel);
+  if(key===qpLastSentSel) return;
+  qpLastSentSel=key;
+  try{ qpWs.send(JSON.stringify(Object.assign({t:'lobby_set'},sel))); }catch(e){}
+}
+function qpCharName(m){
+  if(m.role==='teacher'){ const o=TCH[m.charIdx]; return o?KINDS[o.key].name:'？'; }
+  const o=STU[m.charIdx]; return o?o.short:'？';
+}
+function qpRenderLobby(members){
+  const el=document.getElementById('qpMembers');
+  if(!el) return;
+  el.innerHTML=(members||[]).map(function(m){
+    const nm=(m.profile&&m.profile.name)?escHtml(m.profile.name):'名無し';
+    const ic=(m.profile&&m.profile.icon)||'👤';
+    const roleTxt=(m.role==='teacher')?'先生役':'生徒役';
+    const pkTxt=(m.perkIdx&&m.perkIdx.length)?('特性'+m.perkIdx.length+'個'):'特性未選択';
+    return '<div class="qpRow'+(m.ready?' ready':'')+'"><span class="ic">'+ic+'</span>'+
+      '<span class="nm">'+nm+'</span><span class="rl">'+roleTxt+'</span>'+
+      '<span class="ch">'+escHtml(qpCharName(m))+'</span><span class="pk">'+pkTxt+'</span>'+
+      '<span class="rd">'+(m.ready?'準備OK':'準備中…')+'</span></div>';
+  }).join('')||'<div style="opacity:.6">まだ誰もいない…</div>';
+  const rb=document.getElementById('qpReadyBtn');
+  if(rb){ rb.textContent=qpReady?'準備OK！（取り消す）':'準備OK'; rb.classList.toggle('on',qpReady); }
+}
+function qpTickCountdown(){
+  const t=document.getElementById('qpTimerTxt');
+  if(!t) return;
+  const left=Math.max(0,Math.ceil((qpEndsAt-Date.now())/1000));
+  t.textContent=left+'秒';
+}
+function qpShowLobby(){
+  if(!qpInLobby){
+    qpInLobby=true;
+    document.getElementById('qpLobby').classList.add('on');
+    document.getElementById('go').style.display='none';   /* ロビー中はオフライン開始と競合しないよう隠す */
+    if(!qpSyncT) qpSyncT=setInterval(qpSendSelf,1000);
+    if(!qpCountdownT) qpCountdownT=setInterval(qpTickCountdown,500);
+  }
+}
+function qpHideLobby(){
+  const wasIn=qpInLobby;
+  qpInLobby=false;
+  const el=document.getElementById('qpLobby'); if(el) el.classList.remove('on');
+  if(qpSyncT){ clearInterval(qpSyncT); qpSyncT=null; }
+  if(qpCountdownT){ clearInterval(qpCountdownT); qpCountdownT=null; }
+  /* ロビーを離れて何にも移行しない場合(手動退室・接続失敗)だけ「はじめる」を戻す。
+     マッチが決まった場合はこの直後に#netwaitが出るか試合が始まるので、
+     そちらの表示に任せる（このタイミングでは何も操作していない） */
+  if(wasIn&&!qpPending) document.getElementById('go').style.display='';
+}
+document.getElementById('qpReadyBtn').addEventListener('click',function(){
+  qpReady=!qpReady; qpLastSentSel=''; qpSendSelf();
+});
+document.getElementById('qpLeaveBtn').addEventListener('click',function(){
+  qpTeardownQueueSocket();
+  netSetStatus('クイックプレイをやめた');
+});
 function qpOnMessage(msg){
   if(!msg||!msg.t||!qpPending) return;
-  if(msg.t==='queue_wait'){
-    netSetStatus('クイックプレイ：対戦相手を探しています…（'+msg.pos+'人目）',true);
+  if(msg.t==='lobby_state'){
+    qpShowLobby();
+    qpEndsAt=msg.endsAt||(Date.now()+60000);
+    qpTickCountdown();
+    qpRenderLobby(msg.members);
+    netSetStatus('クイックプレイ：ロビーに'+((msg.members||[]).length)+'人集合中…',true);
   } else if(msg.t==='quickplay_host'){
+    qpHideLobby();
     qpExpected=Math.max(0,(msg.size||1)-1);
     netSetStatus('クイックプレイ：マッチしました！部屋を準備しています…',true);
+    document.getElementById('netWaitCode').textContent='－－－－';
     const wm=document.getElementById('netWaitMsg');
     if(wm) wm.innerHTML='マッチしました。あなたが先生役（ホスト）です。<br>他の参加者を待っています…';
-    /* 既存の役割トグル（#trole）を実際にクリックしたのと同じ状態にしてから
-       ホストを開く（buildList/showStage等の既存処理をそのまま使うため） */
-    const tt=document.querySelector('#trole [data-role="teacher"]');
-    if(tt&&!tt.classList.contains('sel')) tt.click();
+    document.getElementById('netwait').classList.add('on');
+    document.getElementById('go').style.display='none';
+    /* ロビーで選んだ役割(#trole/role)をそのまま使う。先生役を選んでいなければ
+       生徒のまま部屋を開き、教師はAIになる（既存の「相手の先生(BOT)」機能と
+       同じ、ホストが必ず先生役に強制されていた従来仕様をやめた） */
     netOpenHost();
     const waitMs=(qpExpected<=0)?1500:20000;
     qpTimeoutT=setTimeout(function(){ if(qpPending&&netMode==='host') netQuickplayHostStart(); },waitMs);
   } else if(msg.t==='quickplay_wait_host'){
+    qpHideLobby();
+    document.getElementById('netWaitCode').textContent='－－－－';
+    document.getElementById('netWaitMsg').innerHTML='マッチしました。ホストの部屋を待っています…';
+    document.getElementById('netwait').classList.add('on');
+    document.getElementById('go').style.display='none';
     netSetStatus('クイックプレイ：マッチしました！ホストの部屋を待っています…',true);
     if(qpTimeoutT) clearTimeout(qpTimeoutT);
     qpTimeoutT=setTimeout(function(){
@@ -11811,15 +11965,11 @@ function netQuickPlay(){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
   qpTeardownQueueSocket();
-  qpPending=true; qpExpected=0;
-  netSetStatus('クイックプレイ：対戦相手を探しています…',true);
-  document.getElementById('netWaitCode').textContent='－－－－';
-  document.getElementById('netWaitMsg').innerHTML='クイックプレイで対戦相手を探しています…<br>(集まらなければ20秒ほどでAIが加わります)';
-  document.getElementById('netwait').classList.add('on');
-  document.getElementById('go').style.display='none';
+  qpPending=true; qpExpected=0; qpReady=false; qpLastSentSel='';
+  netSetStatus('クイックプレイ：ロビーに入っています…',true);
   let sock;
   try{ sock=new WebSocket('wss://'+CLOUD_HOST+'/quickplay'); }
-  catch(e){ qpPending=false; netSetStatus('クイックプレイに接続できなかった'); document.getElementById('netwait').classList.remove('on'); return; }
+  catch(e){ qpPending=false; netSetStatus('クイックプレイに接続できなかった'); return; }
   qpWs=sock;
   sock.addEventListener('open',function(){
     sock.send(JSON.stringify({t:'queue_join',profile:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)}}));
@@ -13448,6 +13598,7 @@ function startMatch(){
   me=(role==='teacher')?teacher:students[0];
   if(role==='student'&&me.skill==='reveal'){ setAura(teacher,'reveal',3); teacher.revealT=3; }
   document.getElementById('title').style.display='none';
+  document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイが試合開始後も残るバグ対策(2026-09-12) */
   if(role==='teacher') setFPWeapon(weaponPick||(LOOK[teacherKind]||{}).weapon||'ruler');
   /* 先生は一人称なのでカメラの向きと体の向きが半周ずれる。開始直後にクルッと
      回ってしまわないよう、ここで合わせておく */
@@ -14935,6 +15086,7 @@ function evtStartMatch(){
     netBroadcastVoiceRoster();
   }
   document.getElementById('title').style.display='none';
+  document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイ対策(2026-09-12、startMatch()と同様) */
   started=true; over=false; evtOver=false; evtRunning=true;
   camYaw=evtMe.yaw; last=performance.now();
   startIntro();
