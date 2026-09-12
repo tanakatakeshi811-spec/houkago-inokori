@@ -789,6 +789,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
           <div id="netMakeBtn" style="flex:1;text-align:center">部屋を作る</div>
           <div id="netJoinBtn" style="flex:1;text-align:center">コードで入る</div>
           <div id="netSearchBtn" style="flex:1;text-align:center">サーバー検索</div>
+          <div id="netQuickBtn" style="flex:1;text-align:center">クイックプレイ</div>
         </div>
         <div id="netJoinBox" style="display:none">
           <input id="netCodeInput" maxlength="4"
@@ -816,7 +817,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <p class="hint" style="margin-top:12px">
         先生役はホストだけ。友達は空いている生徒枠に入る。<br>
         人数が足りない枠は今まで通りAIが埋める。<br>
-        コードを知っていれば直接入れる。「検索に公開する」をONにした部屋だけサーバー検索に出る。
+        コードを知っていれば直接入れる。「検索に公開する」をONにした部屋だけサーバー検索に出る。<br>
+        「クイックプレイ」は世界中の今つながっている人と自動的にマッチング（先生1vs生徒4の通常モードのみ対応）。
       </p>
     </div>
   </div>
@@ -10959,6 +10961,93 @@ let netLobbyRooms={};         // ロビー役のときに保持する公開部�
 let netLobbyPubConn=null;     // ロビー役ではない場合、既存ロビーへ登録しに行く接続
 let netLobbyRoleDecided=false;// ロビー役になれるか一度だけ判定したか
 let netSearchPeer=null;       // 検索中に使う使い捨てのPeerオブジェクト
+/* ---- Cloudflare Worker連携（部屋の登録・検索・クイックプレイ） ----
+   今までの「固定peer ID（LOBBY_ID）をどこかのタブが自己申告で名乗る」方式は、
+   そのタブが1つも生きていない間はロビーが消える不安定な仕組みだった
+   （下の netLobbySyncLegacy / netLobbySearchLegacy 一式が旧方式、そのまま残してある）。
+   ここでは常時稼働のCloudflare Worker + Durable Objectsに、部屋コードの
+   登録・在籍確認・公開検索・クイックプレイの待ち合わせだけを任せる。
+   実際の試合データ・音声は今まで通りPeerJSのP2P（ホスト権威）のまま。
+   ホストのpeer IDも「houkago-inokori-」+部屋コード決め打ちをやめてランダムな
+   IDに変え、部屋コードの所有権はDurable Object側が排他的に管理する形にした
+   （今までの「部屋コード＝peer ID」という衝突しうる設計そのものをやめた）。
+   Workerに繋がらない／応答が無い場合は、すべて旧方式へ自動フォールバックする。 */
+const CLOUD_HOST='houkago-inokori-relay.shunri-ai.workers.dev';
+function cloudWsUrl(path){ return 'wss://'+CLOUD_HOST+path; }
+let cloudWs=null, cloudWsReady=false, cloudWsQueue=[];
+function cloudLobbySocket(cb){
+  if(cloudWs){ if(cloudWsReady) cb(cloudWs); else cloudWsQueue.push(cb); return; }
+  cloudWsQueue=[cb];
+  let sock;
+  try{ sock=new WebSocket(cloudWsUrl('/ws')); }catch(e){ cloudWsQueue=[]; cb(null); return; }
+  cloudWs=sock;
+  sock.addEventListener('open',function(){
+    if(cloudWs!==sock) return;
+    cloudWsReady=true;
+    const q=cloudWsQueue; cloudWsQueue=[];
+    q.forEach(function(f){ f(sock); });
+  });
+  sock.addEventListener('message',function(evt){
+    let msg; try{ msg=JSON.parse(evt.data); }catch(e){ return; }
+    cloudOnMessage(msg);
+  });
+  const onDown=function(){
+    if(cloudWs!==sock) return;
+    const wasReady=cloudWsReady;
+    cloudWs=null; cloudWsReady=false;
+    if(!wasReady){ const q=cloudWsQueue; cloudWsQueue=[]; q.forEach(function(f){ f(null); }); }
+  };
+  sock.addEventListener('close',onDown);
+  sock.addEventListener('error',onDown);
+}
+function cloudSend(obj){ if(cloudWs&&cloudWsReady){ try{ cloudWs.send(JSON.stringify(obj)); }catch(e){} } }
+let cloudHostPendingGen=0, cloudHostCode='';
+let cloudJoinPendingGen=0;
+let cloudSearchCb=null;
+function cloudOnMessage(msg){
+  if(!msg||!msg.t) return;
+  if(msg.t==='host_registered'){
+    if(netConnGen!==cloudHostPendingGen) return;
+    cloudHostCode=msg.code;
+    netHostRevealRoom(msg.code);
+  } else if(msg.t==='code_taken'){
+    if(netConnGen!==cloudHostPendingGen) return;
+    /* 部屋がまだ確定していない＝初回登録中の衝突→別コードでやり直す。
+       既に試合の部屋コードが確定済み（再接続時の登録し直し）なら、
+       進行中のコードを勝手に変えたくないのでここでは諦める */
+    if(!netRoomCode) cloudHostRegisterAttempt(cloudHostPendingGen);
+  } else if(msg.t==='join_result'){
+    if(netConnGen!==cloudJoinPendingGen||netHostConn) return;
+    if(msg.found) netJoinConnectToPeer(msg.peerId,msg.code,cloudJoinPendingGen);
+    else netJoinLegacy(msg.code,cloudJoinPendingGen);
+  } else if(msg.t==='public_rooms'){
+    if(cloudSearchCb){ const cb=cloudSearchCb; cloudSearchCb=null; cb(msg.rooms||[]); }
+  }
+}
+function cloudHostRegisterAttempt(gen){
+  if(netConnGen!==gen||!netPeer) return;
+  const code=netPickCode();
+  cloudHostPendingGen=gen;
+  cloudLobbySocket(function(ws){
+    if(netConnGen!==gen) return;
+    if(!ws){ netHostFallbackLegacy(gen); return; }
+    cloudSend({t:'host_register',code:code,peerId:netPeer.id,
+      profile:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)},
+      isPublic:false,count:netConns.length+1,max:netMaxSlots()+1,stage:stageName(curStage)});
+  });
+  /* 数秒返事が無ければクラウドの調子が悪いとみなし、旧方式へ切り替える */
+  setTimeout(function(){ if(netConnGen===gen&&!netRoomCode) netHostFallbackLegacy(gen); },4000);
+}
+function cloudReclaimCode(){
+  if(!netRoomCode||!netPeer||netMode!=='host') return;
+  const code=netRoomCode, gen=netConnGen;
+  cloudLobbySocket(function(ws){
+    if(!ws||netConnGen!==gen||netRoomCode!==code) return;
+    cloudSend({t:'host_register',code:code,peerId:netPeer.id,
+      profile:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)},
+      isPublic:netPublic,count:netConns.length+1,max:netMaxSlots()+1,stage:stageName(curStage)});
+  });
+}
 function saveProfile(){
   try{ localStorage.setItem('hi_profile_v1',JSON.stringify({name:myProfile.name,icon:myProfile.icon})); }catch(e){}
 }
@@ -11201,6 +11290,10 @@ function netTeardown(){
   netLobbyPubConn=null;
   try{ if(netLobbyPeer) netLobbyPeer.destroy(); }catch(e){}
   netLobbyPeer=null; netLobbyRooms={};
+  /* クラウド側（Cloudflare Worker）の部屋登録も解除する */
+  if(cloudHostCode){ cloudSend({t:'host_unregister'}); cloudHostCode=''; }
+  netRoomCode='';
+  qpTeardownQueueSocket();
   voiceTeardown();
   const off=document.getElementById('netOffline'), rm=document.getElementById('netRoom');
   if(off) off.style.display='block';
@@ -11228,15 +11321,45 @@ function netSend(conn,obj){
 function netBroadcast(obj){
   netConns.forEach(function(c){ netSend(c.conn,obj); });
 }
+function netHostRevealRoom(code){
+  /* クラウド登録（またはその代替の旧方式）で部屋コードが確定した瞬間に呼ばれる */
+  netRoomCode=code;
+  document.getElementById('netOffline').style.display='none';
+  document.getElementById('netRoom').style.display='block';
+  document.getElementById('netCodeShow').textContent=code;
+  netRenderPeerList();
+  netSetStatus('部屋コード '+code+'　友達を待っています',true);
+  micIndicatorUpdate();
+  if(qpPending) netQuickplayHostReady(code);   /* クイックプレイ経由なら待っている仲間へコードを配る */
+}
+function netHostAttachConnHandlers(){
+  netPeer.on('connection',function(conn){
+    conn.on('open',function(){
+      const slot=netAssignSlot();
+      if(slot<0){ netSend(conn,{t:'full'}); setTimeout(function(){ conn.close(); },300); return; }
+      netConns.push({conn:conn,slot:slot});
+      netSend(conn,{t:'welcome',slot:slot,host:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)}});
+      netRenderPeerList();
+      netSetStatus('部屋コード '+netRoomCode+'　'+netConns.length+'人 接続中',true);
+      netBroadcastVoiceRoster();
+      netLobbySync();
+      netQuickplayMaybeAutostart();
+    });
+    conn.on('data',function(msg){ netHostOnData(conn,msg); });
+    conn.on('close',function(){ netHostOnClose(conn); });
+  });
+}
 function netOpenHost(){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
-  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[];
-  const code=netPickCode();
-  netRoomCode=code;
+  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netRoomCode='';
   netSetStatus('部屋を作っています…',true);
   netLockRoleToggle(true);
-  try{ netPeer=new Peer('houkago-inokori-'+code,{debug:0}); }
+  /* 部屋コードとpeer IDを分離する（今までは「houkago-inokori-」+部屋コードを
+     そのままpeer IDにしていたため、世界中の誰かとの衝突可能性があった）。
+     peer IDはランダムにし、部屋コードの管理はCloudflare Worker側に任せる */
+  const useId='houkago-inokori-host-'+Math.random().toString(36).slice(2,10);
+  try{ netPeer=new Peer(useId,{debug:0}); }
   catch(e){ netSetStatus('部屋を作れなかった'); netMode='off'; netLockRoleToggle(false); return; }
   voiceAttachIncoming(netPeer);
   /* シグナリングサーバーが反応しないまま何も起きないケースの保険。
@@ -11249,30 +11372,31 @@ function netOpenHost(){
     }
   },12000);
   netPeer.on('open',function(){
-    document.getElementById('netOffline').style.display='none';
-    document.getElementById('netRoom').style.display='block';
-    document.getElementById('netCodeShow').textContent=code;
-    netRenderPeerList();
-    netSetStatus('部屋コード '+code+'　友達を待っています',true);
-    micIndicatorUpdate();
+    if(netConnGen!==hostGen) return;
+    cloudHostRegisterAttempt(hostGen);   /* クラウドに部屋コードの登録を依頼する */
   });
-  netPeer.on('connection',function(conn){
-    conn.on('open',function(){
-      const slot=netAssignSlot();
-      if(slot<0){ netSend(conn,{t:'full'}); setTimeout(function(){ conn.close(); },300); return; }
-      netConns.push({conn:conn,slot:slot});
-      netSend(conn,{t:'welcome',slot:slot,host:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)}});
-      netRenderPeerList();
-      netSetStatus('部屋コード '+code+'　'+netConns.length+'人 接続中',true);
-      netBroadcastVoiceRoster();
-      netLobbySync();
-    });
-    conn.on('data',function(msg){ netHostOnData(conn,msg); });
-    conn.on('close',function(){ netHostOnClose(conn); });
-  });
+  netHostAttachConnHandlers();
   netPeer.on('error',function(e){
     const msg=(e&&e.type)?e.type:String(e);
     if(msg.indexOf('unavailable-id')>=0){ netOpenHost(); return; }
+    netSetStatus('接続エラー: '+msg);
+  });
+}
+function netHostFallbackLegacy(gen){
+  /* Cloudflare Workerに繋がらない場合の保険。旧方式（部屋コード＝peer ID）で
+     部屋を作る。衝突回避やクイックプレイとの連携は弱くなるが、コードでの
+     入室自体は今まで通り動く */
+  if(netConnGen!==gen) return;
+  try{ if(netPeer) netPeer.destroy(); }catch(e){}
+  const code=netPickCode();
+  try{ netPeer=new Peer('houkago-inokori-'+code,{debug:0}); }
+  catch(e){ netSetStatus('部屋を作れなかった'); netMode='off'; netLockRoleToggle(false); return; }
+  voiceAttachIncoming(netPeer);
+  netPeer.on('open',function(){ if(netConnGen===gen) netHostRevealRoom(code); });
+  netHostAttachConnHandlers();
+  netPeer.on('error',function(e){
+    const msg=(e&&e.type)?e.type:String(e);
+    if(msg.indexOf('unavailable-id')>=0){ netHostFallbackLegacy(gen); return; }
     netSetStatus('接続エラー: '+msg);
   });
 }
@@ -11318,12 +11442,32 @@ function netJoinRoom(codeRaw){
   if(netPeer) netTeardown();
   netMode='client'; netRoomCode=code; netClientSlot=-1;
   netSetStatus('接続しています…',true);
+  const joinGen=++netConnGen;
+  cloudJoinPendingGen=joinGen;
+  /* まずクラウド(Cloudflare Worker)に「このコードのホストは今どのpeer IDか」を
+     問い合わせる。応答が来ない/繋がらない場合は旧方式（部屋コード＝peer ID
+     という前提での直接接続）にフォールバックする */
+  cloudLobbySocket(function(ws){
+    if(netConnGen!==joinGen) return;
+    if(!ws){ netJoinLegacy(code,joinGen); return; }
+    cloudSend({t:'join_lookup',code:code});
+    setTimeout(function(){
+      if(netConnGen!==joinGen||netHostConn) return;
+      netJoinLegacy(code,joinGen);
+    },3000);
+  });
+}
+function netJoinLegacy(code,joinGen){
+  if(netConnGen!==joinGen||netHostConn) return;
+  netJoinConnectToPeer('houkago-inokori-'+code,code,joinGen);
+}
+function netJoinConnectToPeer(peerId,code,joinGen){
+  if(netConnGen!==joinGen||netHostConn) return;
   const myId='houkago-inokori-guest-'+Math.random().toString(36).slice(2,8);
   try{ netPeer=new Peer(myId,{debug:0}); }
   catch(e){ netSetStatus('接続できなかった'); netMode='off'; return; }
   voiceAttachIncoming(netPeer);
   /* エラーイベントが来ないまま「接続しています…」が固まるケースの保険 */
-  const joinGen=++netConnGen;
   setTimeout(function(){
     if(netConnGen!==joinGen) return;
     if(!netHostConn||!netHostConn.open){
@@ -11331,7 +11475,7 @@ function netJoinRoom(codeRaw){
     }
   },12000);
   netPeer.on('open',function(){
-    const conn=netPeer.connect('houkago-inokori-'+code,{reliable:true});
+    const conn=netPeer.connect(peerId,{reliable:true});
     netHostConn=conn;
     conn.on('open',function(){
       netSetStatus('接続した！ホストの開始を待っています…',true);
@@ -11501,8 +11645,9 @@ function netLobbyBuildList(){
   return out;
 }
 /* 5秒おきに呼ぶ（公開中でなければほぼ何もしない軽い関数）。
-   公開ON→ロビー役の決定・自分の部屋情報の送信/更新。公開OFF→登録を消す */
-function netLobbySync(){
+   公開ON→ロビー役の決定・自分の部屋情報の送信/更新。公開OFF→登録を消す
+   （旧方式。クラウドが不調な時の保険として残してあり、常に一緒に動かす） */
+function netLobbySyncLegacy(){
   const active=netPublic&&netMode==='host'&&netPeer&&netPeer.open&&!(started&&!over);
   if(active){
     netLobbyDecideRole();
@@ -11516,44 +11661,73 @@ function netLobbySync(){
     if(netLobbyPubConn&&netLobbyPubConn.open) netSend(netLobbyPubConn,{t:'unregister'});
   }
 }
+/* クラウド(Cloudflare Worker)側の部屋情報を更新する。まだこの接続で
+   部屋コードをクラウド登録できていなければ、登録し直しから試みる
+   （クラウドWebSocketが一度切れて再接続した直後などに起きる） */
+function netLobbySyncCloud(){
+  if(!netRoomCode||!netPeer||netMode!=='host') return;
+  if(cloudHostCode!==netRoomCode){ cloudReclaimCode(); return; }
+  const active=netPublic&&netPeer.open&&!(started&&!over);
+  if(active) cloudSend({t:'host_update',isPublic:true,count:netConns.length+1,max:netMaxSlots()+1,stage:stageName(curStage)});
+  else cloudSend({t:'host_update',isPublic:false});
+}
+function netLobbySync(){
+  netLobbySyncLegacy();
+  netLobbySyncCloud();
+}
+/* 検索：クラウドと旧方式の両方に同時に問い合わせて、コードの重複を除いて
+   まとめて表示する（どちらか片方しか反応しなくても検索結果が出るように） */
 function netLobbySearch(){
   const el=document.getElementById('netSearchList');
   if(el) el.textContent='検索しています…';
+  let cloudDone=false, legacyDone=false, cloudRooms=null, legacyRooms=null;
+  function tryRender(){
+    if(!cloudDone||!legacyDone) return;
+    const map={};
+    (cloudRooms||[]).forEach(function(r){ if(r&&r.code) map[r.code]=r; });
+    (legacyRooms||[]).forEach(function(r){ if(r&&r.code&&!map[r.code]) map[r.code]=r; });
+    netRenderSearchResults(Object.keys(map).map(function(k){ return map[k]; }));
+  }
+  cloudSearchCb=function(rooms){ cloudRooms=rooms; cloudDone=true; tryRender(); };
+  cloudLobbySocket(function(ws){
+    if(!ws){ if(!cloudDone){ cloudDone=true; cloudRooms=[]; tryRender(); } return; }
+    cloudSend({t:'list_public'});
+  });
+  setTimeout(function(){ if(!cloudDone){ cloudDone=true; cloudRooms=cloudRooms||[]; tryRender(); } },4000);
+  netLobbySearchLegacy(function(rooms){ legacyRooms=rooms; legacyDone=true; tryRender(); });
+}
+function netLobbySearchLegacy(cb){
   try{ if(netSearchPeer) netSearchPeer.destroy(); }catch(e){}
   netSearchPeer=null;
-  if(typeof Peer==='undefined'){ if(el) el.textContent='通信ライブラリを読み込めなかった'; return; }
+  if(typeof Peer==='undefined'){ cb([]); return; }
   const myId='houkago-inokori-seek-'+Math.random().toString(36).slice(2,8);
   let p, done=false;
-  try{ p=new Peer(myId,{debug:0}); }catch(e){ if(el) el.textContent='検索できなかった'; return; }
+  try{ p=new Peer(myId,{debug:0}); }catch(e){ cb([]); return; }
   netSearchPeer=p;
   const bail=setTimeout(function(){
     if(done) return; done=true;
     try{ p.destroy(); }catch(e){}
-    if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+    cb([]);
   },7000);
   p.on('open',function(){
     let conn;
     try{ conn=p.connect(LOBBY_ID,{reliable:true}); }
-    catch(e){ if(!done){ done=true; clearTimeout(bail); if(el) el.textContent='検索できなかった'; } return; }
+    catch(e){ if(!done){ done=true; clearTimeout(bail); cb([]); } return; }
     conn.on('open',function(){ netSend(conn,{t:'query'}); });
     conn.on('data',function(msg){
       if(done) return; done=true; clearTimeout(bail);
-      if(msg&&msg.t==='list') netRenderSearchResults(msg.rooms||[]);
-      else if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+      cb((msg&&msg.t==='list')?(msg.rooms||[]):[]);
       try{ conn.close(); }catch(e){}
       try{ p.destroy(); }catch(e){}
     });
     conn.on('error',function(){
       if(done) return; done=true; clearTimeout(bail);
-      if(el) el.textContent='公開中の部屋は見つからなかった（コードで入ってね）';
+      cb([]);
     });
   });
-  p.on('error',function(e){
+  p.on('error',function(){
     if(done) return; done=true; clearTimeout(bail);
-    const msg=(e&&e.type)?e.type:String(e);
-    if(el) el.textContent=(msg.indexOf('peer-unavailable')>=0)
-      ?'今公開中の部屋は無いみたい（検索サーバー役が誰もいない）。コードで入ってね'
-      :'検索できなかった';
+    cb([]);
   });
 }
 function netRenderSearchResults(rooms){
@@ -11573,6 +11747,90 @@ function netRenderSearchResults(rooms){
       document.getElementById('netCodeInput').value=code;
       netJoinRoom(code);
     });
+  });
+}
+
+/* ===== クイックプレイ（世界中の初対面プレイヤーと自動マッチング） =====
+   Cloudflare Durable Objectの公開待合キュー(MatchQueue)を使う。今回は
+   「通常モード（先生1vs生徒4=最大5人）」だけを対象にした最小実装。
+   キューに最初に入った人が先生役（ホスト）になり、他の人は生徒として
+   合流する。5人集まれば待ち時間ゼロで即開始、集まらなくても20秒経てば
+   その時点のメンバー＋AIで開始する（既存の「空き枠はAIが埋める」仕組みを
+   そのまま利用、待ち合わせ自体は新規）。マッチング後の実際の接続確立は
+   上のクラウド部屋登録・参加の仕組み（netOpenHost/netJoinRoom）にそのまま
+   乗せる。部屋コードを画面に見せる必要はないが、隠す理由もないので
+   ホスト側は普通の部屋画面がそのまま出る。 */
+let qpWs=null, qpPending=false, qpTimeoutT=null, qpExpected=0;
+function qpTeardownQueueSocket(){
+  qpPending=false;
+  if(qpTimeoutT){ clearTimeout(qpTimeoutT); qpTimeoutT=null; }
+  try{ if(qpWs) qpWs.close(); }catch(e){}
+  qpWs=null;
+}
+function netQuickplayHostStart(){
+  qpTeardownQueueSocket();
+  startMatch();
+}
+function netQuickplayMaybeAutostart(){
+  /* クイックプレイで待っていた人数が全員揃ったら、タイムアウトを待たずに開始する */
+  if(!qpPending||netMode!=='host') return;
+  if(netConns.length>=qpExpected) netQuickplayHostStart();
+}
+function netQuickplayHostReady(code){
+  if(qpWs){ try{ qpWs.send(JSON.stringify({t:'quickplay_ready',code:code})); }catch(e){} }
+}
+function qpOnMessage(msg){
+  if(!msg||!msg.t||!qpPending) return;
+  if(msg.t==='queue_wait'){
+    netSetStatus('クイックプレイ：対戦相手を探しています…（'+msg.pos+'人目）',true);
+  } else if(msg.t==='quickplay_host'){
+    qpExpected=Math.max(0,(msg.size||1)-1);
+    netSetStatus('クイックプレイ：マッチしました！部屋を準備しています…',true);
+    const wm=document.getElementById('netWaitMsg');
+    if(wm) wm.innerHTML='マッチしました。あなたが先生役（ホスト）です。<br>他の参加者を待っています…';
+    /* 既存の役割トグル（#trole）を実際にクリックしたのと同じ状態にしてから
+       ホストを開く（buildList/showStage等の既存処理をそのまま使うため） */
+    const tt=document.querySelector('#trole [data-role="teacher"]');
+    if(tt&&!tt.classList.contains('sel')) tt.click();
+    netOpenHost();
+    const waitMs=(qpExpected<=0)?1500:20000;
+    qpTimeoutT=setTimeout(function(){ if(qpPending&&netMode==='host') netQuickplayHostStart(); },waitMs);
+  } else if(msg.t==='quickplay_wait_host'){
+    netSetStatus('クイックプレイ：マッチしました！ホストの部屋を待っています…',true);
+    if(qpTimeoutT) clearTimeout(qpTimeoutT);
+    qpTimeoutT=setTimeout(function(){
+      if(qpPending){ qpTeardownQueueSocket(); netTeardown(); netSetStatus('クイックプレイに失敗した（もう一度お試しください）'); }
+    },25000);
+  } else if(msg.t==='quickplay_join'){
+    if(qpTimeoutT){ clearTimeout(qpTimeoutT); qpTimeoutT=null; }
+    qpTeardownQueueSocket();
+    netJoinRoom(msg.code);
+  }
+}
+function netQuickPlay(){
+  if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
+  if(netPeer) netTeardown();
+  qpTeardownQueueSocket();
+  qpPending=true; qpExpected=0;
+  netSetStatus('クイックプレイ：対戦相手を探しています…',true);
+  document.getElementById('netWaitCode').textContent='－－－－';
+  document.getElementById('netWaitMsg').innerHTML='クイックプレイで対戦相手を探しています…<br>(集まらなければ20秒ほどでAIが加わります)';
+  document.getElementById('netwait').classList.add('on');
+  document.getElementById('go').style.display='none';
+  let sock;
+  try{ sock=new WebSocket('wss://'+CLOUD_HOST+'/quickplay'); }
+  catch(e){ qpPending=false; netSetStatus('クイックプレイに接続できなかった'); document.getElementById('netwait').classList.remove('on'); return; }
+  qpWs=sock;
+  sock.addEventListener('open',function(){
+    sock.send(JSON.stringify({t:'queue_join',profile:{name:myProfile.name,icon:myProfile.icon,pid:String(PID)}}));
+  });
+  sock.addEventListener('message',function(evt){
+    let msg; try{ msg=JSON.parse(evt.data); }catch(e){ return; }
+    qpOnMessage(msg);
+  });
+  sock.addEventListener('close',function(){ if(qpWs===sock) qpWs=null; });
+  sock.addEventListener('error',function(){
+    if(qpPending&&netMode==='off'){ netSetStatus('クイックプレイに接続できなかった'); qpTeardownQueueSocket(); }
   });
 }
 
@@ -12126,6 +12384,7 @@ function netClientTick(dt){
 
 /* ---- タイトル画面のUI配線 ---- */
 document.getElementById('netMakeBtn').addEventListener('click',function(){ netOpenHost(); });
+document.getElementById('netQuickBtn').addEventListener('click',function(){ netQuickPlay(); });
 document.getElementById('netJoinBtn').addEventListener('click',function(){
   document.getElementById('netJoinBox').style.display='block';
   document.getElementById('netSearchBox').style.display='none';
