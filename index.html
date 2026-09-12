@@ -3448,11 +3448,13 @@ function person(opt){
   } else if(!opt.tall&&!opt.male){
     const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.5*S,0.72*S,0.56*S,14),acc);
     skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
-    /* プリーツ */
+    /* プリーツ：質点ばね物理で個別に揺れる布セグメントとして登録(addCloth、2026-09-12) */
     for(let i=0;i<8;i++){
       const a2=i/8*6.28;
+      const px2=Math.cos(a2)*0.66*S, pz2=Math.sin(a2)*0.66*S;
       const pl=new THREE.Mesh(new THREE.BoxGeometry(0.08*S,0.54*S,0.08*S),LM(0xc8c4b8));
-      pl.position.set(Math.cos(a2)*0.66*S,hipY+0.12*S,Math.sin(a2)*0.66*S); g.add(pl);
+      pl.position.set(px2,hipY+0.12*S,pz2); g.add(pl);
+      addCloth(g,pl,px2,pz2);
     }
     g.userData_skirt=skirt;
   } else if(!opt.tall&&opt.male){
@@ -3729,7 +3731,7 @@ function person(opt){
       white:white,dark:dark,opt:opt}); }catch(e){}
   }
   g.userData={paper:pap,legL:legL,legR:legR,armL:armL,armR:armR,head:head,phase:0,
-    skirt:g.userData_skirt||null,
+    skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,
     aura:aura,auraMat:auraMat,heart:heart,hMat:hMat,hglow:hglow,hgMat:hgMat,trapMark:tm,
     torso:torso,blob:blob,paperMat:paperMat};
   scene.add(g); return g;
@@ -3750,6 +3752,15 @@ function cn(parent,mat,r,h,x,y,z,seg){
 function tr(parent,mat,r,tube,x,y,z,seg){
   const m=new THREE.Mesh(new THREE.TorusGeometry(r,tube,6,seg||10),mat);
   m.position.set(x,y,z); parent.add(m); return m;
+}
+/* スカートのプリーツ・コート裾・マント等、質点ばね物理で個別に揺れさせたい
+   布セグメントをキャラのグループ(g)に登録する共通ヘルパー。x/zはキャラ中心
+   から見たローカルオフセットで、ang(揺れの径方向)の算出だけに使う。
+   実際のばね計算・回転の適用は毎フレームupdSkirtPhys()が行う(2026-09-12) */
+function addCloth(g,mesh,x,z){
+  if(!g.userData_cloth) g.userData_cloth=[];
+  mesh.userData.ang=Math.atan2(x,z);
+  g.userData_cloth.push(mesh);
 }
 /* ===== キャラ固有の追加ディテール(先生28種+一部生徒) =====
    名前・アビリティ・世界観に沿った低ポリの小物を2〜6個ほど足すだけ。
@@ -3879,8 +3890,11 @@ const CHAR_PROPS={
   shade:function(g,c){ const S=c.S;
     cy(g,new THREE.MeshBasicMaterial({color:0xffcf7a,transparent:true,opacity:0.7}),
       0.2*S,0.2*S,0.4*S,0,c.chest,-0.5*S,10);
-    for(let i=0;i<4;i++) bx(g,c.uni,0.08*S,0.1*S,0.02*S,
-      -0.4*S,0.3*S+i*0.16*S,0.02*S,0.3);
+    for(let i=0;i<4;i++){
+      const px=-0.4*S, pz=0.02*S;
+      const strip=bx(g,c.uni,0.08*S,0.1*S,0.02*S,px,0.3*S+i*0.16*S,pz,0.3);
+      addCloth(g,strip,px,pz);
+    }
   },
   /* 禁書の墨吏｜巻物と墨のしみ */
   ink:function(g,c){ const S=c.S;
@@ -3911,8 +3925,10 @@ const CHAR_PROPS={
   },
   /* 霧刃の紳士｜コートの裾と懐中時計・霧 */
   ripper:function(g,c){ const S=c.S;
-    bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S,-0.16*S,c.hipY-0.4*S,-0.3*S);
-    bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S, 0.16*S,c.hipY-0.4*S,-0.3*S);
+    const rx1=-0.16*S, rz1=-0.3*S, rx2=0.16*S, rz2=-0.3*S;
+    const rc1=bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S,rx1,c.hipY-0.4*S,rz1);
+    const rc2=bx(g,LM(0x14161a),0.3*S,1.0*S,0.06*S,rx2,c.hipY-0.4*S,rz2);
+    addCloth(g,rc1,rx1,rz1); addCloth(g,rc2,rx2,rz2);
     cy(g,LM(0xc9a24a),0.06*S,0.06*S,0.02*S,0.3*S,c.chest-0.2*S,0.28*S,10).rotation.x=Math.PI/2;
     for(let i=0;i<3;i++) sp(g,new THREE.MeshBasicMaterial({color:0xdfe8ea,transparent:true,opacity:0.3}),
       0.2*S-i*0.03*S,(-0.2+i*0.2)*S,0.15*S,0.4*S+i*0.1*S,6);
@@ -3933,7 +3949,11 @@ const CHAR_PROPS={
   /* 風紀委員の亡霊｜すり切れたマントと違反切符 */
   seitokai:function(g,c){ const S=c.S;
     const capeMat=new THREE.MeshBasicMaterial({color:0x2a2038,transparent:true,opacity:0.55});
-    for(let i=0;i<3;i++) bx(g,capeMat,0.18*S,0.9*S-i*0.1*S,0.03*S,(-0.2+i*0.2)*S,c.hipY+0.1*S,-0.32*S);
+    for(let i=0;i<3;i++){
+      const cx=(-0.2+i*0.2)*S, cz=-0.32*S;
+      const cape=bx(g,capeMat,0.18*S,0.9*S-i*0.1*S,0.03*S,cx,c.hipY+0.1*S,cz);
+      addCloth(g,cape,cx,cz);
+    }
     bx(g,LM(0xf4f2ea),0.16*S,0.1*S,0.01*S,0.5*S,c.chest-0.3*S,0.2*S);
   },
   /* 花壇の見回り先生｜ジョウロと作業エプロン */
@@ -9413,11 +9433,77 @@ function animateWalk(u,moved,dt){
   u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
   const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
   if(u.torso) u.torso.scale.set(1+br,1-br*0.5,1+br);
-  if(u.skirt){
-    u.skirt.rotation.x=-Math.min(0.34,moved*11);
-    u.skirt.rotation.z=Math.sin(u.phase)*Math.min(0.16,moved*7);
-  }
   return br;
+}
+
+/* スカート・コート裾・マント等の「揺れる布」を質点ばね(mass-spring)で近似する
+   物理っぽい揺れ(oimo.io相当の剛体物理エンジンではなく、このゲームの既存方針
+   ＝軽量な自前の疑似物理を踏襲。three.js r128のCDN構成はESMのOimoPhysics.jsと
+   相性が悪く、[[物理サンドボックス]]でcannon-esを見送った時と同じ理由で不採用)。
+   毎フレーム、キャラの実際の描画位置(ノックバック・乗り越え・担がれ中を含めた
+   最終座標)から求めた現在速度・旋回速度をばねの目標角度にし、スプリング・
+   ダンパーで追従させることで、急停止・急な方向転換・ジャンプ(乗り越え)の
+   ときに一拍遅れて揺り戻す慣性を再現する。target=速度ベースなので、加速度を
+   使う設計(二階差分でノイズが乗りやすい)より安定する。
+   userData.skirt(既存)とuserData.cloth(スカートのプリーツ・コート裾・マント等、
+   addCloth()で登録した布セグメントの配列)の両方に効く共通処理。
+   人数が多い場面(2vs8/怪異退治など、players+evtChasers+evtStudentsの合計>6)では
+   セグメント単位の個別ばね計算を省略しスカート本体の値を流用する軽量モードに
+   切り替えて負荷を抑える(2026-09-12) */
+function skClamp(v,m){ return v<-m?-m:(v>m?m:v); }
+function skirtLoadHeavy(){
+  return (players.length+evtChasers.length+evtStudents.length)<=6;
+}
+function updSkirtPhys(u,e,dt){
+  if((!u.skirt&&!u.cloth)||dt<=0) return;
+  const p=e.mesh.position, yaw=e.mesh.rotation.y||0;
+  const idt=1/Math.max(dt,0.0001);
+  const px=(u.skPX===undefined)?p.x:u.skPX, pz=(u.skPZ===undefined)?p.z:u.skPZ;
+  const wvx=(p.x-px)*idt, wvz=(p.z-pz)*idt;
+  u.skPX=p.x; u.skPZ=p.z;
+  /* ワールド速度→キャラのローカル軸(x=右、z=前)に変換 */
+  const cy2=Math.cos(-yaw), sy2=Math.sin(-yaw);
+  const lvx=wvx*cy2-wvz*sy2, lvz=wvx*sy2+wvz*cy2;
+  /* 旋回の速さ(急な方向転換で裾が振られる分)。角度の巻き戻り対策込み */
+  let dyaw=yaw-(u.skYaw===undefined?yaw:u.skYaw);
+  dyaw=((dyaw+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+  const yawRate=dyaw*idt; u.skYaw=yaw;
+  const wig=Math.sin(u.phase||0)*(u.walkAmp||0);
+  const idle=Math.sin(elapsed*1.3+(u.phase||0)*0.05)*0.018;
+  const tgtPitch=skClamp(-lvz*0.026+wig*0.05+idle,0.44);
+  const tgtRoll =skClamp( lvx*0.026+yawRate*0.07+wig*0.15+idle*0.6,0.38);
+  const K=68,D=9,Kf=44,Df=8;
+  u.skVP=(u.skVP||0)+(K*(tgtPitch-(u.skPitch||0))-D*(u.skVP||0))*dt;
+  u.skPitch=(u.skPitch||0)+u.skVP*dt;
+  u.skVR=(u.skVR||0)+(K*(tgtRoll-(u.skRoll||0))-D*(u.skVR||0))*dt;
+  u.skRoll=(u.skRoll||0)+u.skVR*dt;
+  const spd=Math.hypot(lvx,lvz);
+  const tgtFlare=Math.min(1,spd*0.1);
+  u.skFV=(u.skFV||0)+(Kf*(tgtFlare-(u.skFlare||0))-Df*(u.skFV||0))*dt;
+  u.skFlare=(u.skFlare||0)+u.skFV*dt;
+  if(u.skirt){
+    u.skirt.rotation.x=u.skPitch; u.skirt.rotation.z=u.skRoll;
+    const fl=1+u.skFlare*0.18;
+    u.skirt.scale.set(fl,1-u.skFlare*0.06,fl);
+  }
+  if(u.cloth&&u.cloth.length){
+    const heavy=skirtLoadHeavy();
+    for(let i=0;i<u.cloth.length;i++){
+      const m=u.cloth[i], mu=m.userData;
+      if(heavy){
+        const ang=(mu.ang||0)+yaw;
+        const radial=wvx*Math.sin(ang)+wvz*Math.cos(ang);
+        const tgt=skClamp(-radial*0.026+u.skFlare*0.3,0.5);
+        mu.lv=(mu.lv||0)+(60*(tgt-(mu.lean||0))-8*(mu.lv||0))*dt;
+        mu.lean=(mu.lean||0)+mu.lv*dt;
+        m.rotation.x=u.skPitch*0.55;
+        m.rotation.z=mu.lean;
+      } else {
+        m.rotation.x=u.skPitch*0.55;
+        m.rotation.z=u.skRoll*0.6;
+      }
+    }
+  }
 }
 
 /* ===== ループ ===== */
@@ -10554,6 +10640,7 @@ function tick(now){
       e.mesh.rotation.set(0,g.yaw+sh,1.5);
       u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
       u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
+      updSkirtPhys(u,e,dt);
       continue;
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw;
@@ -10663,6 +10750,7 @@ function tick(now){
           ((a2-e.yaw+Math.PI*3)%(Math.PI*2))-Math.PI));
       } else u.head.rotation.y=0;
     }
+    updSkirtPhys(u,e,dt);
   }
   /* ドローン視点 */
   const droneOn=(role==='student'&&me.drone>0);
@@ -11922,6 +12010,7 @@ function netClientTick(dt){
       e.mesh.rotation.set(0,g.yaw+sh,1.5);
       u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
       u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
+      updSkirtPhys(u,e,dt);
       continue;
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw; e.mesh.rotation.z=0;
@@ -11974,6 +12063,7 @@ function netClientTick(dt){
       const br=animateWalk(u,moved,dt);
       if(e.kind==='student'&&e.hurt) u.head.rotation.x=0.18+br; else u.head.rotation.x=br;
     }
+    updSkirtPhys(u,e,dt);
   }
 
   ruler.visible=false;
@@ -14215,6 +14305,7 @@ function evtAnimateEntity(e,carrier,dt){
     e.mesh.rotation.set(0,carrier.yaw+sh,1.5);
     u.legL.rotation.x=0.4+sh; u.legR.rotation.x=-0.4-sh;
     u.armL.rotation.x=-0.9; u.armR.rotation.x=0.9;
+    updSkirtPhys(u,e,dt);
     return;
   }
   if(e.state==='downed'){
@@ -14231,6 +14322,7 @@ function evtAnimateEntity(e,carrier,dt){
     const br=animateWalk(u,moved,dt);
     if(u.head) u.head.rotation.x=br;
   }
+  updSkirtPhys(u,e,dt);
 }
 function evtHostTick(dt){
   elapsed+=dt;
