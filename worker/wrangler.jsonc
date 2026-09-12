@@ -1,0 +1,14 @@
+{
+  "name": "houkago-inokori-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "LOBBY", "class_name": "Lobby" },
+      { "name": "QUEUE", "class_name": "MatchQueue" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Lobby", "MatchQueue"] }
+  ]
+}
