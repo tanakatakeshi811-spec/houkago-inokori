@@ -135,20 +135,29 @@ export class Lobby {
   send(ws, obj) { try { ws.send(JSON.stringify(obj)); } catch (e) {} }
 }
 
-/* ---- MatchQueue: クイックプレイ(世界中の初対面プレイヤーとの自動マッチング) ----
-   1インスタンス(idFromName('global'))が待合列を管理する。今回は「通常モード
-   (先生1vs生徒4=最大5人)」だけを対象にした最小実装。
-   最初にキューへ入った人が先生役(ホスト)になる。5人集まるか、20秒経ったら
-   その時点のメンバーで確定(先生役のクライアントが実際に部屋を作り、
-   Lobbyへ登録できたコードをここへ知らせて、残りのメンバーへ配る)。
-   人数が足りない分は今まで通りクライアント側のAI(BOT)が埋める。 */
+/* ---- MatchQueue: クイックプレイの「動的ロビー」 ----
+   DBD(Dead by Daylight)や第五人格の「押した瞬間にロビーへ入り、人がどんどん
+   集まってくるのが見える、役割/キャラ/特性を選べる、準備OKか制限時間で開始」
+   という仕組み(見た目・固有名詞は一切参考にせず、この"待ち合わせの流れ"だけを
+   参考にした独自実装)。今回は「通常モード(先生1vs生徒4=最大5人)」だけが対象。
+
+   1インスタンス(idFromName('global'))が複数の同時ロビーを管理する
+   (this.lobbies)。人が来るたびに空いているロビーへ即座に合流させ、
+   ロビーの中身が変わるたびに全員へ最新のロビー状態(lobby_state)を
+   ブロードキャストする。全員が準備OKになるか、ロビー開始から60秒経ったら
+   finalize()して、その時点のメンバーで先生役(ホスト)を1人選び、
+   従来通りLobby DO経由の部屋登録・参加へ引き継ぐ(quickplay_host/
+   quickplay_wait_host/quickplay_join のメッセージ名・流れは変更していない)。
+   人数が足りない分・先生役を誰も希望しなかった場合は今まで通りクライアント
+   側のAI(BOT)が埋める。 */
+const LOBBY_MAX = 5;
+const LOBBY_TIMEOUT_MS = 60000;
 export class MatchQueue {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    this.waiting = [];          // WebSocket[]
-    this.meta = new Map();      // ws -> {profile, group}
-    this.timer = null;
+    this.lobbies = [];      // {id, members:Map<ws,{profile,role,ready,charIdx,perkIdx,joinedAt}>, endsAt, timer, locked}
+    this.groupOf = new Map();   // ws -> WebSocket[] (finalize後、コード配布のためだけに残す)
   }
 
   async fetch(request) {
@@ -161,57 +170,92 @@ export class MatchQueue {
   }
 
   attach(ws) {
-    this.meta.set(ws, { profile: null, group: null });
+    let myLobby = null;
     ws.addEventListener('message', (evt) => {
       let msg;
       try { msg = JSON.parse(evt.data); } catch (e) { return; }
       if (!msg || !msg.t) return;
-      if (msg.t === 'queue_join') this.enqueue(ws, msg.profile || {});
-      else if (msg.t === 'quickplay_ready') this.relayReady(ws, msg.code);
-      else if (msg.t === 'queue_leave') this.dequeue(ws);
+      if (msg.t === 'queue_join') { myLobby = this.joinLobby(ws, msg.profile || {}); }
+      else if (msg.t === 'lobby_set') { if (myLobby) this.updateMember(myLobby, ws, msg); }
+      else if (msg.t === 'quickplay_ready') { this.relayReady(ws, msg.code); }
+      else if (msg.t === 'queue_leave') { if (myLobby) { this.leaveLobby(myLobby, ws); myLobby = null; } }
     });
-    const cleanup = () => { this.dequeue(ws); this.meta.delete(ws); };
+    const cleanup = () => { if (myLobby) this.leaveLobby(myLobby, ws); this.groupOf.delete(ws); };
     ws.addEventListener('close', cleanup);
     ws.addEventListener('error', cleanup);
   }
 
-  enqueue(ws, profile) {
-    const m = this.meta.get(ws);
-    if (!m || m.group) return;
-    m.profile = profile;
-    if (this.waiting.indexOf(ws) < 0) this.waiting.push(ws);
-    this.send(ws, { t: 'queue_wait', pos: this.waiting.length });
-    if (this.waiting.length === 1 && !this.timer) {
-      this.timer = setTimeout(() => { this.timer = null; this.finalize(); }, 20000);
-    }
-    /* 5人(先生1+生徒4)集まったら待ち時間を待たずすぐ確定する */
-    if (this.waiting.length >= 5) this.finalize();
+  findOpenLobby() {
+    return this.lobbies.find((l) => !l.locked && l.members.size < LOBBY_MAX);
   }
 
-  dequeue(ws) {
-    const i = this.waiting.indexOf(ws);
-    if (i >= 0) this.waiting.splice(i, 1);
-    if (!this.waiting.length && this.timer) { clearTimeout(this.timer); this.timer = null; }
+  joinLobby(ws, profile) {
+    let lobby = this.findOpenLobby();
+    if (!lobby) {
+      lobby = { id: Math.random().toString(36).slice(2, 8), members: new Map(), locked: false, timer: null, endsAt: 0 };
+      lobby.endsAt = Date.now() + LOBBY_TIMEOUT_MS;
+      lobby.timer = setTimeout(() => this.finalize(lobby), LOBBY_TIMEOUT_MS);
+      this.lobbies.push(lobby);
+    }
+    lobby.members.set(ws, { profile, role: 'student', ready: false, charIdx: 0, perkIdx: [], joinedAt: Date.now() });
+    this.broadcastLobby(lobby);
+    return lobby;
   }
 
-  finalize() {
-    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    if (!this.waiting.length) return;
-    const group = this.waiting.splice(0, 5);
-    group.forEach((sock) => { const m = this.meta.get(sock); if (m) m.group = group; });
-    const host = group[0];
-    this.send(host, { t: 'quickplay_host', size: group.length });
-    group.slice(1).forEach((sock) => this.send(sock, { t: 'quickplay_wait_host' }));
-    /* まだ列に残っている人がいれば、次のグループとして続けて待たせる */
-    if (this.waiting.length && !this.timer) {
-      this.timer = setTimeout(() => { this.timer = null; this.finalize(); }, 20000);
+  updateMember(lobby, ws, msg) {
+    const m = lobby.members.get(ws);
+    if (!m || lobby.locked) return;
+    if (msg.role === 'teacher' || msg.role === 'student') m.role = msg.role;
+    if (typeof msg.charIdx === 'number') m.charIdx = msg.charIdx;
+    if (Array.isArray(msg.perkIdx)) m.perkIdx = msg.perkIdx.slice(0, 4);
+    if (typeof msg.ready === 'boolean') m.ready = msg.ready;
+    this.broadcastLobby(lobby);
+    /* 全員が準備OKになったら60秒を待たずすぐ確定する */
+    if ([...lobby.members.values()].every((x) => x.ready)) this.finalize(lobby);
+  }
+
+  leaveLobby(lobby, ws) {
+    if (!lobby.members.has(ws)) return;
+    lobby.members.delete(ws);
+    if (!lobby.members.size) {
+      if (lobby.timer) clearTimeout(lobby.timer);
+      this.lobbies = this.lobbies.filter((l) => l !== lobby);
+      return;
     }
+    this.broadcastLobby(lobby);
+  }
+
+  broadcastLobby(lobby) {
+    const list = [...lobby.members.values()].map((m) => ({
+      profile: m.profile, role: m.role, ready: m.ready, charIdx: m.charIdx, perkIdx: m.perkIdx,
+    }));
+    lobby.members.forEach((m, sock) => {
+      this.send(sock, { t: 'lobby_state', members: list, endsAt: lobby.endsAt });
+    });
+  }
+
+  finalize(lobby) {
+    if (lobby.locked) return;
+    lobby.locked = true;
+    if (lobby.timer) { clearTimeout(lobby.timer); lobby.timer = null; }
+    this.lobbies = this.lobbies.filter((l) => l !== lobby);
+    if (!lobby.members.size) return;
+    const entries = [...lobby.members.entries()].sort((a, b) => a[1].joinedAt - b[1].joinedAt);
+    /* 先生役を希望した人の中で一番早く参加した人がホスト。誰も希望しなければ
+       一番最初にロビーへ来た人がホスト(その場合ホストは生徒役のまま部屋を
+       開き、先生はAIになる。従来の「ホストは必ず先生役」という強制はやめた) */
+    const hostEntry = entries.find(([, m]) => m.role === 'teacher') || entries[0];
+    const group = entries.map(([sock]) => sock);
+    group.forEach((sock) => this.groupOf.set(sock, group));
+    this.send(hostEntry[0], { t: 'quickplay_host', size: entries.length });
+    entries.forEach(([sock]) => { if (sock !== hostEntry[0]) this.send(sock, { t: 'quickplay_wait_host' }); });
   }
 
   relayReady(ws, code) {
-    const m = this.meta.get(ws);
-    if (!m || !m.group) return;
-    m.group.forEach((sock) => { if (sock !== ws) this.send(sock, { t: 'quickplay_join', code }); });
+    const group = this.groupOf.get(ws);
+    if (!group) return;
+    group.forEach((sock) => { if (sock !== ws) this.send(sock, { t: 'quickplay_join', code }); });
+    this.groupOf.delete(ws);
   }
 
   send(ws, obj) { try { ws.send(JSON.stringify(obj)); } catch (e) {} }
