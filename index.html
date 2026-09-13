@@ -387,7 +387,17 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .slot canvas{width:32px;height:42px;border-radius:2px;background:#00000030}
 .slot .sn{font-size:10.5px;line-height:1.4}
 .slot .sn i{display:block;font-style:normal;font-size:8.5px;opacity:.45;margin-top:2px}
-#tport3d,#pvtoggle{display:none}
+/* スキン機能(2026-09-13)：色・形・装飾・お絵かき/画像は3Dプレビューでないと
+   確認できないため、以前は未検証のまま無効化していた#tport3d/#pvtoggleを
+   有効化する。位置は#tport(2D立ち絵)とほぼ重ねて置き、押すと#tportが
+   隠れて#tport3dが出る(既存のJSがinline styleで面倒を見る) */
+#tport3d{display:none;position:absolute;right:calc(env(safe-area-inset-right) + 68px);
+  top:50%;transform:translateY(-50%);z-index:2;pointer-events:none}
+#pvtoggle{display:block;position:absolute;right:calc(env(safe-area-inset-right) + 30px);
+  top:calc(50% + 214px);z-index:4;padding:5px 14px;border:1px solid #ffffff44;
+  border-radius:3px;font-size:10.5px;letter-spacing:.08em;background:#0b120ecc;
+  color:#f2efe4cc;cursor:pointer;pointer-events:auto}
+@media (max-width:900px){ #tport3d,#pvtoggle{display:none!important} }
 /* ホーム画面を「キャラクターを中心にした構成」にするため、右側に大きな
    立ち絵ポートレートを常設（DBDのホーム画面の構図を参考に、キャラの
    後ろにだけ淡い光を置く。canvasは背景を塗りつぶさない設計なので、
@@ -563,6 +573,23 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .netSRow .ic{font-size:15px}
 .netSRow .nm{flex:1}
 .netSRow .cd{opacity:.55;letter-spacing:.1em}
+/* スキン機能(見た目カスタマイズ)パネル用、2026-09-13追加 */
+.skinRow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px}
+.skinRow span:first-child{width:52px;opacity:.75}
+.skinRow input[type=color]{width:36px;height:24px;padding:0;border:1px solid #ffffff44;
+  border-radius:3px;background:#0b120e;cursor:pointer}
+.skReset{margin-left:auto;font-size:9.5px;opacity:.5;cursor:pointer;text-decoration:underline}
+.skReset:active{opacity:.9}
+.skinSliders{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.skinSliders label{font-size:9.5px;opacity:.7;display:flex;flex-direction:column;gap:2px}
+.skinSliders input[type=range]{width:100%}
+#skAccList{display:flex;flex-direction:column;gap:4px}
+.skAccItem{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid #ffffff20;
+  border-radius:3px;background:#ffffff08;font-size:10.5px}
+.skAccItem .sw{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.skAccItem .rm{margin-left:auto;opacity:.6;cursor:pointer;padding:0 4px}
+.skAccItem .rm:active{opacity:1;color:#e05a52}
+#skinPaintCanvas{cursor:crosshair}
 </style>
 </head>
 <body>
@@ -730,6 +757,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   </div>
   <div id="rail">
     <div class="rbtn sel" data-pane="p_char"><i>&#128100;</i>キャラ</div>
+    <div class="rbtn" data-pane="p_skin"><i>&#127912;</i>見た目</div>
     <div class="rbtn" data-pane="p_wep" id="railWep"><i>&#9876;</i>武器</div>
     <div class="rbtn" data-pane="p_item" id="railItem"><i>&#128161;</i>持ち物</div>
     <div class="rbtn" data-pane="p_perk" id="railPerk"><i>&#11088;</i>特性</div>
@@ -751,6 +779,55 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div id="tlist"></div>
       </div>
       <div id="pCharEvent" style="display:none"></div>
+    </div>
+    <div class="pane" id="p_skin">
+      <p class="lbl">色を変える（自由な色）</p>
+      <div class="skinRow"><span>髪</span><input type="color" id="skHair"><span class="skReset" data-k="hair">既定に戻す</span></div>
+      <div class="skinRow"><span>肌</span><input type="color" id="skSkin"><span class="skReset" data-k="skin">既定に戻す</span></div>
+      <div class="skinRow"><span>服(上)</span><input type="color" id="skUniform"><span class="skReset" data-k="uniform">既定に戻す</span></div>
+      <div class="skinRow"><span>服(下)</span><input type="color" id="skAccent"><span class="skReset" data-k="accent">既定に戻す</span></div>
+      <div class="skinRow"><span>ズボン</span><input type="color" id="skPants"><span class="skReset" data-k="pants">既定に戻す</span></div>
+      <div class="skinRow"><span>靴</span><input type="color" id="skShoe"><span class="skReset" data-k="shoe">既定に戻す</span></div>
+
+      <p class="lbl" style="margin-top:12px">下半身の形</p>
+      <div class="seg small" id="skShapeSel">
+        <div data-v="skirt" class="sel">通常</div><div data-v="block">四角いブロック</div>
+      </div>
+
+      <p class="lbl" style="margin-top:12px">装飾を追加（位置・色は自由）</p>
+      <div class="seg small wrap" id="skAccTypeSel">
+        <div data-v="pencil" class="sel">鉛筆</div><div data-v="mushroom">キノコ</div>
+        <div data-v="star">ほし</div><div data-v="ribbon">リボン</div>
+      </div>
+      <div class="skinRow"><span>色</span><input type="color" id="skAccColor" value="#e8c547"></div>
+      <div class="skinSliders">
+        <label>横(X)<input type="range" id="skAccX" min="-1" max="1" step="0.05" value="0"></label>
+        <label>高さ(Y)<input type="range" id="skAccY" min="0" max="3" step="0.05" value="2.7"></label>
+        <label>前後(Z)<input type="range" id="skAccZ" min="-1" max="1" step="0.05" value="0.32"></label>
+      </div>
+      <div class="tog on" id="skAccAdd" style="text-align:center;width:100%;box-sizing:border-box;margin-top:6px">この装飾を追加</div>
+      <div id="skAccList"></div>
+
+      <p class="lbl" style="margin-top:12px">お絵かき/画像（自分の画面にだけ表示）</p>
+      <canvas id="skinPaintCanvas" width="160" height="160"
+        style="background:#f4f2ea;border:1px solid #ffffff33;border-radius:3px;touch-action:none;display:block;margin:0 auto"></canvas>
+      <div class="skinRow" style="margin-top:6px;justify-content:center"><span style="width:auto">ペン色</span><input type="color" id="skPaintColor" value="#c94a52"></div>
+      <div class="seg small" style="margin-top:6px">
+        <div id="skPaintClear" style="flex:1;text-align:center">消す</div>
+        <div id="skTexNone" style="flex:1;text-align:center">外す</div>
+      </div>
+      <label class="tog" style="display:block;text-align:center;margin-top:6px;cursor:pointer">
+        画像を読み込む<input type="file" id="skImgFile" accept="image/*" style="display:none">
+      </label>
+      <p class="lbl" style="margin-top:8px">貼る場所</p>
+      <div class="seg small" id="skTexTargetSel">
+        <div data-v="uniform" class="sel">上半身(前)</div><div data-v="bottom">下半身(前)</div>
+      </div>
+      <p class="hint" style="margin-top:8px;text-align:left">
+        色・形・装飾は他の参加者にも見えます。<br>
+        お絵かき/画像は自分の画面にだけ表示され、他の人には見えません。
+      </p>
+      <div class="tog" id="skResetAll" style="text-align:center;width:100%;box-sizing:border-box;margin-top:10px">見た目をすべてリセット</div>
     </div>
     <div class="pane" id="p_wep">
       <div id="botwrap">
@@ -3384,11 +3461,12 @@ function person(opt){
   if(body!=='crawl'&&!floaty){
     g.add(legL); g.add(legR);
     [legL,legR].forEach(function(L){
-      const sh=new THREE.Mesh(new THREE.BoxGeometry(0.34*S,0.18*S,0.5*S),LM(0x25292b));
+      /* 靴の色はスキン機能でopt.shoeColorから上書きできる(2026-09-13追加) */
+      const sh=new THREE.Mesh(new THREE.BoxGeometry(0.34*S,0.18*S,0.5*S),LM(opt.shoeColor||0x25292b));
       sh.position.set(0,-1.0*S,0.08*S); sh.castShadow=true; L.add(sh);
       const sole=new THREE.Mesh(new THREE.BoxGeometry(0.37*S,0.06*S,0.54*S),LM(0xd8d2c0));
       sole.position.set(0,-1.1*S,0.08*S); L.add(sole);
-      const toe=new THREE.Mesh(new THREE.SphereGeometry(0.17*S,10,8),LM(0x25292b));
+      const toe=new THREE.Mesh(new THREE.SphereGeometry(0.17*S,10,8),LM(opt.shoeColor||0x25292b));
       toe.position.set(0,-0.99*S,0.3*S); toe.scale.set(1,0.6,1); L.add(toe);
     });
   }
@@ -3496,17 +3574,25 @@ function person(opt){
   } else if(opt.tall&&body==='human'){
     bx(g,LM(0x1a1d22),0.5*S,0.9*S,0.1*S,0,chest,0.27*S);
   } else if(!opt.tall&&!opt.male){
-    const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.5*S,0.72*S,0.56*S,14),acc);
-    skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
-    /* プリーツ：質点ばね物理で個別に揺れる布セグメントとして登録(addCloth、2026-09-12) */
-    for(let i=0;i<8;i++){
-      const a2=i/8*6.28;
-      const px2=Math.cos(a2)*0.66*S, pz2=Math.sin(a2)*0.66*S;
-      const pl=new THREE.Mesh(new THREE.BoxGeometry(0.08*S,0.54*S,0.08*S),LM(0xc8c4b8));
-      pl.position.set(px2,hipY+0.12*S,pz2); g.add(pl);
-      addCloth(g,pl,px2,pz2);
+    /* スキン機能：opt.skirtShape==='block'なら四角いブロック状の代替形状に
+       する(2026-09-13追加)。ブロック形状は布物理を持たせず単純な箱1個のみ */
+    if(opt.skirtShape==='block'){
+      const skirt=new THREE.Mesh(new THREE.BoxGeometry(1.0*S,0.56*S,1.0*S),acc);
+      skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
+      g.userData_skirt=skirt;
+    } else {
+      const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.5*S,0.72*S,0.56*S,14),acc);
+      skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
+      /* プリーツ：質点ばね物理で個別に揺れる布セグメントとして登録(addCloth、2026-09-12) */
+      for(let i=0;i<8;i++){
+        const a2=i/8*6.28;
+        const px2=Math.cos(a2)*0.66*S, pz2=Math.sin(a2)*0.66*S;
+        const pl=new THREE.Mesh(new THREE.BoxGeometry(0.08*S,0.54*S,0.08*S),LM(0xc8c4b8));
+        pl.position.set(px2,hipY+0.12*S,pz2); g.add(pl);
+        addCloth(g,pl,px2,pz2);
+      }
+      g.userData_skirt=skirt;
     }
-    g.userData_skirt=skirt;
   } else if(!opt.tall&&opt.male){
     bx(g,LM(opt.pants||0x2f3540),0.8*S,0.55*S,0.46*S,0,hipY+0.2*S,0);
     bx(g,LM(opt.pants||0x2f3540),0.36*S,1.0*S,0.36*S,-0.22*S,hipY-0.4*S,0);
@@ -3779,6 +3865,33 @@ function person(opt){
     try{ CHAR_PROPS[opt.propKey](g,{S:S,chest:chest,hipY:hipY,headY:headY,
       head:head,armL:armL,armR:armR,skin:skin,hair:hair,uni:uni,acc:acc,
       white:white,dark:dark,opt:opt}); }catch(e){}
+  }
+  /* スキン機能：プレイヤーが自由配置した装飾アクセサリ(鉛筆・キノコ等)。
+     位置(x,y,z)はキャラ中心(g空間、地面が0、前方向がz+)を基準にした
+     ローカル座標をそのまま使う。propKey固有装飾と違い任意個数・任意色
+     (2026-09-13追加、しゅんりさんの追加要望) */
+  if(opt.accessories&&opt.accessories.length){
+    opt.accessories.forEach(function(ac2){
+      const def=ACCESSORY_DEFS[ac2.type]; if(!def) return;
+      try{
+        def(g,S,(ac2.x||0)*S,(ac2.y===undefined?headY+0.3*S:ac2.y*S),(ac2.z||0)*S,
+          (ac2.color===undefined||ac2.color===null)?0xe8c547:ac2.color);
+      }catch(e){}
+    });
+  }
+  /* スキン機能：自分で描いた絵/アップロード画像をCanvasTexture化して
+     体の前面に貼る(2026-09-13追加)。ネットワーク同期はしないローカル限定機能
+     なので、opt.customTexは自分の見た目を組み立てる呼び出し元でしか渡さない */
+  if(opt.customTex&&opt.customTex.texture){
+    const dmat=new THREE.MeshBasicMaterial({map:opt.customTex.texture,transparent:true});
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(0.62*S,0.72*S),dmat);
+    if(opt.customTex.target==='bottom'){
+      plane.position.set(0,hipY+0.05*S,(opt.male?0.5:0.68)*S);
+    } else {
+      plane.position.set(0,chest,0.265*S);
+    }
+    plane.renderOrder=5;
+    g.add(plane);
   }
   g.userData={paper:pap,legL:legL,legR:legR,armL:armL,armR:armR,head:head,phase:0,
     skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,
@@ -4127,6 +4240,39 @@ const CHAR_PROPS={
     bx(g,LM(0x5c6a8a),0.22*S,0.3*S,0.02*S,-0.32*S,c.chest+0.1*S,0.27*S);
     bx(g,LM(0xf4f2ea),0.16*S,0.06*S,0.022*S,-0.32*S,c.chest+0.22*S,0.28*S);
     for(let i=0;i<3;i++) sp(g,LM(0xe8c547),0.03*S,0.3*S+i*0.06*S,c.chest-0.1*S,0.26*S,6);
+  }
+};
+/* スキン機能：プレイヤーが自由な位置・色で配置できる装飾アクセサリ
+   (2026-09-13追加)。CHAR_PROPSと違い「このキャラのこの位置」という
+   決め打ちが無く、(g,S,x,y,z,color)を受け取って好きな座標に生やすだけの
+   軽量な関数。x/y/zは既にg空間のワールドスケール込み座標に変換済みの値 */
+const ACCESSORY_DEFS={
+  /* 鉛筆：軸(color)＋芯(黒)＋消しゴム(ピンク) */
+  pencil:function(g,S,x,y,z,color){
+    cy(g,LM(color),0.035*S,0.035*S,0.5*S,x,y,z,6);
+    cn(g,LM(0xc9a86c),0.035*S,0.09*S,x,y+0.29*S,z,6);
+    sp(g,LM(0x24272b),0.012*S,x,y+0.34*S,z,6);
+    cy(g,LM(0xe58fae),0.038*S,0.038*S,0.08*S,x,y-0.29*S,z,8);
+  },
+  /* キノコ：軸(白)＋傘(color)＋斑点(白) */
+  mushroom:function(g,S,x,y,z,color){
+    cy(g,LM(0xf4ecd8),0.05*S,0.07*S,0.22*S,x,y-0.06*S,z,8);
+    sp(g,LM(color),0.16*S,x,y+0.08*S,z,10);
+    for(let i=0;i<3;i++){
+      const a=i*2.1;
+      sp(g,LM(0xf4ecd8),0.03*S,x+Math.cos(a)*0.1*S,y+0.13*S,z+Math.sin(a)*0.1*S,6);
+    }
+  },
+  /* ほし：星形の代わりに軽量な二重四角錐で近似 */
+  star:function(g,S,x,y,z,color){
+    cn(g,LM(color),0.12*S,0.14*S,x,y+0.06*S,z,4);
+    const c2=cn(g,LM(color),0.12*S,0.14*S,x,y-0.06*S,z,4); c2.rotation.x=Math.PI;
+  },
+  /* リボン：蝶結び風に箱2つ＋結び目 */
+  ribbon:function(g,S,x,y,z,color){
+    bx(g,LM(color),0.16*S,0.12*S,0.05*S,x-0.09*S,y,z);
+    bx(g,LM(color),0.16*S,0.12*S,0.05*S,x+0.09*S,y,z);
+    sp(g,LM(color),0.05*S,x,y,z,8);
   }
 };
 const STU=[
@@ -4680,7 +4826,7 @@ const stats={hits:0,downs:0,seats:0,pallets:0,vaults:0,perfect:0,fails:0};
    引数化することで2人目の先生(teacher2、常にAI・固有能力は使わない)も
    同じ関数から作れるようにした。applyWeaponはプレイヤー本人が選んだ
    武器スキン(weaponPick)を反映するかどうか(2人目の先生には適用しない) */
-function buildTeacherObj(kind,spawnPoint,applyWeapon){
+function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
   const K=KINDS[kind];
   const LK=Object.assign({propKey:kind},LOOK[kind]||{});
   if(applyWeapon&&weaponPick) LK.weapon=weaponPick;
@@ -4690,8 +4836,12 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon){
              fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
              garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0,
              mirror:1.0,sakasa:1.0,doll:0.98};
+  /* スキン機能(2026-09-13)：先生役で自分が操作するteacherにだけ、選んだ
+     スキン(色/形/装飾、自分の画面ならお絵かき/画像も)を上乗せする */
+  let tOpt=Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK);
+  if(skinOverride) tOpt=applySkinToOpt(tOpt,skinOverride,skinOverride===mySkin);
   const t={kind:'teacher',name:K.name,
-    mesh:person(Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK)),
+    mesh:person(tOpt),
     x:spawnPoint.x,z:spawnPoint.z,yaw:0,speed:DIFF.tSpeed*(SPD[kind]||1),
     base:DIFF.tSpeed*(SPD[kind]||1),path:[],pathT:0,
     carrying:null,swing:0,cool:0,lunge:0,patrol:null,alert:null,vault:0,stam:1,
@@ -4766,11 +4916,17 @@ function spawnAll(){
   students=rosterPick.map(function(ci,i){
     const C=STU[ci];
     const s=spots[(i*7)%spots.length]; const p=center(s[0],s[1]);
+    /* スキン機能(2026-09-13)：netMatchSkinsに自分/参加者の色・形・装飾が
+       積まれていれば、そのキャラの見た目にだけ上乗せする。オフライン/
+       未設定なら従来通りの既定の見た目のまま */
+    let sOpt=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
+      SLOOK[C.perk]||{});
+    const sk=netMatchSkins&&netMatchSkins[i];
+    if(sk) sOpt=applySkinToOpt(sOpt,sk,sk===mySkin);
     return {kind:'student',name:C.short,full:C.name,ci:ci,
       perk:C.perk,skill:C.skill,skillName:C.sname||'',
       abMax:C.cd||0,abUses:(C.uses===undefined?-1:C.uses),
-      mesh:person(Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
-        SLOOK[C.perk]||{})),
+      mesh:person(sOpt),
       male:!!((SLOOK[C.perk]||{}).male),
       color:C.uniform,hairC:C.hair,
       x:p.x,z:p.z,yaw:0,speed:6.4,base:6.4,state:'free',hurt:false,seatCount:0,
@@ -4800,7 +4956,7 @@ function spawnAll(){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
   const gs=far.length?far[0]:spots[spots.length-1];
   const gp=center(gs[0],gs[1]);
-  teacher=buildTeacherObj(teacherKind,gp,true);
+  teacher=buildTeacherObj(teacherKind,gp,true,netMatchSkins&&netMatchSkins.teacher);
   if(gameMode==='classic2'){
     /* 2vs8モード：2人目の先生(常にAI、汎用の追跡+運搬AIのみで固有能力は
        使わせない、2026-09-11)。見た目のバリエーションだけ出すため
@@ -9564,6 +9720,9 @@ function tick(now){
   if(!started&&!over){
     try{ updLobby(dt); }catch(e){}
     renderScene();
+    /* スキン機能(2026-09-13)：3Dプレビュー(#tport3d)を実際に毎フレーム描く。
+       以前はrenderPreview()自体が呼び出し元を持たず死んでいた */
+    try{ renderPreview(); }catch(e){}
     return;
   }
   if(started&&introPath.length){
@@ -10987,10 +11146,142 @@ let netSeenToastId=0;         // client: 既に表示したトーストのID
 let netLastToast='', netToastId=0;   // host: 直近のtoast内容とID
 let netPlayersList=[];        // client: 待機中に見えている参加者一覧（表示用）
 let netHostProfile=null;      // client: ホストの名前・アイコン
+let netMatchSkins=null;       // host/client共通：試合開始時に固定する
+                               // {[studentsの添字]:スキン, teacher:スキン}
+                               // (2026-09-13 スキン機能のオンライン同期用)
 
 /* ---- プロフィール（名前・アイコン、ローカル保存） ---- */
 let myProfile={name:'',icon:''};
 const PROFILE_ICONS=['🦊','🐱','🐰','🐼','🐸','🦉','🐧','🦁','🐻','🐨','🐵','🦔','🐹','🦄','🐙','🐢','🦋','🐝','🌟','🔥'];
+
+/* ===== スキン機能(見た目カスタマイズ)：2026-09-13追加 =====
+   髪・肌・服の色/下半身の形/自由配置の装飾アクセサリは軽量なデータ
+   (色コード・文字列・数値)なので、そのままオンライン対戦でも同期する。
+   自分で描いた絵/アップロード画像(tex)だけはデータ量が大きいので
+   ローカル(自分の画面)限定にし、通信には一切乗せない */
+function defaultSkin(){
+  return {hair:null,skin:null,uniform:null,accent:null,pants:null,shoe:null,
+    skirtShape:'skirt',accessories:[],tex:null,texTarget:'uniform'};
+}
+function loadSkin(){
+  let o=defaultSkin();
+  try{
+    const raw=localStorage.getItem('hi_skin_v1');
+    if(raw){
+      const s=JSON.parse(raw);
+      if(s&&typeof s==='object') o=Object.assign(o,s,
+        {accessories:Array.isArray(s.accessories)?s.accessories.slice(0,8):[]});
+    }
+  }catch(e){}
+  return o;
+}
+let mySkin=loadSkin();
+function saveSkin(){ try{ localStorage.setItem('hi_skin_v1',JSON.stringify(mySkin)); }catch(e){} }
+/* 見た目を組み立てるopt(person()に渡す引数)に、選ばれているスキンを
+   上書きで乗せる。includeTexがtrueの時だけ自分専用のcustomTex(お絵かき/
+   画像)も乗せる＝「自分の画面にだけ映る」を実現する呼び方の切り替え */
+function applySkinToOpt(baseOpt,skin,includeTex){
+  if(!skin) return baseOpt;
+  const o=Object.assign({},baseOpt);
+  if(skin.hair!=null) o.hair=skin.hair;
+  if(skin.skin!=null) o.skin=skin.skin;
+  if(skin.uniform!=null) o.uniform=skin.uniform;
+  if(skin.accent!=null) o.accent=skin.accent;
+  if(skin.pants!=null) o.pants=skin.pants;
+  if(skin.shoe!=null) o.shoeColor=skin.shoe;
+  if(skin.skirtShape) o.skirtShape=skin.skirtShape;
+  if(skin.accessories&&skin.accessories.length) o.accessories=skin.accessories;
+  if(includeTex&&skin.tex&&skinPaintTexture) o.customTex={target:skin.texTarget||'uniform',texture:skinPaintTexture};
+  return o;
+}
+/* オンライン対戦で他の参加者に配る軽量版(色/形/装飾のみ、tex抜き) */
+function skinSyncData(){
+  return {hair:mySkin.hair,skin:mySkin.skin,uniform:mySkin.uniform,accent:mySkin.accent,
+    pants:mySkin.pants,shoe:mySkin.shoe,skirtShape:mySkin.skirtShape,
+    accessories:(mySkin.accessories||[]).slice(0,8).map(function(a){
+      return {type:a.type,x:a.x,y:a.y,z:a.z,color:a.color};
+    })};
+}
+/* 受信したスキンデータ(相手の色/形/装飾)をそのまま信用せず、型と個数を
+   絞ってから使う簡易サニタイズ。壊れたデータで例外が起きないようにする */
+function sanitizeSkin(raw){
+  if(!raw||typeof raw!=='object') return null;
+  const hexOrNull=function(v){ return (typeof v==='number'&&isFinite(v))?(v&0xffffff):null; };
+  const num=function(v,d){ return (typeof v==='number'&&isFinite(v))?Math.max(-3,Math.min(3,v)):d; };
+  return {
+    hair:hexOrNull(raw.hair), skin:hexOrNull(raw.skin), uniform:hexOrNull(raw.uniform),
+    accent:hexOrNull(raw.accent), pants:hexOrNull(raw.pants), shoe:hexOrNull(raw.shoe),
+    skirtShape:(raw.skirtShape==='block')?'block':'skirt',
+    accessories:Array.isArray(raw.accessories)?raw.accessories.slice(0,8).filter(function(a){
+      return a&&ACCESSORY_DEFS[a.type];
+    }).map(function(a){
+      return {type:a.type,x:num(a.x,0),y:num(a.y,1),z:num(a.z,0),color:hexOrNull(a.color)};
+    }):[]
+  };
+}
+/* 試合開始時に固定する「誰がどのスキンか」の対応表を作る。
+   forWire=trueの時はネットワークに乗せる版(tex抜きの軽量データのみ)、
+   falseの時は自分のローカル描画用(自分の分だけtex込みのmySkinそのもの)。
+   キーは students配列の添字、先生役で自分が操作する時だけ'teacher' */
+function buildNetMatchSkins(forWire){
+  const m={};
+  if(role==='student') m[0]=forWire?skinSyncData():mySkin;
+  else m.teacher=forWire?skinSyncData():mySkin;
+  if(netMode==='host'){
+    netConns.forEach(function(c){ if(c.skin) m[netStudentIndexForSlot(c.slot)]=c.skin; });
+  }
+  return m;
+}
+function sanitizeSkinsMap(raw){
+  if(!raw||typeof raw!=='object') return {};
+  const out={};
+  Object.keys(raw).forEach(function(k){ const s=sanitizeSkin(raw[k]); if(s) out[k]=s; });
+  return out;
+}
+/* お絵かき/画像アップロード用のCanvasTexture。ローカル限定機能なので
+   THREE.Textureのまま使い回し、ネットワークには一切乗せない */
+let skinPaintCanvas=null, skinPaintCtx=null, skinPaintTexture=null;
+function initSkinPaint(){
+  if(skinPaintCanvas) return;
+  skinPaintCanvas=document.getElementById('skinPaintCanvas');
+  if(!skinPaintCanvas||typeof THREE==='undefined') return;
+  skinPaintCtx=skinPaintCanvas.getContext('2d');
+  skinPaintCtx.fillStyle='#f4f2ea';
+  skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+  skinPaintTexture=new THREE.CanvasTexture(skinPaintCanvas);
+  skinPaintTexture.needsUpdate=true;
+  if(mySkin.tex){
+    const img=new Image();
+    img.onload=function(){
+      skinPaintCtx.clearRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+      skinPaintCtx.drawImage(img,0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+      skinPaintTexture.needsUpdate=true;
+      refreshSkinPreview();
+    };
+    img.src=mySkin.tex;
+  }
+}
+/* 色/形/装飾/テクスチャのどれかを変えたら呼ぶ共通の再反映処理。
+   保存→タイトル画面の3Dプレビュー/待機ロビーの自キャラモデルを作り直す */
+function refreshSkinPreview(){
+  saveSkin();
+  try{ if(pvOn) buildPreview(); }catch(e){}
+  try{ refreshLobby(); }catch(e){}
+  try{ showStage(); }catch(e){}
+  sendMySkinUpdate();
+}
+/* オンライン接続中に見た目を変えたら、ホストへ最新のプロフィール
+   (名前/アイコン+スキン)を送り直す。試合中の変更は次の試合開始時に
+   反映される(毎フレーム配るには重すぎるため、頻度は「変更した時だけ」) */
+function sendMySkinUpdate(){
+  try{
+    if(netMode==='client'&&netHostConn&&netHostConn.open){
+      netSend(netHostConn,{t:'profile',name:myProfile.name,icon:myProfile.icon,pid:String(PID),
+        eRole:evtPickRole,eChar:(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx,
+        skin:skinSyncData()});
+    }
+  }catch(e){}
+}
 function escHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
@@ -11554,6 +11845,7 @@ function netHostOnData(conn,msg){
     if(!c) return;
     c.profile={name:String(msg.name||'名無し').slice(0,10),icon:msg.icon||'👤',pid:String(msg.pid||''),
       eRole:msg.eRole,eChar:msg.eChar};
+    c.skin=sanitizeSkin(msg.skin);
     netRenderPeerList();
     netSetStatus('部屋コード '+netRoomCode+'　'+c.profile.icon+' '+c.profile.name
       +' が参加！（'+netConns.length+'人接続中）',true);
@@ -11620,7 +11912,8 @@ function netJoinConnectToPeer(peerId,code,joinGen){
       document.getElementById('netwait').classList.add('on');
       micIndicatorUpdate();
       netSend(conn,{t:'profile',name:myProfile.name,icon:myProfile.icon,pid:String(PID),
-        eRole:evtPickRole,eChar:(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx});
+        eRole:evtPickRole,eChar:(evtPickRole==='chaser')?evtPickChaserIdx:evtPickStuIdx,
+        skin:skinSyncData()});
     });
     conn.on('data',function(msg){ netClientOnData(msg); });
     conn.on('close',function(){ netClientDisconnected('ホストとの接続が切れた'); });
@@ -11687,6 +11980,11 @@ function netClientOnStart(payload){
   gameMode=payload.gameMode||'classic';
   rosterPick=payload.rosterPick; weaponPick=payload.weaponPick||'';
   netClientSlot=payload.mySlot;
+  /* スキン機能(2026-09-13)：ホストから届いた「誰がどのスキンか」の対応表を
+     そのまま使う(全員tex抜き)が、自分の分だけは自分のmySkinそのもの
+     (お絵かき/画像込み)に差し替える。これで自分の画面にだけ自分のテクスチャが映る */
+  netMatchSkins=sanitizeSkinsMap(payload.skins);
+  netMatchSkins[netClientSlot]=mySkin;
   spawnAll(); buildRoster();
   /* 2vs8モード：2人目の先生の見た目(キャラ種類)をホストと合わせる。
      spawnAll()内ではteacher2の見た目をランダムに決めてしまうため、
@@ -12882,11 +13180,12 @@ function refreshLobby(){
   for(let i=0;i<STU.length&&picks.length<4;i++) if(picks.indexOf(i)<0) picks.push(i);
   picks.forEach(function(ci,i){
     const C=STU[ci];
-    const o=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
+    let o=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
       SLOOK[C.perk]||{});
+    const isSel=(role==='student'&&ci===myIndex);
+    if(isSel) o=applySkinToOpt(o,mySkin,true);   /* スキン機能：待機ロビーの自キャラにも反映 */
     const m=makeLobbyModel(o);
     if(!m) return;
-    const isSel=(role==='student'&&ci===myIndex);
     m.position.set(-7.5+i*5.0,0,-9.5);
     m.rotation.y=Math.PI+ (i-1.5)*0.12;
     const sc=isSel?1.25:1.0;
@@ -12897,8 +13196,9 @@ function refreshLobby(){
   const K=TCH[kindIndex];
   const lk=Object.assign({propKey:K.key},LOOK[K.key]||{});
   if(weaponPick) lk.weapon=weaponPick;
-  const km=makeLobbyModel(Object.assign(
-    {uniform:KINDS[K.key].color,hair:0x24201c,accent:0x8a2f28,tall:true},lk));
+  let kOpt=Object.assign({uniform:KINDS[K.key].color,hair:0x24201c,accent:0x8a2f28,tall:true},lk);
+  if(role==='teacher') kOpt=applySkinToOpt(kOpt,mySkin,true);   /* スキン機能：先生役の自キャラにも反映 */
+  const km=makeLobbyModel(kOpt);
   if(km){
     km.position.set(7.5,0,10.5);
     km.rotation.y=Math.PI-0.55;
@@ -13115,7 +13415,7 @@ function cssHex(c){ let h=c.toString(16); while(h.length<6) h='0'+h; return '#'+
 function drawChar(g,W,H,o){
   g.clearRect(0,0,W,H);
   const cx=W/2, S=H/300, tall=!!o.tall;
-  const uni=cssHex(o.uniform), hair=cssHex(o.hair), skin='#f0d3b4';
+  const uni=cssHex(o.uniform), hair=cssHex(o.hair), skin=(o.skin!=null?cssHex(o.skin):'#f0d3b4');
   g.fillStyle='rgba(0,0,0,0.28)';
   g.beginPath(); g.arc(cx,275*S,52*S,0,Math.PI*2); g.fill();
   /* 脚 */
@@ -13197,7 +13497,8 @@ function showStage(){
   elWepWrap.style.display=(role==='teacher')?'block':'none';
   if(role==='student'){
     const o=STU[myIndex];
-    drawChar(pg,elPort.width,elPort.height,{uniform:o.uniform,hair:o.hair,tall:false,
+    drawChar(pg,elPort.width,elPort.height,{uniform:(mySkin.uniform!=null?mySkin.uniform:o.uniform),
+      hair:(mySkin.hair!=null?mySkin.hair:o.hair),skin:(mySkin.skin!=null?mySkin.skin:null),tall:false,
       male:!!((SLOOK[o.perk]||{}).male)});
     elTName.textContent=o.name;
     /* 一ノ瀬(foot)のラストスパートは設定パネルで持続時間を変えられるので、
@@ -13208,12 +13509,14 @@ function showStage(){
       '<br>課題プリント5枚を仕上げて昇降口から脱出する';
   } else {
     const o=TCH[kindIndex];
-    drawChar(pg,elPort.width,elPort.height,{uniform:KINDS[o.key].color,hair:0x24201c,tall:true});
+    drawChar(pg,elPort.width,elPort.height,{uniform:(mySkin.uniform!=null?mySkin.uniform:KINDS[o.key].color),
+      hair:(mySkin.hair!=null?mySkin.hair:0x24201c),skin:(mySkin.skin!=null?mySkin.skin:null),tall:true});
     elTName.textContent=KINDS[o.key].name;
     elTDesc.innerHTML='【'+KINDS[o.key].ability+'】'+o.desc+
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
   try{ renderItemPane(); renderPerkPane(); renderPhotoAddonPane(); }catch(e){}
+  try{ syncSkinColorInputs(); }catch(e){}
 }
 Array.prototype.forEach.call(document.querySelectorAll('#trole div'),function(d){
   d.addEventListener('click',function(){
@@ -13532,6 +13835,7 @@ function buildPreview(){
       LOOK[o.key]||{});
     if(weaponPick) opt.weapon=weaponPick;
   }
+  opt=applySkinToOpt(opt,mySkin,true);   /* スキン機能：自分の色/形/装飾/お絵かきをプレビューに反映 */
   const saveAdd=scene.add;
   scene.add=function(){};            /* person() が本編シーンに足さないように */
   pvMesh=person(opt);
@@ -13651,6 +13955,7 @@ function startMatch(){
   /* 2vs8モードは生徒8人、通常モードは従来通り4人(2026-09-11) */
   const needStu=(gameMode==='classic2')?8:4;
   rosterPick=[myIndex].concat(others.slice(0,needStu-1));
+  netMatchSkins=buildNetMatchSkins(false);   /* スキン機能：自分/接続中の参加者の見た目を確定 */
   spawnAll();
   rollItemBoxes();
   applyLoadout();
@@ -13663,11 +13968,12 @@ function startMatch(){
     netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netSendT=0;
     const taskDesks=tasks.map(function(d){ return {c:d.c,r:d.r}; });
     const itemBoxRoll=itemBoxes.map(function(b){ return b.item; });
+    const skinsForWire=buildNetMatchSkins(true);   /* スキン機能：tex抜きの軽量版だけ配信 */
     netConns.forEach(function(c){
       netSend(c.conn,{t:'start', stage:curStage, teacherKind:teacherKind, diff:DIFF,
         gameMode:gameMode, teacherKind2:(teacher2?teacher2.kindKey:''),
         rosterPick:rosterPick, weaponPick:weaponPick, taskDesks:taskDesks,
-        itemBoxRoll:itemBoxRoll, mySlot:netStudentIndexForSlot(c.slot)});
+        itemBoxRoll:itemBoxRoll, mySlot:netStudentIndexForSlot(c.slot), skins:skinsForWire});
     });
     netBroadcastVoiceRoster();
   }
@@ -13814,7 +14120,160 @@ document.getElementById('again').addEventListener('click',function(){
   softReset();
   document.getElementById('go').click();
 });
-try{ refreshStats(); buildList(); showStage(); buildProfileUI(); }
+/* ===== スキン機能(見た目カスタマイズ)パネルのUI配線 2026-09-13追加 ===== */
+function skinDefaultsForCurrent(){
+  /* 現在選ばれているキャラの既定色。スキン未設定の項目はここに表示を合わせる */
+  if(role==='student'){
+    const o=STU[myIndex];
+    return {hair:o.hair,skin:0xf0d3b4,uniform:o.uniform,accent:0xe4e0d4,
+      pants:0x2f3540,shoe:0x25292b};
+  }
+  const o=TCH[kindIndex];
+  return {hair:0x24201c,skin:0xf0d3b4,uniform:KINDS[o.key].color,accent:0x8a2f28,
+    pants:0x2f3540,shoe:0x25292b};
+}
+function syncSkinColorInputs(){
+  const el=document.getElementById('skHair'); if(!el) return;   /* パネル未生成時は何もしない */
+  const d=skinDefaultsForCurrent();
+  document.getElementById('skHair').value=cssHex(mySkin.hair!=null?mySkin.hair:d.hair);
+  document.getElementById('skSkin').value=cssHex(mySkin.skin!=null?mySkin.skin:d.skin);
+  document.getElementById('skUniform').value=cssHex(mySkin.uniform!=null?mySkin.uniform:d.uniform);
+  document.getElementById('skAccent').value=cssHex(mySkin.accent!=null?mySkin.accent:d.accent);
+  document.getElementById('skPants').value=cssHex(mySkin.pants!=null?mySkin.pants:d.pants);
+  document.getElementById('skShoe').value=cssHex(mySkin.shoe!=null?mySkin.shoe:d.shoe);
+  Array.prototype.forEach.call(document.querySelectorAll('#skShapeSel div'),function(x){
+    x.classList.toggle('sel',x.dataset.v===(mySkin.skirtShape||'skirt'));
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(x){
+    x.classList.toggle('sel',x.dataset.v===(mySkin.texTarget||'uniform'));
+  });
+}
+function renderSkinAccList(){
+  const wrap=document.getElementById('skAccList'); if(!wrap) return;
+  wrap.innerHTML='';
+  const names={pencil:'鉛筆',mushroom:'キノコ',star:'ほし',ribbon:'リボン'};
+  (mySkin.accessories||[]).forEach(function(a,i){
+    const row=document.createElement('div'); row.className='skAccItem';
+    const sw=document.createElement('div'); sw.className='sw';
+    sw.style.background=cssHex(a.color==null?0xe8c547:a.color);
+    row.appendChild(sw);
+    const nm=document.createElement('span'); nm.textContent=(names[a.type]||a.type)+' #'+(i+1);
+    row.appendChild(nm);
+    const rm=document.createElement('span'); rm.className='rm'; rm.textContent='✕';
+    rm.addEventListener('click',function(){ mySkin.accessories.splice(i,1); renderSkinAccList(); refreshSkinPreview(); });
+    row.appendChild(rm);
+    wrap.appendChild(row);
+  });
+}
+function initSkinUI(){
+  if(!document.getElementById('skHair')) return;
+  syncSkinColorInputs();
+  function bindColor(id,key){
+    document.getElementById(id).addEventListener('input',function(){
+      mySkin[key]=parseInt(this.value.slice(1),16)||0;
+      refreshSkinPreview();
+    });
+  }
+  bindColor('skHair','hair'); bindColor('skSkin','skin'); bindColor('skUniform','uniform');
+  bindColor('skAccent','accent'); bindColor('skPants','pants'); bindColor('skShoe','shoe');
+  Array.prototype.forEach.call(document.querySelectorAll('.skReset'),function(el){
+    el.addEventListener('click',function(){
+      mySkin[el.dataset.k]=null; syncSkinColorInputs(); refreshSkinPreview();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#skShapeSel div'),function(d){
+    d.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#skShapeSel div'),function(x){ x.classList.remove('sel'); });
+      d.classList.add('sel'); mySkin.skirtShape=d.dataset.v; refreshSkinPreview();
+    });
+  });
+  let skAccType='pencil';
+  Array.prototype.forEach.call(document.querySelectorAll('#skAccTypeSel div'),function(d){
+    d.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#skAccTypeSel div'),function(x){ x.classList.remove('sel'); });
+      d.classList.add('sel'); skAccType=d.dataset.v;
+    });
+  });
+  renderSkinAccList();
+  document.getElementById('skAccAdd').addEventListener('click',function(){
+    if(!mySkin.accessories) mySkin.accessories=[];
+    if(mySkin.accessories.length>=8){ try{ toast('装飾は最大8個まで'); }catch(e){} return; }
+    mySkin.accessories.push({
+      type:skAccType,
+      x:parseFloat(document.getElementById('skAccX').value),
+      y:parseFloat(document.getElementById('skAccY').value),
+      z:parseFloat(document.getElementById('skAccZ').value),
+      color:parseInt(document.getElementById('skAccColor').value.slice(1),16)||0xe8c547
+    });
+    renderSkinAccList(); refreshSkinPreview();
+  });
+  document.getElementById('skResetAll').addEventListener('click',function(){
+    mySkin=defaultSkin();
+    if(skinPaintCtx){
+      skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+      if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+    }
+    syncSkinColorInputs(); renderSkinAccList(); refreshSkinPreview();
+  });
+  /* お絵かき/画像アップロード(自分の画面にだけ反映するローカル限定機能) */
+  initSkinPaint();
+  Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(d){
+    d.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(x){ x.classList.remove('sel'); });
+      d.classList.add('sel'); mySkin.texTarget=d.dataset.v;
+      if(mySkin.tex) refreshSkinPreview(); else saveSkin();
+    });
+  });
+  let skPainting=false;
+  function skPaintAt(ev){
+    if(!skinPaintCtx) return;
+    const rect=skinPaintCanvas.getBoundingClientRect();
+    const px=((ev.touches?ev.touches[0].clientX:ev.clientX)-rect.left)*(skinPaintCanvas.width/rect.width);
+    const py=((ev.touches?ev.touches[0].clientY:ev.clientY)-rect.top)*(skinPaintCanvas.height/rect.height);
+    skinPaintCtx.fillStyle=document.getElementById('skPaintColor').value;
+    skinPaintCtx.beginPath(); skinPaintCtx.arc(px,py,4,0,Math.PI*2); skinPaintCtx.fill();
+    if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+  }
+  if(skinPaintCanvas){
+    skinPaintCanvas.addEventListener('pointerdown',function(ev){ skPainting=true; skPaintAt(ev); ev.preventDefault(); });
+    skinPaintCanvas.addEventListener('pointermove',function(ev){ if(skPainting){ skPaintAt(ev); ev.preventDefault(); } });
+    addEventListener('pointerup',function(){
+      if(!skPainting) return; skPainting=false;
+      try{ mySkin.tex=skinPaintCanvas.toDataURL('image/png'); }catch(e){}
+      refreshSkinPreview();
+    });
+  }
+  document.getElementById('skPaintClear').addEventListener('click',function(){
+    if(!skinPaintCtx) return;
+    skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+    if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+    mySkin.tex=null; refreshSkinPreview();
+  });
+  document.getElementById('skTexNone').addEventListener('click',function(){
+    mySkin.tex=null; refreshSkinPreview();
+  });
+  document.getElementById('skImgFile').addEventListener('change',function(ev){
+    const f=ev.target.files&&ev.target.files[0]; if(!f||!skinPaintCtx) return;
+    const reader=new FileReader();
+    reader.onload=function(){
+      const img=new Image();
+      img.onload=function(){
+        skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
+        const cw=skinPaintCanvas.width, ch=skinPaintCanvas.height;
+        const scale=Math.min(cw/img.width,ch/img.height);
+        const dw=img.width*scale, dh=img.height*scale;
+        skinPaintCtx.drawImage(img,(cw-dw)/2,(ch-dh)/2,dw,dh);
+        if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+        try{ mySkin.tex=skinPaintCanvas.toDataURL('image/png'); }catch(e){}
+        refreshSkinPreview();
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(f);
+    ev.target.value='';
+  });
+}
+try{ refreshStats(); buildList(); showStage(); buildProfileUI(); initSkinUI(); }
 catch(err){ if(window.__err) window.__err('タイトル初期化: '+err.message); }
 try{ checkMobileLandscape(); }catch(err){ try{ layoutPad(); }catch(e2){} }
 setInterval(netLobbySync,5000);   /* サーバー検索の公開ハートビート（非公開時はほぼ何もしない） */
