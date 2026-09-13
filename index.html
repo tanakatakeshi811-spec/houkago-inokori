@@ -272,10 +272,17 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   /* 横画面スマホのタイトル画面：キャラ選択パネルを縦いっぱいに広げつつ、
      はじめるボタン側の文字(#tinfo)をパネルの右側だけに寄せて、
      重なって押せなくなるのを避ける */
-  #rail{gap:5px}
-  .rbtn{width:38px;height:38px;font-size:7px}
+  /* 2026-09-13: #rail/#panelboxはtop:50%で画面中央基準に配置しているが、
+     横画面スマホは高さが低く(〜375〜428px)、ラック(#rail)がキャラ/見た目/
+     武器/持ち物/特性/ステージ/難易度/オンライン/ランキングの9個に増えた今、
+     中央寄せのままだと上端が#tbar・#modeSel(ヘッダー)の下に隠れきらず
+     食い込んで押せなくなることがあった。ヘッダーの実測高さ分だけ空けた
+     固定top+bottomの帯に変更し、はみ出た分は#rail自体のoverflow-y:auto
+     (ベースCSS)でスクロールさせる */
+  #rail{gap:5px;top:78px;bottom:6px;transform:none;justify-content:flex-start;max-height:none}
+  .rbtn{width:38px;height:38px;font-size:7px;flex:none}
   .rbtn i{font-size:14px}
-  #panelbox{left:52px;width:200px;max-height:82vh;padding:9px}
+  #panelbox{left:52px;width:200px;top:78px;bottom:6px;transform:none;max-height:none;padding:9px}
   #panelbox h3{margin:10px 0 5px}
   .slot{padding:4px}
   .slot canvas{width:26px;height:34px}
@@ -355,8 +362,16 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 #title:before{content:"";position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(90deg,#05080699 0%,#05080622 38%,transparent 60%),
              linear-gradient(0deg,#050806cc 0%,transparent 34%)}
-#tbar{position:absolute;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 8px);
-  display:flex;justify-content:space-between;align-items:flex-start;z-index:2}
+/* 2026-09-13: #tbar は元々position:absoluteで、直後の#modeSel(通常flow)の
+   開始位置が#tbarの実際の高さを考慮せずtop:0付近から始まっていたため、
+   スマホ幅でtstatのチップが2〜3行に折り返す・modeSelのタブ文字が折り返す
+   といったケースで両者が確実に重なり、モードタブがチップの下に隠れて
+   押せなくなるバグがあった(しゅんりさんのスクショで報告された「パネルが
+   はみ出て押せない」の主因はこれ)。#tbarを通常フローに戻すことで、
+   #modeSelは常に#tbarの実際の高さの"下"に自動的に配置されるようにした
+   (#rail/#panelboxは#title基準のtop:50%centeringで独立しているため影響なし) */
+#tbar{display:flex;justify-content:space-between;align-items:flex-start;
+  flex-wrap:wrap;gap:6px;position:relative;z-index:2}
 #tlogo{font-size:16px;letter-spacing:.2em;font-weight:800;text-shadow:0 2px 8px #000}
 #tlogo small{display:block;font-size:8px;letter-spacing:.34em;opacity:.45;margin-top:3px;font-weight:400}
 #tstat{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
@@ -365,8 +380,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .chip b{display:block;font-size:12.5px;letter-spacing:.04em;font-weight:700}
 .chip.gold{border-color:#e8c54766;color:var(--yellow)}
 #rail{position:absolute;left:10px;top:50%;transform:translateY(-50%);z-index:3;
-  display:flex;flex-direction:column;gap:8px}
-.rbtn{width:46px;height:46px;border:1px solid #ffffff2e;border-radius:4px;
+  display:flex;flex-direction:column;gap:8px;max-height:86vh;overflow-y:auto;touch-action:pan-y}
+.rbtn{width:46px;height:46px;flex:none;border:1px solid #ffffff2e;border-radius:4px;
   background:#0b120ecc;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:2px;font-size:8px;letter-spacing:.06em;opacity:.75}
 .rbtn i{font-style:normal;font-size:17px;line-height:1}
@@ -375,6 +390,29 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   width:222px;max-height:74vh;overflow-y:auto;touch-action:pan-y;
   background:#070c09e8;border:1px solid #ffffff26;border-radius:5px;padding:11px;display:none}
 #panelbox.on{display:block}
+/* 2026-09-13: 狭い画面では固定222pxが右端に届かないことがあるため、
+   画面幅から動的に幅を計算して「必ず右端に8px余白を残して収まる」ように
+   する(#railの終端64pxを引いた残り幅、最大でも既定の222pxまで) */
+@media (max-width:900px){
+  #panelbox{width:min(222px, calc(100vw - 72px))}
+}
+/* 2026-09-13: モード選択タブ(通常/2vs8/怪異退治)は文字数が多く、狭い画面で
+   縦積みの1列にすると読みやすくなる一方、#rail/#panelboxはtop:50%の
+   中央寄せで独立配置のため、ヘッダーが縦積みで高くなるとその下に隠れて
+   一部が押せなくなってしまう。そのため縦積みは諦めて横3列のまま維持し、
+   代わりに文字サイズを少し縮めて折り返し行数を抑える(ヘッダー全体の高さを
+   低く保つことを優先) */
+@media (max-width:480px){
+  #modeSel div{font-size:9.5px;padding:5px 6px}
+}
+/* 2026-09-13: 「部屋を作る/コードで入る/サーバー検索/クイックプレイ」の
+   4つを1行に並べると#panelboxの狭い幅(既定222px)では1つあたり50px程度しか
+   無く文字が4〜5行に折り返して押しにくいため、狭い画面では2x2の
+   グリッドに組み替えて1つ1つの幅を確保する */
+@media (max-width:480px){
+  #netActionsRow{flex-wrap:wrap}
+  #netActionsRow>div{flex:1 1 45%!important}
+}
 .pane{display:none}.pane.on{display:block}
 .lbl{font-size:9px;letter-spacing:.28em;opacity:.45;margin-bottom:6px}
 #trole{display:flex;border:1px solid #ffffff2b;border-radius:3px;overflow:hidden;margin-bottom:9px}
@@ -892,7 +930,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div class="icongrid" id="profIconGrid"></div>
       <p class="lbl">みんなで遊ぶ</p>
       <div id="netOffline">
-        <div class="seg small" style="margin-bottom:9px">
+        <div class="seg small" id="netActionsRow" style="margin-bottom:9px">
           <div id="netMakeBtn" style="flex:1;text-align:center">部屋を作る</div>
           <div id="netJoinBtn" style="flex:1;text-align:center">コードで入る</div>
           <div id="netSearchBtn" style="flex:1;text-align:center">サーバー検索</div>
