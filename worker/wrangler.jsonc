@@ -10,5 +10,12 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Lobby", "MatchQueue"] }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "houkago-inokori-db",
+      "database_id": "318b407d-301b-4e0d-9eaa-baf848c15025"
+    }
   ]
 }

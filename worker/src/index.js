@@ -2,15 +2,21 @@
    このWorkerは「試合の中身」は一切計算しない。今まで通りホストのブラウザが
    審判役(ホスト権威)で、実際のゲームデータ・音声はPeerJS(WebRTC)のP2Pのまま。
    ここが受け持つのはあくまで「部屋コードの管理」「公開部屋の検索」
-   「クイックプレイの待ち合わせ」という、今まで固定peer ID(LOBBY_ID)の
-   自己申告制だった不安定な部分の置き換え。
+   「クイックプレイの待ち合わせ」「ランキング(D1)」という、今まで固定peer ID
+   (LOBBY_ID)の自己申告制だった不安定な部分の置き換え、及び試合結果の集計。
 
    ルーティング:
-     /ws         … Lobby DO への WebSocket (部屋の登録・検索)
-     /quickplay  … MatchQueue DO への WebSocket (世界中の人との自動マッチング)
-     /list       … 公開部屋一覧のHTTP版(デバッグ・保険用、GET)
-     /health, /  … 生存確認
-*/
+     /ws                 … Lobby DO への WebSocket (部屋の登録・検索)
+     /quickplay          … MatchQueue DO への WebSocket (世界中の人との自動マッチング)
+     /list               … 公開部屋一覧のHTTP版(デバッグ・保険用、GET)
+     /api/match-result   … 試合結果の送信(POST、D1に記録)
+     /api/leaderboard    … ランキング一覧の取得(GET、D1から集計値を読むだけ)
+     /health, /          … 生存確認
+
+   ランキングについて: クライアント(ブラウザ)が試合結果を自己申告する方式なので
+   技術的には偽装が可能。今回のスコープでは「試合進行そのものをサーバー側で
+   検証する」ような本格的な不正対策は行わず、明らかに異常な値(1リクエストで
+   複数勝利を主張する等)だけを弾く簡易バリデーションに留める。 */
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -261,6 +267,77 @@ export class MatchQueue {
   send(ws, obj) { try { ws.send(JSON.stringify(obj)); } catch (e) {} }
 }
 
+/* ---- ランキング: D1(SQLite)への記録・集計読み出し ----
+   players テーブルはプレイヤー1人1行の集計値のみを持ち、ランキング表示は
+   ここだけを読む(GROUP BYの重い集計をリクエストのたびにやらない設計)。
+   match_results は生の試合ログ(日時つき、履歴・調査用、ランキング表示自体には未使用)。 */
+const VALID_ROLES = ['teacher', 'student'];
+const VALID_MODES = ['classic', 'classic2', 'event'];
+
+function jsonRes(obj, status) {
+  return new Response(JSON.stringify(obj), {
+    status: status || 200,
+    headers: { ...CORS, 'content-type': 'application/json' },
+  });
+}
+
+async function handleMatchResult(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  if (!body) return jsonRes({ ok: false, error: 'invalid body' }, 400);
+
+  const playerId = String(body.playerId || '').trim().slice(0, 32);
+  const role = String(body.role || '');
+  const mode = String(body.mode || '');
+  /* 簡易バリデーション：1試合＝1勝/1脱出までしか送れない形に強制することで
+     「1試合で1000勝」のような明らかな異常値をそもそも表現できないようにする */
+  const won = (body.won === true || body.won === 1) ? 1 : 0;
+  const escaped = (role === 'student' && (body.escaped === true || body.escaped === 1)) ? 1 : 0;
+  const name = String(body.name || '名無し').trim().slice(0, 20) || '名無し';
+  const icon = String(body.icon || '👤').trim().slice(0, 8) || '👤';
+
+  if (!playerId || !/^[0-9]{4,32}$/.test(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  if (VALID_ROLES.indexOf(role) < 0) return jsonRes({ ok: false, error: 'invalid role' }, 400);
+  if (VALID_MODES.indexOf(mode) < 0) return jsonRes({ ok: false, error: 'invalid mode' }, 400);
+
+  const now = Date.now();
+  const isTeacher = role === 'teacher' ? 1 : 0;
+  const isStudent = role === 'student' ? 1 : 0;
+  const points = won + escaped;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      'INSERT INTO match_results (player_id, player_name, role, mode, won, escaped, created_at) VALUES (?,?,?,?,?,?,?)'
+    ).bind(playerId, name, role, mode, won, escaped, now),
+    env.DB.prepare(
+      `INSERT INTO players (player_id, name, icon, matches, wins, teacher_matches, teacher_wins, student_matches, student_escapes, points, updated_at)
+       VALUES (?,?,?,1,?,?,?,?,?,?,?)
+       ON CONFLICT(player_id) DO UPDATE SET
+         name=excluded.name, icon=excluded.icon,
+         matches=matches+1, wins=wins+excluded.wins,
+         teacher_matches=teacher_matches+excluded.teacher_matches,
+         teacher_wins=teacher_wins+excluded.teacher_wins,
+         student_matches=student_matches+excluded.student_matches,
+         student_escapes=student_escapes+excluded.student_escapes,
+         points=points+excluded.points, updated_at=excluded.updated_at`
+    ).bind(playerId, name, icon, won, isTeacher, isTeacher * won, isStudent, isStudent * escaped, points, now),
+  ]);
+
+  return jsonRes({ ok: true });
+}
+
+async function handleLeaderboard(request, env) {
+  const url = new URL(request.url);
+  const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+  const rs = await env.DB.prepare(
+    `SELECT player_id as playerId, name, icon, matches, wins, teacher_matches as teacherMatches,
+            teacher_wins as teacherWins, student_matches as studentMatches,
+            student_escapes as studentEscapes, points
+     FROM players ORDER BY points DESC, wins DESC LIMIT ?`
+  ).bind(limit).all();
+  return jsonRes({ ok: true, players: rs.results || [] });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -275,6 +352,14 @@ export default {
     if (url.pathname === '/quickplay') {
       const id = env.QUEUE.idFromName('global');
       return env.QUEUE.get(id).fetch(request);
+    }
+    if (url.pathname === '/api/match-result' && request.method === 'POST') {
+      try { return await handleMatchResult(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/leaderboard' && request.method === 'GET') {
+      try { return await handleLeaderboard(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
     }
     return new Response('not found', { status: 404, headers: CORS });
   },

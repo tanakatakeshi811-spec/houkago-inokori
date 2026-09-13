@@ -451,6 +451,13 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   display:flex;align-items:center;justify-content:center;font-size:8.5px;text-align:center;
   line-height:1.3;padding:3px;opacity:.5}
 .lslot.filled{border-color:var(--yellow);background:#e8c5471a;color:var(--yellow);opacity:1}
+.rkrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px solid #ffffff14;font-size:11px}
+.rkrow.me{background:#e8c5471a;border-radius:3px}
+.rkpos{width:18px;text-align:center;color:var(--yellow);font-size:12px}
+.rkicon{font-size:15px;width:18px;text-align:center}
+.rkname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rkpts{color:var(--yellow);font-size:11px;white-space:nowrap}
+.rksub{width:100%;order:5;font-size:9px;opacity:.6;padding-left:44px}
 #result{position:fixed;inset:0;z-index:21;background:#0b120ef5;display:none;
   flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px}
 #result h1{font-size:24px;letter-spacing:.3em}
@@ -729,6 +736,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <div class="rbtn" data-pane="p_stage"><i>&#128506;</i>ステージ</div>
     <div class="rbtn" data-pane="p_diff"><i>&#9881;</i>難易度</div>
     <div class="rbtn" data-pane="p_net"><i>&#127760;</i>オンライン</div>
+    <div class="rbtn" data-pane="p_rank" id="railRank"><i>&#127942;</i>ランキング</div>
   </div>
 
   <div id="panelbox" class="on">
@@ -843,6 +851,16 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         「クイックプレイ」は世界中の今つながっている人と自動的にマッチング（先生1vs生徒4の通常モードのみ対応）。
       </p>
     </div>
+    <div class="pane" id="p_rank">
+      <p class="lbl">総合ランキング（上位20人）</p>
+      <div class="tog" id="rankRefreshBtn" style="text-align:center;width:100%;box-sizing:border-box;margin-bottom:10px">更新する</div>
+      <div id="rankList"><p class="hint">「更新する」を押すと取得します</p></div>
+      <p class="hint" style="margin-top:12px">
+        ポイント = 勝利数 + 脱出成功数（先生役の勝利・生徒役の脱出、どちらも+1点）。<br>
+        通常/2vs8/怪異退治の全モード合算です。<br>
+        通信できない時（オフライン等）は表示されないだけで、プレイには影響しません。
+      </p>
+    </div>
   </div>
 
   <canvas id="tport" width="300" height="404"></canvas>
@@ -860,7 +878,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 </div>
 
 <div id="result"><h1 id="rtext"></h1><p id="rsub"></p><p id="rgain"></p>
-  <div class="rbtns"><button id="again">もう一度</button><button id="toTitle">タイトルへ</button></div>
+  <div class="rbtns"><button id="again">もう一度</button><button id="toTitle">タイトルへ</button><button id="toRank">ランキング</button></div>
 </div>
 
 <div id="netwait">
@@ -11004,6 +11022,54 @@ let netSearchPeer=null;       // 検索中に使う使い捨てのPeerオブジ�
    Workerに繋がらない／応答が無い場合は、すべて旧方式へ自動フォールバックする。 */
 const CLOUD_HOST='houkago-inokori-relay.shunri-ai.workers.dev';
 function cloudWsUrl(path){ return 'wss://'+CLOUD_HOST+path; }
+function cloudHttpUrl(path){ return 'https://'+CLOUD_HOST+path; }
+
+/* ===== ランキング(D1) =====
+   試合終了時に結果をベストエフォートで送信するだけ。失敗してもゲーム本体には
+   一切影響させない(オフライン/Worker不調でもプレイは続けられる)。プレイヤーの
+   識別はプロフィール機能で既に永続化されているPID(hi_pid_v1)をそのまま使う。 */
+function submitMatchResult(mode,role,won,escaped){
+  try{
+    fetch(cloudHttpUrl('/api/match-result'),{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        playerId:String(PID), name:myProfile.name||'名無し', icon:myProfile.icon||'👤',
+        role:role, mode:mode, won:!!won, escaped:!!escaped
+      })
+    }).catch(function(e){});
+  }catch(e){}
+}
+let leaderboardCache=null;
+function loadLeaderboard(){
+  const el=document.getElementById('rankList');
+  if(!el) return;
+  el.innerHTML='<p class="hint">読み込み中…</p>';
+  try{
+    fetch(cloudHttpUrl('/api/leaderboard?limit=20')).then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d||!d.ok||!Array.isArray(d.players)){ el.innerHTML='<p class="hint">取得できませんでした</p>'; return; }
+        leaderboardCache=d.players;
+        renderLeaderboard();
+      }).catch(function(e){ el.innerHTML='<p class="hint">通信エラー（オフラインの可能性）</p>'; });
+  }catch(e){ el.innerHTML='<p class="hint">通信エラー（オフラインの可能性）</p>'; }
+}
+function renderLeaderboard(){
+  const el=document.getElementById('rankList');
+  if(!el) return;
+  if(!leaderboardCache||!leaderboardCache.length){ el.innerHTML='<p class="hint">まだ記録がありません。1試合遊ぶと載ります</p>'; return; }
+  const myId=String(PID);
+  el.innerHTML=leaderboardCache.map(function(p,i){
+    const isMe=(String(p.playerId)===myId);
+    return '<div class="rkrow'+(isMe?' me':'')+'">'+
+      '<b class="rkpos">'+(i+1)+'</b>'+
+      '<span class="rkicon">'+escHtml(p.icon||'👤')+'</span>'+
+      '<span class="rkname">'+escHtml(p.name||'名無し')+'</span>'+
+      '<span class="rkpts">'+(p.points||0)+'pt</span>'+
+      '<span class="rksub">勝'+(p.wins||0)+'　脱出'+(p.studentEscapes||0)+'　先生勝'+(p.teacherWins||0)+'</span>'+
+      '</div>';
+  }).join('');
+}
 let cloudWs=null, cloudWsReady=false, cloudWsQueue=[];
 function cloudLobbySocket(cb){
   if(cloudWs){ if(cloudWsReady) cb(cloudWs); else cloudWsQueue.push(cb); return; }
@@ -11648,6 +11714,10 @@ function netClientOnStart(payload){
 function netClientOnEnd(payload){
   over=true; bgmStop();
   SCORE+=payload.sc||0; COINS+=payload.co||0; refreshStats();
+  /* 参加者(常に生徒役)は自分自身のブラウザで結果を送信する。ホスト側の
+     submitMatchResult()とは別々の送信(各クライアントが自分のPIDで送る) */
+  submitMatchResult(gameMode, 'student',
+    payload.rtext==='生徒の勝ち', me&&me.state==='escaped');
   document.getElementById('rgain').textContent=payload.rgain||'';
   document.getElementById('rtext').textContent=payload.rtext||'';
   document.getElementById('rsub').innerHTML=payload.rsub||'';
@@ -12596,6 +12666,9 @@ function finish(t,esc){
     co=Math.round(sc/22);
   }
   SCORE+=sc; COINS+=co; refreshStats();
+  submitMatchResult(gameMode, role,
+    (role==='teacher')?(t==='先生の勝ち'):(t==='生徒の勝ち'),
+    role==='student'&&me&&me.state==='escaped');
   document.getElementById('rgain').textContent='＋'+sc+' スコア　＋'+co+' コイン';
   document.getElementById('rtext').textContent=t;
   document.getElementById('rsub').innerHTML=
@@ -13160,8 +13233,11 @@ Array.prototype.forEach.call(document.querySelectorAll('#rail .rbtn'),function(b
     b.classList.add('sel');
     const t=document.getElementById(b.dataset.pane);
     if(t) t.classList.add('on');
+    if(b.dataset.pane==='p_rank') loadLeaderboard();
   });
 });
+const elRankRefresh=document.getElementById('rankRefreshBtn');
+if(elRankRefresh) elRankRefresh.addEventListener('click',loadLeaderboard);
 /* 相手の先生（BOT）選択 */
 const elBot=document.getElementById('botsel'),elBotWrap=document.getElementById('botwrap');
 (function(){
@@ -13701,6 +13777,11 @@ function softReset(keepNet){
 document.getElementById('toTitle').addEventListener('click',function(){
   if(evtRunning){ evtSoftReset(); return; }
   softReset();
+});
+document.getElementById('toRank').addEventListener('click',function(){
+  if(evtRunning) evtSoftReset(); else softReset();
+  const rb=document.getElementById('railRank');
+  if(rb) rb.click();
 });
 document.getElementById('again').addEventListener('click',function(){
   if(evtRunning){
@@ -14555,6 +14636,9 @@ function evtFinish(title,detail){
   const sc=esc*350+evtParts*20+(evtChasers.filter(function(c){return c.defeated;}).length*600);
   const co=Math.round(sc/22);
   SCORE+=sc; COINS+=co; refreshStats();
+  submitMatchResult('event', (evtRole==='chaser')?'teacher':'student',
+    (evtRole==='chaser')?(title==='追跡者の勝ち'):(title==='生徒の勝ち'),
+    evtRole==='student'&&evtMe&&evtMe.state==='escaped');
   document.getElementById('rgain').textContent='＋'+sc+' スコア　＋'+co+' コイン';
   document.getElementById('rtext').textContent=title;
   document.getElementById('rsub').innerHTML=detail+'<br>脱出 '+esc+' / 脱落 '+out+' / 生徒'+evtStudents.length+'　経過 '+Math.floor(evtElapsed)+'秒';
@@ -15122,6 +15206,10 @@ function evtNetOnStart(payload){
 function evtNetOnEnd(payload){
   evtOver=true; over=true; bgmStop();
   SCORE+=payload.sc||0; COINS+=payload.co||0; refreshStats();
+  /* 怪異退治モードはオンラインでも自分が追跡者側になりうるので、evtRoleで判定 */
+  submitMatchResult('event', (evtRole==='chaser')?'teacher':'student',
+    (evtRole==='chaser')?(payload.rtext==='追跡者の勝ち'):(payload.rtext==='生徒の勝ち'),
+    evtRole==='student'&&evtMe&&evtMe.state==='escaped');
   document.getElementById('rgain').textContent=payload.rgain||'';
   document.getElementById('rtext').textContent=payload.rtext||'';
   document.getElementById('rsub').innerHTML=payload.rsub||'';
