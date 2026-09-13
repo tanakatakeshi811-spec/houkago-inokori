@@ -505,6 +505,15 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .rkicon{font-size:15px;width:18px;text-align:center}
 .rkname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rkpts{color:var(--yellow);font-size:11px;white-space:nowrap}
+/* 卒業アルバム（2026-09-13追加）：条件達成でめくれるコレクション画面 */
+#albumGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.albumPage{border:1px solid #ffffff2a;border-radius:4px;background:#ffffff08;
+  padding:9px;min-height:74px;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.albumPage.got{border-color:var(--yellow);background:#e8c5471a}
+.albumPage b{font-size:11.5px;color:var(--yellow)}
+.albumPage.locked b{color:#ffffff66}
+.albumPage span{font-size:9.5px;line-height:1.4;color:#ffffffb0}
+.albumPage.locked span{color:#ffffff55}
 .rksub{width:100%;order:5;font-size:9px;opacity:.6;padding-left:44px}
 #result{position:fixed;inset:0;z-index:21;background:#0b120ef5;display:none;
   flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px}
@@ -815,6 +824,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <div class="rbtn" data-pane="p_diff"><i>&#9881;</i>難易度</div>
     <div class="rbtn" data-pane="p_net"><i>&#127760;</i>オンライン</div>
     <div class="rbtn" data-pane="p_rank" id="railRank"><i>&#127942;</i>ランキング</div>
+    <div class="rbtn" data-pane="p_album" id="railAlbum"><i>&#128218;</i>アルバム</div>
   </div>
 
   <div id="panelbox" class="on">
@@ -997,6 +1007,11 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         通常/2vs8/怪異退治の全モード合算です。<br>
         通信できない時（オフライン等）は表示されないだけで、プレイには影響しません。
       </p>
+    </div>
+    <div class="pane" id="p_album">
+      <p class="lbl">卒業アルバム（<span id="albumCount">0</span>/<span id="albumTotal">0</span>）</p>
+      <div id="albumGrid"></div>
+      <p class="hint" style="margin-top:10px">プレイしていると条件を満たしたページから順にめくれていく。<br>この端末にだけ保存される（他の端末とは共有されない）。</p>
     </div>
   </div>
 
@@ -6753,6 +6768,7 @@ function doBroadcast(s){
   beep(880,0.2,'square',0.1);
   setTimeout(function(){ beep(660,0.25,'square',0.09); },220);
   bigNoise(0.2,0.7);
+  albumStat('broadcastUsed',1);
 }
 function nearExit(s){ return gateOpen?exits.filter(function(e){
   return Math.hypot(e.x-s.x,e.z-s.z)<4.2&&los(s.x,s.z,e.x,e.z); })[0]:null; }
@@ -13037,6 +13053,24 @@ function finish(t,esc){
     co=Math.round(sc/22);
   }
   SCORE+=sc; COINS+=co; refreshStats();
+  /* 6. 卒業アルバム：試合結果を永続統計に反映(2026-09-13追加)。
+     一時的なstats(試合ごとにリセットされる)から、累計のalbumStatsへ
+     ここで積み増す */
+  try{
+    albumStats.matches=(albumStats.matches||0)+1;
+    albumStats.palletsTotal=(albumStats.palletsTotal||0)+(stats.pallets||0);
+    if(role==='teacher') albumStats.downsTotal=(albumStats.downsTotal||0)+(stats.downs||0);
+    if(role==='teacher'&&t==='先生の勝ち') albumStats.winsTeacher=(albumStats.winsTeacher||0)+1;
+    if(role==='student'&&t==='生徒の勝ち'){
+      albumStats.winsStudent=(albumStats.winsStudent||0)+1;
+      if(esc>=students.length) albumStats.perfectClear=(albumStats.perfectClear||0)+1;
+    }
+    if(role==='student'&&me&&me.state==='escaped'){
+      if(blackoutT>0) albumStats.blackoutSurvived=(albumStats.blackoutSurvived||0)+1;
+      if(me.hidUsed) albumStats.hidEscaped=(albumStats.hidEscaped||0)+1;
+    }
+    saveAlbum(); checkAlbum();
+  }catch(e){}
   submitMatchResult(gameMode, role,
     (role==='teacher')?(t==='先生の勝ち'):(t==='生徒の勝ち'),
     role==='student'&&me&&me.state==='escaped');
@@ -13331,6 +13365,88 @@ try{
 }catch(e){}
 function saveWallet(){ try{ localStorage.setItem('hi_wallet_v1',JSON.stringify({sc:SCORE,co:COINS})); }catch(e){} }
 
+/* ===== 6. 卒業アルバム(2026-09-13追加) =====
+   初勝利・特定の状況でのクリアなどの条件を満たすとページが1枚ずつ
+   解放されていくコレクション画面。既存のコイン/スコアの保存(hi_wallet_v1)
+   とは別枠でこの端末のlocalStorageにだけ保存する(ランキングのような
+   サーバー同期はしない、しゅんりさんの指定通りまずはローカル保存のみ)。 */
+let albumStats={winsStudent:0,winsTeacher:0,matches:0,palletsTotal:0,downsTotal:0,
+  perfectClear:0,broadcastUsed:0,rumorSeen:0,labSwitch:0,archiveUsed:0,
+  blackoutSurvived:0,hidEscaped:0};
+let albumUnlocked=[];
+function loadAlbum(){
+  try{
+    const st=JSON.parse(localStorage.getItem('hi_albumstats_v1')||'null');
+    if(st) albumStats=Object.assign(albumStats,st);
+  }catch(e){}
+  try{
+    const un=JSON.parse(localStorage.getItem('hi_album_v1')||'null');
+    if(un) albumUnlocked=un;
+  }catch(e){}
+}
+loadAlbum();
+function saveAlbum(){
+  try{ localStorage.setItem('hi_albumstats_v1',JSON.stringify(albumStats)); }catch(e){}
+  try{ localStorage.setItem('hi_album_v1',JSON.stringify(albumUnlocked)); }catch(e){}
+}
+/* 試合中の各イベント発生時に呼ぶ軽いヘルパー(itemやパークの実装と同じ
+   「既存の処理に1行差し込むだけ」の方針) */
+function albumStat(key,inc){
+  albumStats[key]=(albumStats[key]||0)+inc;
+  saveAlbum();
+  checkAlbum();
+}
+const ALBUM_PAGES=[
+ {key:'win1_student', name:'はじめての脱出',      desc:'生徒として、誰か1人でも脱出させて勝利する',
+  cond:function(){ return albumStats.winsStudent>=1; }},
+ {key:'win1_teacher', name:'はじめての居残り執行', desc:'先生として、生徒を全員居残りさせて勝利する',
+  cond:function(){ return albumStats.winsTeacher>=1; }},
+ {key:'perfectclear', name:'全員脱出',            desc:'生徒側で、その試合の生徒を1人も欠けさせず全員脱出させる',
+  cond:function(){ return albumStats.perfectClear>=1; }},
+ {key:'pallet20',     name:'掃除ロッカーの達人',   desc:'累計で板(掃除ロッカー)を先生に20回当てる',
+  cond:function(){ return albumStats.palletsTotal>=20; }},
+ {key:'downs30',      name:'居残り執行のプロ',     desc:'先生として、累計30回 生徒をダウンさせる',
+  cond:function(){ return albumStats.downsTotal>=30; }},
+ {key:'broadcast',    name:'放送室ジャック',       desc:'校内放送を使って先生の位置を全員に知らせる',
+  cond:function(){ return albumStats.broadcastUsed>=1; }},
+ {key:'rumor',        name:'目撃情報',            desc:'先生を目撃して、目撃情報がミニマップに広まる',
+  cond:function(){ return albumStats.rumorSeen>=1; }},
+ {key:'labswitch',    name:'理科室の共同作業',     desc:'理科室の2つのスイッチを仲間と同時に押す',
+  cond:function(){ return albumStats.labSwitch>=1; }},
+ {key:'archive',      name:'開かずの資料室',       desc:'資料室の合鍵を持って、資料室の近道を使う',
+  cond:function(){ return albumStats.archiveUsed>=1; }},
+ {key:'blackout',     name:'停電の夜',            desc:'停電が起きている最中に脱出する',
+  cond:function(){ return albumStats.blackoutSurvived>=1; }},
+ {key:'hideescape',   name:'隠れんぼの達人',       desc:'掃除用具入れ/ロッカーに隠れつつ脱出する',
+  cond:function(){ return albumStats.hidEscaped>=1; }},
+ {key:'matches50',    name:'皆勤賞',              desc:'累計50試合プレイする',
+  cond:function(){ return albumStats.matches>=50; }},
+ {key:'admin',        name:'？？？を見つけた',     desc:'誰も知らない裏の合言葉を見つける',
+  cond:function(){ return typeof adminUnlocked!=='undefined'&&adminUnlocked; }}
+];
+function checkAlbum(){
+  let changed=false;
+  ALBUM_PAGES.forEach(function(p){
+    if(albumUnlocked.indexOf(p.key)<0){
+      let ok=false; try{ ok=!!p.cond(); }catch(e){}
+      if(ok){ albumUnlocked.push(p.key); changed=true; toast('卒業アルバムに「'+p.name+'」が追加された'); }
+    }
+  });
+  if(changed){ saveAlbum(); try{ renderAlbum(); }catch(e){} }
+}
+function renderAlbum(){
+  const grid=document.getElementById('albumGrid'); if(!grid) return;
+  const cEl=document.getElementById('albumCount'), tEl=document.getElementById('albumTotal');
+  if(cEl) cEl.textContent=albumUnlocked.length;
+  if(tEl) tEl.textContent=ALBUM_PAGES.length;
+  grid.innerHTML=ALBUM_PAGES.map(function(p){
+    const got=albumUnlocked.indexOf(p.key)>=0;
+    return '<div class="albumPage '+(got?'got':'locked')+'"><b>'+(got?p.name:'？？？')+'</b>'+
+      '<span>'+(got?p.desc:'条件を満たすとめくれる')+'</span></div>';
+  }).join('');
+}
+try{ renderAlbum(); }catch(e){}
+
 /* 持ち物(アイテム/アドオン)の購入は「毎試合消費」ではなく「一度買ったら
    永久にアンロック」方式(2026-09-06変更)。unlockedItems=キー配列、
    unlockedAddons={itemKey:[key,...]}をhi_unlocks_v1にJSON保存する */
@@ -13620,6 +13736,7 @@ Array.prototype.forEach.call(document.querySelectorAll('#rail .rbtn'),function(b
     const t=document.getElementById(b.dataset.pane);
     if(t) t.classList.add('on');
     if(b.dataset.pane==='p_rank') loadLeaderboard();
+    if(b.dataset.pane==='p_album'){ checkAlbum(); renderAlbum(); }
     /* スキン編集パネルを開いた瞬間に必ず最新の見た目でプレビューを作り直す
        (2026-09-13、プレビュー未実装状態からの初回表示でpvMeshが無いことが
        あるため。以後の色/形/装飾変更はrefreshSkinPreview()側で追従する) */
