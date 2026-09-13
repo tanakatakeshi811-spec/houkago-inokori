@@ -288,7 +288,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   .slot canvas{width:26px;height:34px}
   .slot .sn{font-size:9.5px}
   .slot .sn i{font-size:7.5px}
-  #tinfo{left:300px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 6px)}
+  /* 2026-09-14 続報12: このルールはCSS内で#tinfoの基本定義(のちに出てくる
+     left:0;right:0の方)より前に書かれているため、同じ詳細度(IDセレクタ1個)
+     同士では後勝ちのカスケード規則により、実際にはこの横画面用の
+     left:300pxが常に基本定義に上書きされて一度も効いていなかった(実質死んだ
+     ルール)。bodyを足して詳細度を上げ、確実にこちらが勝つようにする */
+  body #tinfo{left:300px;right:8px;bottom:calc(env(safe-area-inset-bottom) + 6px)}
   #tname{font-size:15px}
   #tdesc{font-size:8.5px;line-height:1.5}
   #go{padding:8px 26px;font-size:12px}
@@ -14441,8 +14446,18 @@ function layoutTitleHeader(){
   const vh=window.innerHeight;
   /* 下端も「はじめる」ボタン等(#tinfo)の実測位置より上で止める。#tinfo自体は
      文字部分がpointer-events:noneなので機能的には壊れないが、下まで伸びると
-     見た目が重なって分かりにくくなるため、見た目レベルでも避ける */
-  const tinfoTop=tinfo?tinfo.getBoundingClientRect().top:vh;
+     見た目が重なって分かりにくくなるため、見た目レベルでも避ける。
+     2026-09-14続報12: ただし#tinfoは横画面スマホでは#panelboxの右側の
+     空きスペースへ寄せて表示する設計になっている(#rail/#panelboxの列とは
+     横方向に重ならない)。この場合にまで縦方向の余白を確保すると、
+     横に十分な余白があるのに縦だけ大きく削ってしまい、パネルが以前より
+     大幅に小さく見えてしまうバグになる(しゅんりさんの実機報告)。
+     #tinfoの実測left座標が#panelboxの右端より右にあり実際に重ならない
+     時だけ、下端ガードを最小限(8px)にする */
+  const tinfoRect=tinfo?tinfo.getBoundingClientRect():null;
+  const panelboxRight=panelbox.getBoundingClientRect().right;
+  const tinfoOverlapsCol=!tinfoRect || tinfoRect.left<panelboxRight;
+  const tinfoTop=(tinfoRect&&tinfoOverlapsCol)?tinfoRect.top:vh;
   const bottomGuard=Math.max(8,vh-tinfoTop+8);
   const availH=Math.max(0,(vh-bottomGuard)-minTop);
   try{ shrinkRailToFit(rail,availH); }catch(e){}
