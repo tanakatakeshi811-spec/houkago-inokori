@@ -12364,6 +12364,7 @@ function netClientOnStart(payload){
   netPrevGateOpen=false; netLastSnap=null; netSeenToastId=0;
   document.getElementById('netwait').classList.remove('on');
   document.getElementById('title').style.display='none';
+  { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
   started=true; over=false; camYaw=me.yaw; last=performance.now();
   startIntro();
   try{ checkMobileLandscape(); }catch(e){ layoutPad(); }
@@ -14594,6 +14595,7 @@ function startMatch(){
   me=(role==='teacher')?teacher:students[0];
   if(role==='student'&&me.skill==='reveal'){ setAura(teacher,'reveal',3); teacher.revealT=3; }
   document.getElementById('title').style.display='none';
+  { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
   document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイが試合開始後も残るバグ対策(2026-09-12) */
   if(role==='teacher') setFPWeapon(weaponPick||(LOOK[teacherKind]||{}).weapon||'ruler');
   /* 先生は一人称なのでカメラの向きと体の向きが半周ずれる。開始直後にクルッと
@@ -14691,7 +14693,23 @@ function softReset(keepNet){
   intro=0; introPath=[]; introIdx=0;
   closeWarp();
   document.getElementById('result').style.display='none';
-  if(keepNet!==true) document.getElementById('title').style.display='flex';
+  /* 2026-09-14: ここが'flex'だと#title(CSS既定はdisplay:block)がinline styleで
+     display:flexのflexコンテナに化け、直属の子である#tbar/#modeSel/#railなどが
+     デフォルトのalign-items:stretchで画面いっぱいの高さに引き伸ばされてしまう
+     (モード選択タブの黄色い枠が画面縦いっぱいに巨大化する・#railが高さ0に
+     潰れて全アイコンが消えるバグの直接の原因だった)。CSS側は元々display:blockを
+     想定しているので、inline styleは空にしてCSSの既定値に戻すのが正しい。
+     あわせて、試合中だけ使うゲームHUD一式(#hud、#tasks/#right(ミニマップ含む)/
+     #pad(行動ボタン)/#chatbtn等の親コンテナ)を明示的に隠す。今まではこれらを
+     隠す処理が一切なく、#titleの半透明グラデーション(3Dプレビューを見せる
+     ための意図的な透過)に隠れて偶然見えていなかっただけだったため、透過部分に
+     重なる要素はタイトル画面の初回表示から常に透けて見えてしまっていた
+     (しゅんりさんの実機スクショで報告された「ホームに戻ると画面がぐちゃぐちゃに
+     なる」の症状) */
+  if(keepNet!==true){
+    document.getElementById('title').style.display='';
+    const elHud=document.getElementById('hud'); if(elHud) elHud.style.display='none';
+  }
   refreshStats(); buildList(); showStage();
 }
 document.getElementById('toTitle').addEventListener('click',function(){
@@ -15343,7 +15361,12 @@ function evtSoftReset(keepNet){
   elItemHud.classList.remove('on'); elCarryHands.classList.remove('on');
   elWig.style.display='none'; elStun.classList.remove('on');
   document.getElementById('result').style.display='none';
-  if(keepNet!==true) document.getElementById('title').style.display='flex';
+  /* 2026-09-14: softReset()と同じ修正(display:flex化によるタイトル画面破壊
+     バグ)。詳細はsoftReset()側のコメント参照 */
+  if(keepNet!==true){
+    document.getElementById('title').style.display='';
+    const elHud=document.getElementById('hud'); if(elHud) elHud.style.display='none';
+  }
   started=false; over=false;
 }
 
@@ -16243,6 +16266,7 @@ function evtStartMatch(){
     netBroadcastVoiceRoster();
   }
   document.getElementById('title').style.display='none';
+  { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
   document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイ対策(2026-09-12、startMatch()と同様) */
   started=true; over=false; evtOver=false; evtRunning=true;
   camYaw=evtMe.yaw; last=performance.now();
@@ -16267,6 +16291,7 @@ function evtNetOnStart(payload){
   evtMe=payload.mineIsChaser?evtChasers[payload.mine]:evtStudents[payload.mine];
   document.getElementById('netwait').classList.remove('on');
   document.getElementById('title').style.display='none';
+  { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
   gameMode='event';
   started=true; over=false; evtOver=false; evtRunning=true;
   camYaw=evtMe?evtMe.yaw:0; last=performance.now();
