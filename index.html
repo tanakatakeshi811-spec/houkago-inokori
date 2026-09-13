@@ -14385,6 +14385,50 @@ function renderPreview(){
    #modeSelの実測bounding rectを見てヘッダーの下端を求め、中央寄せだと
    ヘッダーに食い込む時だけヘッダー直下に固定配置へ切り替える
    (layoutPad()等、既存の「実測ベースで動的配置する」方針を踏襲) */
+/* 2026-09-14 続報11: #rail自体はoverflow-y:autoでスクロール可能だが、
+   幅46px前後の細い縦一列を指で正確に縦スワイプするのは実機では難しく、
+   横画面スマホやウィンドウを縦に狭くした環境ではキャラ/見た目/武器の
+   途中でアイコンが箱の外に完全にクリップされ「持ち物より下に一切
+   到達できない」バグとしてしゅんりさんから再報告があった(前回続報10の
+   layoutTitleHeader()は横位置とヘッダー食い込みだけ対応し、縦の収まり
+   自体は対応していなかった)。CSSの固定ブレークポイントを増やす代わりに、
+   実測した「収めるべき高さ(availH)」に対してボタンサイズ・隙間を必要
+   最小限まで動的に縮小し、極端に低い場合だけ最後はoverflow-y:autoの
+   スクロールに任せる(依頼により「スクロールは必ず残す」)。毎フレーム
+   呼ばれるため、画面サイズが変わっていない時はDOM書き込みをスキップして
+   無駄な再計算を避ける */
+let _railFitLastKey='';
+function shrinkRailToFit(rail,availH){
+  const key=Math.round(availH)+':'+rail.children.length;
+  if(key===_railFitLastKey) return;
+  _railFitLastKey=key;
+  Array.prototype.forEach.call(rail.querySelectorAll('.rbtn'),function(b){
+    b.style.width=''; b.style.height=''; b.style.fontSize='';
+    const ic=b.querySelector('i'); if(ic) ic.style.fontSize='';
+  });
+  rail.style.gap='';
+  const firstBtn=rail.querySelector('.rbtn');
+  if(!firstBtn) return;
+  const n=rail.querySelectorAll('.rbtn').length;
+  const natGap=parseFloat(getComputedStyle(rail).gap)||8;
+  const natSize=firstBtn.getBoundingClientRect().height;
+  const natFont=parseFloat(getComputedStyle(firstBtn).fontSize)||8;
+  const firstIcon=firstBtn.querySelector('i');
+  const natFontI=firstIcon?(parseFloat(getComputedStyle(firstIcon).fontSize)||17):17;
+  const naturalH=n*natSize+(n-1)*natGap;
+  if(naturalH<=availH || availH<=0) return; /* 元のCSSサイズのままで収まる */
+  const minSize=28; /* これ以上は判読・タップしづらいので縮めず、スクロールに任せる */
+  const scale=Math.max(minSize/natSize, Math.min(1, availH/naturalH));
+  const newSize=Math.max(minSize,Math.floor(natSize*scale));
+  const newGap=Math.max(3,Math.floor(natGap*scale));
+  const newFont=Math.max(6,natFont*scale);
+  const newFontI=Math.max(10,natFontI*scale);
+  rail.style.gap=newGap+'px';
+  Array.prototype.forEach.call(rail.querySelectorAll('.rbtn'),function(b){
+    b.style.width=newSize+'px'; b.style.height=newSize+'px'; b.style.fontSize=newFont+'px';
+    const ic=b.querySelector('i'); if(ic) ic.style.fontSize=newFontI+'px';
+  });
+}
 function layoutTitleHeader(){
   const modeSel=document.getElementById('modeSel');
   const rail=document.getElementById('rail');
@@ -14399,6 +14443,8 @@ function layoutTitleHeader(){
      見た目が重なって分かりにくくなるため、見た目レベルでも避ける */
   const tinfoTop=tinfo?tinfo.getBoundingClientRect().top:vh;
   const bottomGuard=Math.max(8,vh-tinfoTop+8);
+  const availH=Math.max(0,(vh-bottomGuard)-minTop);
+  try{ shrinkRailToFit(rail,availH); }catch(e){}
   const railH=rail.scrollHeight;
   if((vh-railH)/2>=minTop && vh-(vh-railH)/2<=tinfoTop-8){
     rail.style.top=''; rail.style.bottom=''; rail.style.transform='';
