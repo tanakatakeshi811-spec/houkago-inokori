@@ -628,6 +628,18 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .skAccItem .rm{margin-left:auto;opacity:.6;cursor:pointer;padding:0 4px}
 .skAccItem .rm:active{opacity:1;color:#e05a52}
 #skinPaintCanvas{cursor:crosshair}
+/* 2026-09-13: 見た目編集パネル専用の常設プレビュー。position:stickyで
+   パネル内をスクロールしても常に上端に張り付いたままにする(依頼の
+   「常に隣か上に表示され続ける」に対応)。#panelbox自体がoverflow-y:auto
+   でスクロールするコンテナなので、その子であるこの要素にsticky top:0が
+   効く */
+#skinPvWrap{position:sticky;top:-11px;z-index:2;display:flex;gap:10px;align-items:center;
+  margin:-11px -11px 10px;padding:9px 11px 8px;background:#0e1712f5;
+  border-bottom:1px solid #ffffff26}
+#skinPvCanvas{border-radius:4px;background:radial-gradient(circle at 50% 32%,#1a2a1f 0%,#0b120e 75%);
+  flex:none}
+#skinPv2dWrap{flex:1;min-width:0}
+#skinPv2d{border-radius:3px;background:#0b120e;display:block}
 </style>
 </head>
 <body>
@@ -819,6 +831,16 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div id="pCharEvent" style="display:none"></div>
     </div>
     <div class="pane" id="p_skin">
+      <!-- 2026-09-13: 見た目編集中は常にこのプレビューが見える(スクロールしても
+           上に張り付いたまま)。#tport3d/#pvtoggleは900px未満で非表示なため、
+           スマホでも必ず映る専用プレビューをパネル自体に埋め込む -->
+      <div id="skinPvWrap">
+        <canvas id="skinPvCanvas" width="128" height="168"></canvas>
+        <div id="skinPv2dWrap">
+          <p class="hint" style="text-align:left;margin:0 0 4px">3Dで回転中<br>（左は3D／右は簡易2D）</p>
+          <canvas id="skinPv2d" width="66" height="88"></canvas>
+        </div>
+      </div>
       <p class="lbl">色を変える（自由な色）</p>
       <div class="skinRow"><span>髪</span><input type="color" id="skHair"><span class="skReset" data-k="hair">既定に戻す</span></div>
       <div class="skinRow"><span>肌</span><input type="color" id="skSkin"><span class="skReset" data-k="skin">既定に戻す</span></div>
@@ -9761,6 +9783,10 @@ function tick(now){
     /* スキン機能(2026-09-13)：3Dプレビュー(#tport3d)を実際に毎フレーム描く。
        以前はrenderPreview()自体が呼び出し元を持たず死んでいた */
     try{ renderPreview(); }catch(e){}
+    /* スマホ幅でのパネル重なり対策(2026-09-13)：ヘッダーの実測高さに応じて
+       #rail/#panelboxの配置を毎フレーム見直す(コスト極小、getBoundingClientRect
+       数回のみ) */
+    try{ layoutTitleHeader(); }catch(e){}
     return;
   }
   if(started&&introPath.length){
@@ -11303,10 +11329,19 @@ function initSkinPaint(){
    保存→タイトル画面の3Dプレビュー/待機ロビーの自キャラモデルを作り直す */
 function refreshSkinPreview(){
   saveSkin();
-  try{ if(pvOn) buildPreview(); }catch(e){}
+  /* 2026-09-13: 「見た目」パネル(#p_skin)を開いている間は、右側の#tport3d
+     用トグル(pvOn)がOFFのままでも常に3Dプレビュー(#skinPvCanvas、
+     見た目パネル自体に埋め込み)を最新の状態で作り直す。スマホでは
+     #tport3d/#pvtoggleが画面幅900px未満で非表示のため、これが無いと
+     色/形/装飾を変えてもスマホでは一切見た目の変化が確認できなかった */
+  try{ if(pvOn||isSkinPaneOpen()) buildPreview(); }catch(e){}
   try{ refreshLobby(); }catch(e){}
   try{ showStage(); }catch(e){}
   sendMySkinUpdate();
+}
+function isSkinPaneOpen(){
+  const p=document.getElementById('p_skin');
+  return !!(p&&p.classList.contains('on'));
 }
 /* オンライン接続中に見た目を変えたら、ホストへ最新のプロフィール
    (名前/アイコン+スキン)を送り直す。試合中の変更は次の試合開始時に
@@ -13530,14 +13565,16 @@ function buildList(){
 }
 function showStage(){
   try{ refreshLobby(); }catch(e){}
-  if(pvOn) buildPreview();
+  if(pvOn||isSkinPaneOpen()) buildPreview();
   elBotWrap.style.display=(role==='student')?'block':'none';
   elWepWrap.style.display=(role==='teacher')?'block':'none';
+  let portOpt;
   if(role==='student'){
     const o=STU[myIndex];
-    drawChar(pg,elPort.width,elPort.height,{uniform:(mySkin.uniform!=null?mySkin.uniform:o.uniform),
+    portOpt={uniform:(mySkin.uniform!=null?mySkin.uniform:o.uniform),
       hair:(mySkin.hair!=null?mySkin.hair:o.hair),skin:(mySkin.skin!=null?mySkin.skin:null),tall:false,
-      male:!!((SLOOK[o.perk]||{}).male)});
+      male:!!((SLOOK[o.perk]||{}).male)};
+    drawChar(pg,elPort.width,elPort.height,portOpt);
     elTName.textContent=o.name;
     /* 一ノ瀬(foot)のラストスパートは設定パネルで持続時間を変えられるので、
        説明文もその場で選ばれている値に合わせて出し直す */
@@ -13547,12 +13584,20 @@ function showStage(){
       '<br>課題プリント5枚を仕上げて昇降口から脱出する';
   } else {
     const o=TCH[kindIndex];
-    drawChar(pg,elPort.width,elPort.height,{uniform:(mySkin.uniform!=null?mySkin.uniform:KINDS[o.key].color),
-      hair:(mySkin.hair!=null?mySkin.hair:0x24201c),skin:(mySkin.skin!=null?mySkin.skin:null),tall:true});
+    portOpt={uniform:(mySkin.uniform!=null?mySkin.uniform:KINDS[o.key].color),
+      hair:(mySkin.hair!=null?mySkin.hair:0x24201c),skin:(mySkin.skin!=null?mySkin.skin:null),tall:true};
+    drawChar(pg,elPort.width,elPort.height,portOpt);
     elTName.textContent=KINDS[o.key].name;
     elTDesc.innerHTML='【'+KINDS[o.key].ability+'】'+o.desc+
       '<br>課題を背中に叩きつけて反省椅子へ運ぶ';
   }
+  /* 見た目パネル埋め込みの小さな2Dサムネイル(#skinPv2d)。#tport(右側の
+     大きな立ち絵、900px未満では非表示)と全く同じdrawChar()/同じ色情報を
+     再利用するだけなので、スマホ幅でも常に見える簡易プレビューになる */
+  try{
+    const spv=document.getElementById('skinPv2d');
+    if(spv) drawChar(spv.getContext('2d'),spv.width,spv.height,portOpt);
+  }catch(e){}
   try{ renderItemPane(); renderPerkPane(); renderPhotoAddonPane(); }catch(e){}
   try{ syncSkinColorInputs(); }catch(e){}
 }
@@ -13575,6 +13620,10 @@ Array.prototype.forEach.call(document.querySelectorAll('#rail .rbtn'),function(b
     const t=document.getElementById(b.dataset.pane);
     if(t) t.classList.add('on');
     if(b.dataset.pane==='p_rank') loadLeaderboard();
+    /* スキン編集パネルを開いた瞬間に必ず最新の見た目でプレビューを作り直す
+       (2026-09-13、プレビュー未実装状態からの初回表示でpvMeshが無いことが
+       あるため。以後の色/形/装飾変更はrefreshSkinPreview()側で追従する) */
+    if(b.dataset.pane==='p_skin'){ try{ buildPreview(); }catch(e){} }
   });
 });
 const elRankRefresh=document.getElementById('rankRefreshBtn');
@@ -13853,7 +13902,14 @@ function initPreview(){
   if(pvRenderer) return;
   pvRenderer=new THREE.WebGLRenderer({canvas:elPv,antialias:true,alpha:true});
   pvRenderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  pvRenderer.setSize(224,300,false);
+  /* 2026-09-13: 第3引数をfalse(updateStyle無効)にすると、setPixelRatio()で
+     増えた分がcanvas.width/height属性(内部解像度)に反映される際、CSS側の
+     表示サイズがその「膨らんだ属性値」をそのまま採用してしまい、
+     devicePixelRatioが2以上の実機(スマホは大半が該当)でキャンバスが
+     物理ピクセル分だけ大きく表示される潜在バグがあった(#pvtoggleが
+     900px未満で非表示だったため今まで表面化していなかった)。デフォルトの
+     updateStyle=trueに戻し、CSS表示サイズを常に論理px(224x300)に固定する */
+  pvRenderer.setSize(224,300);
   pvScene=new THREE.Scene();
   pvScene.add(new THREE.HemisphereLight(0xffffff,0x30383a,1.1));
   const dl=new THREE.DirectionalLight(0xfff0cf,0.7); dl.position.set(3,6,5); pvScene.add(dl);
@@ -13880,11 +13936,72 @@ function buildPreview(){
   scene.add=saveAdd;
   pvScene.add(pvMesh);
 }
-function renderPreview(){
-  if(!pvOn||!pvRenderer||!pvMesh) return;
-  pvMesh.rotation.y+=0.012;
-  pvRenderer.render(pvScene,pvCam);
+/* 2026-09-13: 見た目(スキン)編集パネル専用の常設3Dプレビュー。
+   既存の#tport3d/#pvtoggleは画面幅900px未満(=ほぼ全てのスマホ)で
+   display:none!importantになっており、スマホでは見た目を変えても
+   3Dで確認する手段が一切無かった(しゅんりさんの指摘の根本原因)。
+   #p_skinパネルの中に常設した専用canvas(#skinPvCanvas)に、既存の
+   pvScene/pvCam/pvMeshをそのまま2つ目のレンダラーで描画する
+   (シーン・メッシュは1つを使い回すので、色/形/装飾の変更を反映する
+   ロジックはbuildPreview()側の1箇所だけで済む) */
+let skinPvRenderer=null;
+function initSkinPv(){
+  if(skinPvRenderer) return;
+  const cv=document.getElementById('skinPvCanvas');
+  if(!cv||typeof THREE==='undefined') return;
+  const logicalW=cv.width, logicalH=cv.height;   /* setSize前に読んでおく(後述の理由) */
+  skinPvRenderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+  skinPvRenderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  skinPvRenderer.setSize(logicalW,logicalH);   /* updateStyle=trueでCSS表示サイズを論理pxに固定(pvRendererと同じ理由) */
 }
+function renderPreview(){
+  const skinOpen=isSkinPaneOpen();
+  if(!pvMesh && (pvOn||skinOpen)){ try{ buildPreview(); }catch(e){} }
+  if(!pvMesh) return;
+  pvMesh.rotation.y+=0.012;
+  if(pvOn&&pvRenderer) pvRenderer.render(pvScene,pvCam);
+  if(skinOpen){ initSkinPv(); if(skinPvRenderer) skinPvRenderer.render(pvScene,pvCam); }
+}
+/* 2026-09-13: #rail/#panelboxはtop:50%の画面中央基準で配置しているが、
+   その上にある#tbar(ロゴ+ID/スコア/コインのチップ)と#modeSel(通常/2vs8/
+   怪異退治タブ)の実際の高さは、画面幅・safe-area・チップ折り返しなどで
+   変動する(狭いスマホ幅ほどチップやタブが折り返して縦に伸びる)。中央寄せの
+   ままだと、狭い画面でヘッダーが伸びた時に#rail/#panelboxの上端がヘッダーの
+   下に隠れて一部のボタンが押せなくなるバグがあった(しゅんりさんの実機
+   スクショで報告された症状)。固定のブレークポイントで決め打ちせず、
+   #modeSelの実測bounding rectを見てヘッダーの下端を求め、中央寄せだと
+   ヘッダーに食い込む時だけヘッダー直下に固定配置へ切り替える
+   (layoutPad()等、既存の「実測ベースで動的配置する」方針を踏襲) */
+function layoutTitleHeader(){
+  const modeSel=document.getElementById('modeSel');
+  const rail=document.getElementById('rail');
+  const panelbox=document.getElementById('panelbox');
+  const tinfo=document.getElementById('tinfo');
+  if(!modeSel||!rail||!panelbox) return;
+  const headerBottom=modeSel.getBoundingClientRect().bottom;
+  const minTop=headerBottom+8;
+  const vh=window.innerHeight;
+  /* 下端も「はじめる」ボタン等(#tinfo)の実測位置より上で止める。#tinfo自体は
+     文字部分がpointer-events:noneなので機能的には壊れないが、下まで伸びると
+     見た目が重なって分かりにくくなるため、見た目レベルでも避ける */
+  const tinfoTop=tinfo?tinfo.getBoundingClientRect().top:vh;
+  const bottomGuard=Math.max(8,vh-tinfoTop+8);
+  const railH=rail.scrollHeight;
+  if((vh-railH)/2>=minTop && vh-(vh-railH)/2<=tinfoTop-8){
+    rail.style.top=''; rail.style.bottom=''; rail.style.transform='';
+  } else {
+    rail.style.top=minTop+'px'; rail.style.bottom=bottomGuard+'px'; rail.style.transform='none';
+  }
+  const pbMax=vh*0.74;
+  const pbH=Math.min(panelbox.scrollHeight,pbMax);
+  if((vh-pbH)/2>=minTop && vh-(vh-pbH)/2<=tinfoTop-8){
+    panelbox.style.top=''; panelbox.style.bottom=''; panelbox.style.transform='';
+  } else {
+    panelbox.style.top=minTop+'px'; panelbox.style.bottom=bottomGuard+'px'; panelbox.style.transform='none';
+  }
+}
+window.addEventListener('resize',function(){ try{ layoutTitleHeader(); }catch(e){} });
+window.addEventListener('orientationchange',function(){ setTimeout(function(){ try{ layoutTitleHeader(); }catch(e){} },300); });
 document.getElementById('pvtoggle').addEventListener('click',function(){
   pvOn=!pvOn;
   document.getElementById('pvtoggle').textContent=pvOn?'2D表示':'3Dで見る';
