@@ -3502,6 +3502,7 @@ function bgmStart(){
 }
 function bgmStop(){
   if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; }
+  stopKaisenAudio();
 }
 function bgmUpdateTension(dt){
   let target=0;
@@ -4464,6 +4465,65 @@ DANCE_POSES.finishV={
   legL:[-4,-17,-30],kneeL:[10,0,0],ankleL:[-4,-15,10],
   legR:[-4,17,30],kneeR:[10,0,0],ankleR:[-4,15,-10]
 };
+/* ---- G. 凱旋ダンス専用ポーズ(2026-09-15追加) ----
+   参考にしたのは「行進しながらの腕振り上げ」「両拳を突き上げるガッツ
+   ポーズ」「胸を張った大股スタンス」「大きく腕を開く決めポーズ」
+   「上体を反らせての高いキック止め」という、この手のノリノリ系ダンス
+   映像でよく見る一般的な動きの型（振り付けの動き自体は参考にしたが、
+   人物・映像・音源は一切使っていないオリジナルの組み直し。DBDやUNOの
+   仕組みだけ参考にした過去の方針と同じ扱い）。 */
+DANCE_POSES.marchL={
+  root:{p:[0,0,0.02],r:[0,4,0]},
+  spine:[9,3,3],chest:[3,2,2],neck:[-3,-4,-1],head:[-3,-6,-1],
+  armL:[-92,8,20],elbowL:[-98,0,18],
+  armR:[20,-2,-8],elbowR:[-16,0,-6],
+  legL:[-18,-8,-12],kneeL:[26,0,0],ankleL:[-10,-6,3],
+  legR:[14,8,14],kneeR:[6,0,0],ankleR:[6,6,-4]
+};
+DANCE_POSES.marchR=danceMirror(DANCE_POSES.marchL);
+DANCE_POSES.pumpUp={
+  root:{p:[0,0.03,0],r:[0,0,0]},
+  spine:[-8,0,0],chest:[-9,0,0],neck:[5,0,0],head:[5,0,0],
+  armL:[-128,18,28],elbowL:[-104,0,28],
+  armR:[-128,-18,-28],elbowR:[-104,0,-28],
+  legL:[-8,-9,-14],kneeL:[18,0,0],ankleL:[-8,-7,3],
+  legR:[-8,9,14],kneeR:[18,0,0],ankleR:[-8,7,-3]
+};
+DANCE_POSES.pumpDown={
+  root:{p:[0,-0.02,0],r:[0,0,0]},
+  spine:[-2,0,0],chest:[-3,0,0],neck:[2,0,0],head:[2,0,0],
+  armL:[-92,14,22],elbowL:[-92,0,22],
+  armR:[-92,-14,-22],elbowR:[-92,0,-22],
+  legL:[-16,-11,-16],kneeL:[28,0,0],ankleL:[-12,-9,5],
+  legR:[-16,11,16],kneeR:[28,0,0],ankleR:[-12,9,-5]
+};
+DANCE_POSES.sideRaiseL={
+  root:{p:[-0.12,0,0],r:[0,0,8]},
+  hips:[0,0,-5],
+  spine:[5,5,-15],chest:[2,4,-11],neck:[-3,-7,7],head:[-3,-9,9],
+  armL:[-150,14,30],elbowL:[-46,0,14],
+  armR:[8,0,8],elbowR:[-14,0,4],
+  legL:[-9,-18,-32],kneeL:[22,0,0],ankleL:[-11,-16,9],
+  legR:[-9,18,32],kneeR:[22,0,0],ankleR:[-11,16,-9]
+};
+DANCE_POSES.sideRaiseR=danceMirror(DANCE_POSES.sideRaiseL);
+DANCE_POSES.kaisenOpen={
+  root:{p:[0,0.05,0],r:[0,0,0]},
+  spine:[-11,0,0],chest:[-11,0,0],neck:[-7,0,0],head:[-9,0,0],
+  armL:[-18,0,-112],elbowL:[-6,0,6],
+  armR:[-18,0,112],elbowR:[-6,0,-6],
+  legL:[-9,-21,-39],kneeL:[15,0,0],ankleL:[-9,-19,13],
+  legR:[-9,21,39],kneeR:[15,0,0],ankleR:[-9,19,-13]
+};
+DANCE_POSES.freezeKick={
+  root:{p:[0,0.08,-0.02],r:[0,-6,4]},
+  hips:[0,0,-4],
+  spine:[-24,-4,11],chest:[-15,-3,9],neck:[11,6,-6],head:[14,8,-8],
+  legL:[10,-6,-9],kneeL:[16,0,0],ankleL:[-8,-4,4],
+  legR:[-68,12,10],kneeR:[10,0,0],ankleR:[-26,10,-6],
+  armR:[-140,16,132],elbowR:[-12,0,10],
+  armL:[28,-8,-26],elbowL:[-22,0,-8]
+};
 /* ---- おじぎ ---- */
 DANCE_POSES.bowStand={
   spine:[2,0,0],chest:[1,0,0],neck:[0,0,0],head:[0,0,0],
@@ -4576,6 +4636,36 @@ const DANCE_SWING={
     {b:28.00,pose:'standRelax',ease:'linear'}
   ]
 };
+const DANCE_KAISEN={
+  name:'凱旋ダンス',bpm:112,lengthBeats:16,loop:true,
+  groove:{bob:{amp:5,per:1},sway:{amp:1.0,per:2},headBob:{amp:1.6,per:1}},
+  poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'standRelax',ease:'outQuad'},
+    {b:0.50,pose:'marchL',ease:'outBack'},
+    {b:1.00,pose:'marchR',ease:'outBack'},
+    {b:1.50,pose:'marchL',ease:'outBack'},
+    {b:2.00,pose:'marchR',ease:'outBack'},
+    {b:2.50,pose:'pumpUp',ease:'outBack'},
+    {b:3.00,pose:'pumpDown',ease:'outCubic'},
+    {b:3.50,pose:'pumpUp',ease:'outBack'},
+    {b:4.00,pose:'pumpDown',ease:'outCubic'},
+    {b:4.50,pose:'pumpUp',ease:'outBack'},
+    {b:5.00,pose:'stepWide',ease:'outCubic'},
+    {b:5.50,pose:'sideRaiseL',ease:'outBack'},
+    {b:6.50,pose:'sideRaiseR',ease:'outBack'},
+    {b:7.50,pose:'kaisenOpen',ease:'outBack'},
+    {b:9.00,pose:'kaisenOpen',ease:'hold'},
+    {b:9.50,pose:'freezeKick',ease:'outCubic'},
+    {b:11.20,pose:'freezeKick',ease:'hold'},
+    {b:12.00,pose:'guardC',ease:'outCubic'},
+    {b:12.50,pose:'marchL',ease:'outBack'},
+    {b:13.00,pose:'marchR',ease:'outBack'},
+    {b:13.50,pose:'pumpUp',ease:'outBack'},
+    {b:14.00,pose:'standRelax',ease:'outCubic'},
+    {b:16.00,pose:'standRelax',ease:'linear'}
+  ]
+};
 const DANCE_BOW={
   name:'おじぎ',bpm:120,lengthBeats:4,loop:false,poses:DANCE_POSES,
   keys:[
@@ -4618,6 +4708,8 @@ const DANCE_SIT={
 const EMOTES=[
   {key:'swing',name:'スイングステップ',icon:'💃',dance:DANCE_SWING,
    desc:'138BPMのキレのあるダンス（止めるまで踊り続ける）'},
+  {key:'kaisen',name:'凱旋ダンス',    icon:'🕺',dance:DANCE_KAISEN,
+   desc:'ノリノリのガッツポーズダンス。専用BGM付き（止めるまで踊り続ける）'},
   {key:'bow',  name:'おじぎ',        icon:'🙇',dance:DANCE_BOW,
    desc:'ぺこりと一礼する'},
   {key:'wave', name:'手をふる',      icon:'👋',dance:DANCE_WAVE,
@@ -4625,6 +4717,38 @@ const EMOTES=[
   {key:'sit',  name:'体育座り',      icon:'🧎',dance:DANCE_SIT,
    desc:'その場にしゃがんで座り込む（止めるまで座ったまま）'}
 ];
+/* 「凱旋ダンス」専用のBGM(2026-09-15追加)。他のエモートには音源を付けず、
+   このエモートだけ音源ファイルを再生する。誰か1人でもこのエモートを
+   踊っていれば鳴らす、全員止めたら止める、という単純な仕組み(複数人が
+   同時に踊っても多重再生はしない)。設定の音楽ON/OFF(bgmOn)と音楽音量
+   (bgmVol)にそのまま従う(通常のプロシージャルBGMと同じ設定を共用)。
+   採用曲: Happy Dance / HoliznaCC0 / CC0 1.0 Universal（パブリックドメイン
+   相当、帰属表示不要。[[コダマ会議]]のカラオケ機能で既にライセンス確認
+   済みの楽曲をそのまま流用、出典 https://freemusicarchive.org/music/
+   holiznacc0/power-pop） */
+let kaisenAudioEl=null;
+function ensureKaisenAudio(){
+  if(!kaisenAudioEl){
+    kaisenAudioEl=new Audio('assets/emote_kaisen.mp3');
+    kaisenAudioEl.loop=true;
+  }
+  return kaisenAudioEl;
+}
+function anyoneDoingKaisen(){
+  return players.some(function(p){
+    return isEmoting(p)&&EMOTES[p.em]&&EMOTES[p.em].key==='kaisen';
+  });
+}
+function updKaisenAudio(){
+  const a=ensureKaisenAudio();
+  a.volume=0.55*(typeof bgmVol==='number'?bgmVol:1);
+  if(bgmOn&&anyoneDoingKaisen()){
+    if(a.paused) a.play().catch(function(){});
+  } else if(!a.paused) a.pause();
+}
+function stopKaisenAudio(){
+  if(kaisenAudioEl&&!kaisenAudioEl.paused){ kaisenAudioEl.pause(); kaisenAudioEl.currentTime=0; }
+}
 const DANCE_EASE={
   linear:function(t){ return t; },
   inQuad:function(t){ return t*t; },
@@ -10740,6 +10864,7 @@ function hud(dt){
   elBlackoutVeil.classList.toggle('on',blackoutT>0&&role!=='teacher');
   /* 隠れられる掃除用具入れ/ロッカー：隠れている間はほぼ視界ゼロになるリスク */
   elHideVeil.classList.toggle('on',role==='student'&&!!me.hide);
+  updKaisenAudio();
   drawMini();
 }
 
