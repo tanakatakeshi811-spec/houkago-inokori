@@ -196,6 +196,26 @@ canvas{display:block}
   border-radius:3px;overflow:hidden}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
+/* エモート（その場で踊る）ボタンと選択メニュー。#itemhud と同じく位置は
+   固定CSSではなく layoutEmoteBtn() が操作ボタン群(#pad)の実測値から決めるので、
+   縦画面/横画面/左手モードのどれでも既存ボタンと重ならない(2026-09-15追加) */
+#emotebtn{position:fixed;display:none;align-items:center;justify-content:center;
+  width:56px;height:56px;border-radius:50%;background:#0b120ec2;
+  border:2px solid #d48ac8;color:var(--chalk);font-size:26px;line-height:1;
+  cursor:pointer;user-select:none;touch-action:none;z-index:6}
+#emotebtn.on{display:flex}
+#emotebtn.press{background:#d48ac855;transform:scale(0.94)}
+#emotemenu{position:fixed;display:none;width:198px;max-height:54vh;overflow-y:auto;
+  background:#070c09f2;border:1px solid #d48ac8;border-radius:6px;padding:6px;z-index:7}
+#emotemenu.on{display:block}
+#emotemenu .emrow{display:flex;align-items:center;gap:9px;padding:8px 9px;
+  font-size:11.5px;border-bottom:1px solid #ffffff14;cursor:pointer}
+#emotemenu .emrow:last-child{border-bottom:none}
+#emotemenu .emrow:active{background:#d48ac826}
+#emotemenu .emrow b{font-size:20px;font-weight:400;line-height:1}
+#emotemenu .emrow i{font-style:normal;color:#a9a496;font-size:9.5px;display:block;margin-top:2px}
+#emotemenu .emrow.stop{color:#e8a094}
+
 /* ダッシュ・板を倒す・乗り越えの「今やっている操作」を大きなリングで見せるHUD。
    スタミナや進捗(0〜1)を --ringpct に、色を --ringcolor に入れて更新する */
 /* 位置(left/right/bottom)はlayoutPad()側で操作ボタン群のすぐ近くに
@@ -757,6 +777,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
     <div id="itemhudBarWrap"><div id="itemhudBar"></div></div>
     <div id="itemhudPct"></div>
   </div>
+  <div id="emotebtn" class="pe">💃</div>
+  <div id="emotemenu" class="pe"></div>
   <div id="actring"><div class="ring"></div><div class="core">
     <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
     <div class="lbl" id="ringlbl"></div></div></div>
@@ -3475,15 +3497,49 @@ function bgmUpdateTension(dt){
 
 /* ===== 人物 ===== */
 const HAIR=[0x2b2118,0x4a2f22,0x6b4a2f,0x1f2a3a];
-function limb(mat,w,h,d,x,y,z){
+/* 手足1本。segs を渡すと「途中に曲がる関節」を持つ多段の腕/脚になる
+   (2026-09-15、エモート(踊り)用に肘・膝・足首を足すため)。
+   関節は「ピボット(その高さに置いたGroup)＋逆オフセットの入れ物」の2段構成に
+   してあるので、入れ物の中では今まで通り“腕の付け根から測った座標”がそのまま
+   使える＝既存の手や靴の座標を1文字も書き換えずに済む。
+   関節を曲げていない状態では、円柱を分割して同じテーパーで繋ぎ直しただけ
+   なので見た目は分割前と一致する（継ぎ目は関節の球で隠す） */
+function limb(mat,w,h,d,x,y,z,segs){
   const grp=new THREE.Group(); grp.position.set(x,y,z);
   const r=Math.max(w,d)*0.5;
-  const m=new THREE.Mesh(new THREE.CylinderGeometry(r*0.86,r*0.96,h,14),mat);
-  m.position.y=-h/2; m.castShadow=true; grp.add(m);
+  const rt=r*0.86, rb=r*0.96;
   const j1=new THREE.Mesh(new THREE.SphereGeometry(r*0.94,12,10),mat);
   j1.castShadow=true; grp.add(j1);
+  if(!segs||!segs.length){
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,14),mat);
+    m.position.y=-h/2; m.castShadow=true; grp.add(m);
+    const j2=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,12,10),mat);
+    j2.position.y=-h; j2.castShadow=true; grp.add(j2);
+    return grp;
+  }
+  const joints=[]; let cur=grp, acc=0;
+  for(let i=0;i<segs.length;i++){
+    if(i>0){
+      const pv=new THREE.Group(); pv.position.y=-acc; cur.add(pv);
+      const inn=new THREE.Group(); inn.position.y=acc; pv.add(inn);
+      joints.push(pv); cur=inn;
+      const rj=rt+(rb-rt)*(acc/h);
+      const js=new THREE.Mesh(new THREE.SphereGeometry(rj*1.02,12,10),mat);
+      js.position.y=-acc; js.castShadow=true; cur.add(js);
+    }
+    const len=segs[i];
+    const r0=rt+(rb-rt)*(acc/h), r1=rt+(rb-rt)*((acc+len)/h);
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(r0,r1,len,14),mat);
+    m.position.y=-(acc+len/2); m.castShadow=true; cur.add(m);
+    acc+=len;
+  }
+  /* 先端(手首/足首)も関節にしておく。手や靴はここにぶら下げる */
+  const pvE=new THREE.Group(); pvE.position.y=-acc; cur.add(pvE);
+  const innE=new THREE.Group(); innE.position.y=acc; pvE.add(innE);
+  joints.push(pvE); cur=innE;
   const j2=new THREE.Mesh(new THREE.SphereGeometry(r*0.9,12,10),mat);
-  j2.position.y=-h; j2.castShadow=true; grp.add(j2);
+  j2.position.y=-h; j2.castShadow=true; cur.add(j2);
+  grp.userData.joints=joints; grp.userData.lower=cur;
   return grp;
 }
 function bx(parent,mat,w,h,d,x,y,z,ry){
@@ -3738,12 +3794,20 @@ function person(opt){
         acc=LM(opt.accent||0xe4e0d4), white=LM(0xf4f2ea), dark=LM(0x2c3038);
   const hipY=1.05*S, chest=1.62*S, headY=2.42*S;
   const floaty=(body==='float'||body==='bust'||body==='batform');
+  /* エモート(踊り)用に背骨・胸の関節を後から差し込むとき、「腰について
+     いくもの」と「上体についていくもの」を仕分ける必要がある。高さだけでは
+     判別できないもの(スカート・ズボンなど腰より上にあるが腰の一部)を
+     ここに登録しておく(2026-09-15) */
+  const lowerParts=[];
   /* 脚 */
-  const legL=limb(dark,0.32*S,1.05*S,0.32*S,-0.24*S,hipY,0);
-  const legR=limb(dark,0.32*S,1.05*S,0.32*S, 0.24*S,hipY,0);
+  /* 脚は 太もも0.52 + すね0.53 の2本に分割し、膝と足首の関節を持たせる
+     (エモート用、2026-09-15)。曲げていない状態の見た目は従来と同じ */
+  const legL=limb(dark,0.32*S,1.05*S,0.32*S,-0.24*S,hipY,0,[0.52*S,0.53*S]);
+  const legR=limb(dark,0.32*S,1.05*S,0.32*S, 0.24*S,hipY,0,[0.52*S,0.53*S]);
   if(body!=='crawl'&&!floaty){
     g.add(legL); g.add(legR);
-    [legL,legR].forEach(function(L){
+    [legL,legR].forEach(function(L0){
+      const L=L0.userData.lower||L0;   /* 靴は足首の関節にぶら下げる */
       /* 靴の色はスキン機能でopt.shoeColorから上書きできる(2026-09-13追加) */
       const sh=new THREE.Mesh(new THREE.BoxGeometry(0.34*S,0.18*S,0.5*S),LM(opt.shoeColor||0x25292b));
       sh.position.set(0,-1.0*S,0.08*S); sh.castShadow=true; L.add(sh);
@@ -3862,7 +3926,7 @@ function person(opt){
     if(opt.skirtShape==='block'){
       const skirt=new THREE.Mesh(new THREE.BoxGeometry(1.0*S,0.56*S,1.0*S),acc);
       skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
-      g.userData_skirt=skirt;
+      g.userData_skirt=skirt; lowerParts.push(skirt);
     } else {
       const skirt=new THREE.Mesh(new THREE.CylinderGeometry(0.5*S,0.72*S,0.56*S,14),acc);
       skirt.position.y=hipY+0.12*S; skirt.castShadow=true; g.add(skirt);
@@ -3872,14 +3936,14 @@ function person(opt){
         const px2=Math.cos(a2)*0.66*S, pz2=Math.sin(a2)*0.66*S;
         const pl=new THREE.Mesh(new THREE.BoxGeometry(0.08*S,0.54*S,0.08*S),LM(0xc8c4b8));
         pl.position.set(px2,hipY+0.12*S,pz2); g.add(pl);
-        addCloth(g,pl,px2,pz2);
+        addCloth(g,pl,px2,pz2); lowerParts.push(pl);
       }
-      g.userData_skirt=skirt;
+      g.userData_skirt=skirt; lowerParts.push(skirt);
     }
   } else if(!opt.tall&&opt.male){
-    bx(g,LM(opt.pants||0x2f3540),0.8*S,0.55*S,0.46*S,0,hipY+0.2*S,0);
-    bx(g,LM(opt.pants||0x2f3540),0.36*S,1.0*S,0.36*S,-0.22*S,hipY-0.4*S,0);
-    bx(g,LM(opt.pants||0x2f3540),0.36*S,1.0*S,0.36*S, 0.22*S,hipY-0.4*S,0);
+    lowerParts.push(bx(g,LM(opt.pants||0x2f3540),0.8*S,0.55*S,0.46*S,0,hipY+0.2*S,0));
+    lowerParts.push(bx(g,LM(opt.pants||0x2f3540),0.36*S,1.0*S,0.36*S,-0.22*S,hipY-0.4*S,0));
+    lowerParts.push(bx(g,LM(opt.pants||0x2f3540),0.36*S,1.0*S,0.36*S, 0.22*S,hipY-0.4*S,0));
     torso.scale.x=1.12;
   }
   if(body==='stripe'){
@@ -3915,10 +3979,13 @@ function person(opt){
   }
   /* 腕 */
   const armMat=(body==='anatomy')?LM(0x9c4a44):uni;
-  const armL=limb(armMat,0.24*S,0.88*S,0.28*S,-0.56*S,chest+0.44*S,0);
-  const armR=limb(armMat,0.24*S,0.88*S,0.28*S, 0.56*S,chest+0.44*S,0);
+  /* 腕は 上腕0.44 + 前腕0.44 に分割し、肘と手首の関節を持たせる
+     (エモート用、2026-09-15)。曲げていない状態の見た目は従来と同じ */
+  const armL=limb(armMat,0.24*S,0.88*S,0.28*S,-0.56*S,chest+0.44*S,0,[0.44*S,0.44*S]);
+  const armR=limb(armMat,0.24*S,0.88*S,0.28*S, 0.56*S,chest+0.44*S,0,[0.44*S,0.44*S]);
   g.add(armL); g.add(armR);
-  [armL,armR].forEach(function(A){
+  [armL,armR].forEach(function(A0){
+    const A=A0.userData.lower||A0;   /* 手・袖口は手首の関節にぶら下げる */
     /* 手のひら＋指5本 */
     const palm=new THREE.Mesh(new THREE.BoxGeometry(0.24*S,0.2*S,0.26*S),skin);
     palm.position.y=-0.92*S; palm.castShadow=true; A.add(palm);
@@ -3961,6 +4028,16 @@ function person(opt){
       bx(head,hair,0.18*S,1.1*S,0.18*S,(-0.4+i*0.2)*S,-0.3*S,-0.3*S);
   } else if(hs==='bob'){
     bx(head,hair,0.86*S,0.4*S,0.7*S,0,-0.14*S,-0.02*S);
+  } else if(hs==='cap'){
+    /* キャップ（2026-09-15、ダンスデモ由来の新キャラ用に追加）。
+       つばは目にかからないよう高め・浅めに付ける */
+    const capM=LM(opt.capColor||0x2a2f3a);
+    const cp=new THREE.Mesh(
+      new THREE.SphereGeometry(0.45*S,14,12,0,Math.PI*2,0,Math.PI*0.46),capM);
+    cp.position.y=0.04*S; cp.castShadow=true; head.add(cp);
+    const brim=bx(head,capM,0.52*S,0.06*S,0.28*S,0,0.3*S,0.36*S);
+    brim.rotation.x=-0.12;
+    bx(head,acc,0.12*S,0.1*S,0.04*S,0,0.32*S,0.22*S);
   }
   /* 目 */
   if(body!=='mask'&&body!=='bust'){
@@ -4104,15 +4181,16 @@ function person(opt){
   } else if(a==='wild'){
     bx(head,LM(0x8c2f2f),0.5*S,0.12*S,0.1*S,0,-0.2*S,0.4*S);
   }
-  /* 武器 */
+  /* 武器（手首の関節にぶら下げる。座標は腕の付け根から測った従来のままで
+     位置は変わらず、肘を曲げた時だけ手にちゃんと追従する） */
   if(opt.weapon){
     const w=makeWeapon(opt.weapon,S);
-    w.position.set(0,-0.95*S,0.2*S); armR.add(w);
+    w.position.set(0,-0.95*S,0.2*S); (armR.userData.lower||armR).add(w);
     g.userData_weapon=w;
   }
   if(opt.weapon2){
     const w2=makeWeapon(opt.weapon2,S);
-    w2.position.set(0,-0.95*S,0.2*S); armL.add(w2);
+    w2.position.set(0,-0.95*S,0.2*S); (armL.userData.lower||armL).add(w2);
   }
   /* 足元に絡んだ宿題 */
   const tm=new THREE.Mesh(new THREE.PlaneGeometry(1.5*S,1.9*S),M.paper);
@@ -4176,12 +4254,467 @@ function person(opt){
     plane.renderOrder=5;
     g.add(plane);
   }
+  /* ===== エモート(踊り)用の背骨・胸・腰・ルートの関節を後付けする =====
+     (2026-09-15) 既存の見た目に一切影響を出さないため、関節は
+     「ピボット(その高さに置いた空のGroup)＋逆オフセットの入れ物」の
+     2段構えで挿入する。入れ物の中では今まで通りキャラ中心(足元が0)の
+     座標系がそのまま通用するので、ここまでに作った全てのメッシュ(先生40種・
+     生徒32種のCHAR_PROPS固有装飾も含む)は座標を1つも書き換えずに移動できる。
+     回転を0にしている間は行列が完全に恒等なので、見た目は従来と完全一致する */
+  const dRoot=new THREE.Group();                                 /* 全身の移動・回転 */
+  const dHips=new THREE.Group(); dHips.position.y=hipY;
+  const dHipsIn=new THREE.Group(); dHipsIn.position.y=-hipY; dHips.add(dHipsIn);
+  const dSpine=new THREE.Group(); dSpine.position.y=hipY;
+  const dSpineIn=new THREE.Group(); dSpineIn.position.y=-hipY; dSpine.add(dSpineIn);
+  const dChest=new THREE.Group(); dChest.position.y=chest;
+  const dChestIn=new THREE.Group(); dChestIn.position.y=-chest; dChest.add(dChestIn);
+  dSpineIn.add(dChest); dHipsIn.add(dSpine); dRoot.add(dHips);
+  const kids=g.children.slice();
+  g.add(dRoot);
+  kids.forEach(function(o){
+    if(lowerParts.indexOf(o)>=0||o.position.y<hipY-0.02) dHipsIn.add(o);
+    else dChestIn.add(o);
+  });
+  const dj={hips:dHips,spine:dSpine,chest:dChest,head:head,
+    armL:armL,armR:armR,legL:legL,legR:legR};
+  if(armL.userData.joints){ dj.elbowL=armL.userData.joints[0]; }
+  if(armR.userData.joints){ dj.elbowR=armR.userData.joints[0]; }
+  if(legL.userData.joints){ dj.kneeL=legL.userData.joints[0]; dj.ankleL=legL.userData.joints[1]; }
+  if(legR.userData.joints){ dj.kneeR=legR.userData.joints[0]; dj.ankleR=legR.userData.joints[1]; }
   g.userData={paper:pap,legL:legL,legR:legR,armL:armL,armR:armR,head:head,phase:0,
     skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,
     aura:aura,auraMat:auraMat,heart:heart,hMat:hMat,hglow:hglow,hgMat:hgMat,trapMark:tm,
-    torso:torso,blob:blob,paperMat:paperMat};
+    torso:torso,blob:blob,paperMat:paperMat,
+    rig:{group:dRoot,baseObj:g,scale:S,joints:dj}};
   scene.add(g); return g;
 }
+/* =====================================================================
+   エモート（その場で踊る／お辞儀する等）のデータと再生エンジン
+   ---------------------------------------------------------------------
+   振り付けの持ち方は別プロジェクト「ダンスデモ」(DanceDemo/dance.js)と
+   完全に同じ形式で、そちらのデータをそのまま貼り付けられるようにしてある。
+     poses … 「ポーズ集」。関節名 -> [X回転, Y回転, Z回転]（単位は度）
+              root だけ特別で { p:[x,y,z]（移動）, r:[x,y,z]（回転） }
+              ※ p の y は「接地させたあとにさらに浮かせる量」。負の値は効かない
+                （沈み込みは膝を曲げて表現する＝足は自動で床に着く）
+     keys  … 「何拍目にどのポーズへ行くか」の並び。ease は補間の効き方
+     groove… ポーズとは別に薄く乗せる縦ノリ・左右の揺れ
+   角度の向き（キャラの正面は +Z、L=-X側 / R=+X側）:
+     肩/肘/股/膝: Z+ で手足の先が +X へ、X+ で先が -Z（後ろ）へ
+     背骨/胸/頭  : Z+ で上体が -X へ傾く、X+ で前に倒れる、Y+ で右を向く
+   無い関節は黙って無視するので、関節の少ない骨格に流しても壊れない。
+   エモートを増やすときは EMOTES 配列に1つ足すだけでよい（2026-09-15）
+   ===================================================================== */
+/* 左右反転。Y/Z 回転の符号を反転して L と R を入れ替える */
+function danceMirror(pose){
+  const out={};
+  for(const k in pose){
+    if(k==='root'){
+      const r=pose.root;
+      out.root={p:r.p?[-r.p[0],r.p[1],r.p[2]]:undefined,
+                r:r.r?[r.r[0],-r.r[1],-r.r[2]]:undefined};
+      continue;
+    }
+    const v=pose[k];
+    const nk=/L$/.test(k)?k.replace(/L$/,'R'):(/R$/.test(k)?k.replace(/R$/,'L'):k);
+    out[nk]=[v[0],-v[1],-v[2]];
+  }
+  return out;
+}
+const DANCE_POSES={};
+/* ---- 基準になる直立ポーズ（書かれなかった関節はこれで埋まる） ---- */
+DANCE_POSES.base={
+  root:{p:[0,0,0],r:[0,0,0]},
+  hips:[0,0,0],spine:[0,0,0],chest:[0,0,0],neck:[0,0,0],head:[0,0,0],
+  armL:[0,0,-7],elbowL:[-10,0,0],
+  armR:[0,0,7],elbowR:[-10,0,0],
+  legL:[0,-2,-4],kneeL:[4,0,0],ankleL:[-2,-2,0],
+  legR:[0,2,4],kneeR:[4,0,0],ankleR:[-2,2,0]
+};
+/* ---- A. 導入：立ち姿 → 手招き ---- */
+DANCE_POSES.standRelax={
+  spine:[5,0,0],chest:[3,0,0],neck:[7,0,0],head:[9,0,0],
+  armL:[-7,4,-9],elbowL:[-26,0,-4],
+  armR:[-7,-4,9],elbowR:[-26,0,4],
+  legL:[-3,-3,-5],kneeL:[8,0,0],ankleL:[-4,-3,1],
+  legR:[-3,3,5],kneeR:[8,0,0],ankleR:[-4,3,-1]
+};
+DANCE_POSES.beckonOpen={
+  root:{p:[0,0,0.04],r:[0,0,0]},
+  spine:[-6,0,0],chest:[-4,0,0],neck:[5,0,0],head:[7,0,0],
+  armL:[-34,22,24],elbowL:[-66,0,26],
+  armR:[-34,-22,-24],elbowR:[-66,0,-26],
+  legL:[-6,-6,-9],kneeL:[13,0,0],ankleL:[-6,-5,3],
+  legR:[-6,6,9],kneeR:[13,0,0],ankleR:[-6,5,-3]
+};
+DANCE_POSES.beckonPull={
+  root:{p:[0,0,-0.04],r:[0,0,0]},
+  spine:[6,0,0],chest:[3,0,0],neck:[12,0,0],head:[13,0,0],
+  armL:[-14,12,8],elbowL:[-148,0,14],
+  armR:[-14,-12,-8],elbowR:[-148,0,-14],
+  legL:[-11,-6,-9],kneeL:[22,0,0],ankleL:[-10,-5,3],
+  legR:[-11,6,9],kneeR:[22,0,0],ankleR:[-10,5,-3]
+};
+DANCE_POSES.armsDrop={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[14,0,0],chest:[6,0,0],neck:[-4,0,0],head:[-6,0,0],
+  armL:[26,0,-10],elbowL:[-14,0,0],
+  armR:[26,0,10],elbowR:[-14,0,0],
+  legL:[-14,-6,-8],kneeL:[30,0,0],ankleL:[-12,-6,2],
+  legR:[-14,6,8],kneeR:[30,0,0],ankleR:[-12,6,-2]
+};
+DANCE_POSES.stepWide={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[6,0,0],chest:[2,0,0],neck:[-2,0,0],head:[-2,0,0],
+  armL:[-8,0,-38],elbowL:[-18,0,8],
+  armR:[-8,0,38],elbowR:[-18,0,-8],
+  legL:[-8,-16,-30],kneeL:[20,0,0],ankleL:[-10,-14,8],
+  legR:[-8,16,30],kneeR:[20,0,0],ankleR:[-10,14,-8]
+};
+/* ---- B. 構え（拍と拍のあいだに必ず戻ってくる姿勢） ---- */
+DANCE_POSES.guardC={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[11,0,0],chest:[3,0,0],neck:[-5,0,0],head:[-5,0,0],
+  armL:[-30,14,14],elbowL:[-116,0,16],
+  armR:[-30,-14,-14],elbowR:[-116,0,-16],
+  legL:[-13,-17,-31],kneeL:[34,0,0],ankleL:[-15,-15,9],
+  legR:[-13,17,31],kneeR:[34,0,0],ankleR:[-15,15,-9]
+};
+DANCE_POSES.guardL={
+  root:{p:[-0.15,0,0],r:[0,6,0]},
+  spine:[11,5,5],chest:[3,3,3],neck:[-5,-5,-3],head:[-5,-7,-3],
+  armL:[-26,14,12],elbowL:[-112,0,16],
+  armR:[-34,-14,-16],elbowR:[-120,0,-18],
+  legL:[-18,-17,-25],kneeL:[44,0,0],ankleL:[-18,-15,6],
+  legR:[-6,17,37],kneeR:[11,0,0],ankleR:[-7,15,-13]
+};
+DANCE_POSES.guardR=danceMirror(DANCE_POSES.guardL);
+/* ---- C. 主役の動き1：オープンな斜めのポーズ ---- */
+DANCE_POSES.openL={
+  root:{p:[0.15,0,0],r:[0,-8,0]},
+  hips:[0,0,5],
+  spine:[1,-8,12],chest:[-3,-6,10],
+  neck:[0,8,-6],head:[1,10,-8],
+  armL:[16,-8,-173],elbowL:[-6,0,5],
+  armR:[-12,4,58],elbowR:[-8,0,-5],
+  legL:[-16,-12,-16],kneeL:[39,0,0],ankleL:[-17,-10,4],
+  legR:[-2,14,45],kneeR:[2,0,0],ankleR:[5,12,-19]
+};
+DANCE_POSES.openR=danceMirror(DANCE_POSES.openL);
+/* ---- D. 主役の動き2：体をひねって払うスワイプ ---- */
+DANCE_POSES.swipeL={
+  root:{p:[0.11,0,0],r:[0,-28,0]},
+  hips:[0,0,4],
+  spine:[8,-12,10],chest:[4,-10,8],
+  neck:[-2,14,-6],head:[6,17,-8],
+  armL:[10,-12,-155],elbowL:[-8,0,6],
+  /* 遠いほうの腕は肩を前へ送って(Y回転)胸の前を横切らせる。頭の半径と
+     上腕の長さがほぼ同じなので、肘を顔の高さに上げると頭にめり込む */
+  armR:[10,41,-95],elbowR:[-12,0,-10],
+  legL:[-18,-13,-20],kneeL:[44,0,0],ankleL:[-18,-11,6],
+  legR:[-2,15,40],kneeR:[4,0,0],ankleR:[5,13,-16]
+};
+DANCE_POSES.swipeR=danceMirror(DANCE_POSES.swipeL);
+/* ---- E. 差し色の動き ---- */
+DANCE_POSES.reachFwd={
+  root:{p:[0,0,0.05],r:[0,0,0]},
+  spine:[20,0,0],chest:[7,0,0],neck:[-15,0,0],head:[-13,0,0],
+  armL:[-86,40,34],elbowL:[-16,0,16],
+  armR:[-86,-40,-34],elbowR:[-16,0,-16],
+  legL:[-18,-17,-32],kneeL:[44,0,0],ankleL:[-18,-15,10],
+  legR:[-18,17,32],kneeR:[44,0,0],ankleR:[-18,15,-10]
+};
+DANCE_POSES.armsWide={
+  root:{p:[0,0.02,0],r:[0,0,0]},
+  spine:[-5,0,0],chest:[-5,0,0],neck:[3,0,0],head:[3,0,0],
+  armL:[4,0,-99],elbowL:[-8,0,4],
+  armR:[4,0,99],elbowR:[-8,0,-4],
+  legL:[-8,-17,-33],kneeL:[19,0,0],ankleL:[-10,-15,11],
+  legR:[-8,17,33],kneeR:[19,0,0],ankleR:[-10,15,-11]
+};
+DANCE_POSES.finishV={
+  root:{p:[0,0.05,0],r:[0,0,0]},
+  spine:[-8,0,0],chest:[-7,0,0],neck:[-12,0,0],head:[-14,0,0],
+  armL:[12,0,-152],elbowL:[-6,0,6],
+  armR:[12,0,152],elbowR:[-6,0,-6],
+  legL:[-4,-17,-30],kneeL:[10,0,0],ankleL:[-4,-15,10],
+  legR:[-4,17,30],kneeR:[10,0,0],ankleR:[-4,15,-10]
+};
+/* ---- おじぎ ---- */
+DANCE_POSES.bowStand={
+  spine:[2,0,0],chest:[1,0,0],neck:[0,0,0],head:[0,0,0],
+  armL:[0,2,-8],elbowL:[-10,0,-2],
+  armR:[0,-2,8],elbowR:[-10,0,2],
+  legL:[0,-3,-5],kneeL:[4,0,0],ankleL:[-2,-3,1],
+  legR:[0,3,5],kneeR:[4,0,0],ankleR:[-2,3,-1]
+};
+DANCE_POSES.bowDown={
+  root:{p:[0,0,0.05],r:[0,0,0]},
+  spine:[27,0,0],chest:[9,0,0],neck:[-12,0,0],head:[-15,0,0],
+  armL:[14,4,-6],elbowL:[-8,0,-2],
+  armR:[14,-4,6],elbowR:[-8,0,2],
+  legL:[-6,-3,-5],kneeL:[12,0,0],ankleL:[-7,-3,1],
+  legR:[-6,3,5],kneeR:[12,0,0],ankleR:[-7,3,-1]
+};
+/* ---- 手をふる ---- */
+DANCE_POSES.waveIn={
+  spine:[0,-5,2],chest:[0,-7,2],neck:[0,6,-1],head:[0,9,-2],
+  armL:[0,2,-9],elbowL:[-14,0,-3],
+  armR:[-10,-14,130],elbowR:[-26,0,-38],
+  legL:[-2,-4,-6],kneeL:[7,0,0],ankleL:[-3,-4,2],
+  legR:[-2,4,6],kneeR:[7,0,0],ankleR:[-3,4,-2]
+};
+DANCE_POSES.waveOut={
+  spine:[0,-5,2],chest:[0,-7,2],neck:[0,6,-1],head:[0,9,-2],
+  armL:[0,2,-9],elbowL:[-14,0,-3],
+  armR:[-10,-14,142],elbowR:[-26,0,16],
+  legL:[-2,-4,-6],kneeL:[7,0,0],ankleL:[-3,-4,2],
+  legR:[-2,4,6],kneeR:[7,0,0],ankleR:[-3,4,-2]
+};
+/* ---- 体育座り ---- */
+DANCE_POSES.sitDown={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[-12,0,0],chest:[4,0,0],neck:[6,0,0],head:[6,0,0],
+  armL:[-56,26,22],elbowL:[-74,0,18],
+  armR:[-56,-26,-22],elbowR:[-74,0,-18],
+  legL:[-125,-10,-10],kneeL:[108,0,0],ankleL:[16,-8,3],
+  legR:[-125,10,10],kneeR:[108,0,0],ankleR:[16,8,-3]
+};
+DANCE_POSES.sitBreathe={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[-9,0,0],chest:[1,0,0],neck:[8,0,0],head:[9,0,0],
+  armL:[-58,26,22],elbowL:[-78,0,18],
+  armR:[-58,-26,-22],elbowR:[-78,0,-18],
+  legL:[-124,-10,-10],kneeL:[107,0,0],ankleL:[16,-8,3],
+  legR:[-124,10,10],kneeR:[107,0,0],ankleR:[16,8,-3]
+};
+
+const DANCE_SWING={
+  name:'スイングステップ',bpm:138,lengthBeats:28,loop:true,
+  groove:{bob:{amp:7,per:1},sway:{amp:1.1,per:4},headBob:{amp:2.2,per:1}},
+  poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'standRelax',ease:'outQuad'},
+    {b:0.75,pose:'beckonOpen',ease:'outBack'},
+    {b:1.25,pose:'beckonPull',ease:'outQuad'},
+    {b:1.75,pose:'beckonOpen',ease:'outQuad'},
+    {b:2.25,pose:'beckonPull',ease:'outQuad'},
+    {b:2.75,pose:'beckonOpen',ease:'outQuad'},
+    {b:3.20,pose:'armsDrop',ease:'inQuad'},
+    {b:3.70,pose:'stepWide',ease:'outBack'},
+    {b:4.00,pose:'guardC',ease:'outQuad'},
+    {b:4.50,pose:'openL',ease:'outBack'},
+    {b:5.00,pose:'guardR',ease:'outCubic'},
+    {b:5.50,pose:'swipeL',ease:'outBack'},
+    {b:6.00,pose:'guardC',ease:'outCubic'},
+    {b:6.50,pose:'openL',ease:'outBack'},
+    {b:7.00,pose:'guardR',ease:'outCubic'},
+    {b:7.50,pose:'swipeL',ease:'outBack'},
+    {b:8.00,pose:'guardC',ease:'outCubic'},
+    {b:8.50,pose:'openR',ease:'outBack'},
+    {b:9.00,pose:'guardL',ease:'outCubic'},
+    {b:9.50,pose:'swipeR',ease:'outBack'},
+    {b:10.00,pose:'guardC',ease:'outCubic'},
+    {b:10.50,pose:'openR',ease:'outBack'},
+    {b:11.00,pose:'guardL',ease:'outCubic'},
+    {b:11.50,pose:'swipeR',ease:'outBack'},
+    {b:12.00,pose:'guardC',ease:'outCubic'},
+    {b:12.50,pose:'reachFwd',ease:'outCubic'},
+    {b:13.00,pose:'guardC',ease:'outCubic'},
+    {b:13.50,pose:'armsWide',ease:'outBack'},
+    {b:14.00,pose:'guardC',ease:'outCubic'},
+    {b:14.50,pose:'swipeL',ease:'outBack'},
+    {b:15.00,pose:'guardR',ease:'outCubic'},
+    {b:15.50,pose:'swipeR',ease:'outBack'},
+    {b:16.00,pose:'guardL',ease:'outCubic'},
+    {b:16.50,pose:'openR',ease:'outBack'},
+    {b:17.00,pose:'guardL',ease:'outCubic'},
+    {b:17.50,pose:'swipeR',ease:'outBack'},
+    {b:18.00,pose:'guardC',ease:'outCubic'},
+    {b:18.50,pose:'openL',ease:'outBack'},
+    {b:19.00,pose:'guardR',ease:'outCubic'},
+    {b:19.50,pose:'swipeL',ease:'outBack'},
+    {b:20.00,pose:'guardC',ease:'outCubic'},
+    {b:20.50,pose:'openR',ease:'outBack'},
+    {b:21.00,pose:'guardL',ease:'outCubic'},
+    {b:21.50,pose:'swipeR',ease:'outBack'},
+    {b:22.00,pose:'guardC',ease:'outCubic'},
+    {b:22.50,pose:'openL',ease:'outBack'},
+    {b:23.00,pose:'guardR',ease:'outCubic'},
+    {b:23.50,pose:'swipeL',ease:'outBack'},
+    {b:24.00,pose:'guardC',ease:'outCubic'},
+    {b:24.50,pose:'openR',ease:'outBack'},
+    {b:25.00,pose:'guardC',ease:'outCubic'},
+    {b:25.50,pose:'openL',ease:'outBack'},
+    {b:26.00,pose:'finishV',ease:'outBack'},
+    {b:27.00,pose:'stepWide',ease:'inOutQuad'},
+    {b:27.60,pose:'standRelax',ease:'inOutQuad'},
+    {b:28.00,pose:'standRelax',ease:'linear'}
+  ]
+};
+const DANCE_BOW={
+  name:'おじぎ',bpm:120,lengthBeats:4,loop:false,poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'bowStand',ease:'outQuad'},
+    {b:0.80,pose:'bowDown',ease:'outCubic'},
+    {b:2.00,pose:'bowDown',ease:'hold'},
+    {b:3.10,pose:'bowStand',ease:'outCubic'},
+    {b:4.00,pose:'bowStand',ease:'linear'}
+  ]
+};
+const DANCE_WAVE={
+  name:'手をふる',bpm:132,lengthBeats:7,loop:false,poses:DANCE_POSES,
+  groove:{headBob:{amp:1.4,per:2}},
+  keys:[
+    {b:0.00,pose:'bowStand',ease:'outQuad'},
+    {b:0.80,pose:'waveIn',ease:'outBack'},
+    {b:1.40,pose:'waveOut',ease:'outQuad'},
+    {b:2.00,pose:'waveIn',ease:'outQuad'},
+    {b:2.60,pose:'waveOut',ease:'outQuad'},
+    {b:3.20,pose:'waveIn',ease:'outQuad'},
+    {b:3.80,pose:'waveOut',ease:'outQuad'},
+    {b:4.40,pose:'waveIn',ease:'outQuad'},
+    {b:5.60,pose:'bowStand',ease:'outCubic'},
+    {b:7.00,pose:'bowStand',ease:'linear'}
+  ]
+};
+const DANCE_SIT={
+  name:'体育座り',bpm:60,lengthBeats:8,loop:true,loopFrom:1,poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'bowStand',ease:'outQuad'},
+    {b:1.00,pose:'sitDown',ease:'outCubic'},
+    {b:3.00,pose:'sitBreathe',ease:'inOutQuad'},
+    {b:5.00,pose:'sitDown',ease:'inOutQuad'},
+    {b:7.00,pose:'sitBreathe',ease:'inOutQuad'},
+    {b:8.00,pose:'sitDown',ease:'inOutQuad'}
+  ]
+};
+/* エモート一覧。ここに1つ足すだけで選択メニューにも増える。
+   loopOnce:true は「1回だけ再生して自動で終わる」 */
+const EMOTES=[
+  {key:'swing',name:'スイングステップ',icon:'💃',dance:DANCE_SWING,
+   desc:'138BPMのキレのあるダンス（止めるまで踊り続ける）'},
+  {key:'bow',  name:'おじぎ',        icon:'🙇',dance:DANCE_BOW,
+   desc:'ぺこりと一礼する'},
+  {key:'wave', name:'手をふる',      icon:'👋',dance:DANCE_WAVE,
+   desc:'仲間に向かって手を振る'},
+  {key:'sit',  name:'体育座り',      icon:'🧎',dance:DANCE_SIT,
+   desc:'その場にしゃがんで座り込む（止めるまで座ったまま）'}
+];
+const DANCE_EASE={
+  linear:function(t){ return t; },
+  inQuad:function(t){ return t*t; },
+  outQuad:function(t){ return 1-(1-t)*(1-t); },
+  inOutQuad:function(t){ return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; },
+  outCubic:function(t){ return 1-Math.pow(1-t,3); },
+  inOutCubic:function(t){ return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; },
+  outBack:function(t){ const c=1.7; return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2); },
+  hold:function(t){ return t>=1?1:0; }
+};
+const DANCE_JOINT_NAMES=['hips','spine','chest','neck','head',
+  'armL','elbowL','armR','elbowR',
+  'legL','kneeL','ankleL','legR','kneeR','ankleR'];
+const DANCE_D2R=Math.PI/180;
+/* キーごとに「欠けている関節を base で埋めた完全なポーズ」を作っておく */
+function danceCompile(d){
+  const base=d.poses.base;
+  d._frames=d.keys.map(function(k){
+    const src=d.poses[k.pose]||base;
+    const f={b:k.b,ease:k.ease||'inOutQuad',pose:k.pose,j:{}};
+    DANCE_JOINT_NAMES.forEach(function(n){ f.j[n]=src[n]||base[n]||[0,0,0]; });
+    const r=src.root||base.root;
+    f.rootP=(r&&r.p)||(base.root&&base.root.p)||[0,0,0];
+    f.rootR=(r&&r.r)||(base.root&&base.root.r)||[0,0,0];
+    return f;
+  });
+  d._frames.sort(function(a,b){ return a.b-b.b; });
+  d._sec=d.lengthBeats*60/d.bpm;
+  return d;
+}
+/* 指定した拍でのポーズを取り出す（度のまま返す） */
+function danceSample(d,beat){
+  if(!d._frames) danceCompile(d);
+  const F=d._frames,len=d.lengthBeats;
+  /* loopFrom を指定すると「入りの動き(立つ→座る等)は1回だけ再生して、
+     そのあとは loopFrom 拍から末尾までを繰り返す」ようになる */
+  let b;
+  if(d.loop){
+    const lf=d.loopFrom||0;
+    if(beat<len) b=Math.max(0,beat);
+    else { const span=Math.max(1e-6,len-lf); b=lf+(((beat-lf)%span)+span)%span; }
+  } else b=Math.max(0,Math.min(len,beat));
+  let i=0;
+  while(i<F.length-1&&F[i+1].b<=b) i++;
+  const a=F[i],c=F[Math.min(i+1,F.length-1)];
+  const span=Math.max(1e-6,c.b-a.b);
+  const raw=Math.max(0,Math.min(1,(b-a.b)/span));
+  const t=(DANCE_EASE[c.ease]||DANCE_EASE.inOutQuad)(raw);
+  const out={j:{}};
+  DANCE_JOINT_NAMES.forEach(function(n){
+    const p=a.j[n],q=c.j[n];
+    out.j[n]=[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t,p[2]+(q[2]-p[2])*t];
+  });
+  out.rootP=[a.rootP[0]+(c.rootP[0]-a.rootP[0])*t,
+             a.rootP[1]+(c.rootP[1]-a.rootP[1])*t,
+             a.rootP[2]+(c.rootP[2]-a.rootP[2])*t];
+  out.rootR=[a.rootR[0]+(c.rootR[0]-a.rootR[0])*t,
+             a.rootR[1]+(c.rootR[1]-a.rootR[1])*t,
+             a.rootR[2]+(c.rootR[2]-a.rootR[2])*t];
+  return out;
+}
+const _dvA=new THREE.Vector3(), _dvB=new THREE.Vector3();
+/* サンプルした角度を person() の骨格に流し込む。
+   低いほうの足首が床にちょうど着くよう root の高さを補正する簡易IK付き
+   （ポーズごとの沈み込み量を手計算しなくて済む。ダンスデモで確立した方式） */
+function danceApply(rig,s){
+  const J=rig.joints,S=rig.scale||1,g=rig.group;
+  DANCE_JOINT_NAMES.forEach(function(n){
+    const o=J[n]; if(!o) return;
+    const v=s.j[n];
+    o.rotation.set(v[0]*DANCE_D2R,v[1]*DANCE_D2R,v[2]*DANCE_D2R);
+  });
+  g.position.set(s.rootP[0]*S,0,s.rootP[2]*S);
+  g.rotation.set(s.rootR[0]*DANCE_D2R,s.rootR[1]*DANCE_D2R,s.rootR[2]*DANCE_D2R);
+  if(J.ankleL&&J.ankleR&&rig.baseObj){
+    rig.baseObj.updateMatrixWorld(true);
+    J.ankleL.getWorldPosition(_dvA); J.ankleR.getWorldPosition(_dvB);
+    g.position.y+=-(Math.min(_dvA.y,_dvB.y)-rig.baseObj.position.y);
+  }
+  g.position.y+=Math.max(0,s.rootP[1])*S;
+}
+/* 時間（秒）から一気に更新する */
+function danceUpdate(rig,d,timeSec){
+  if(!d._frames) danceCompile(d);
+  const beat=timeSec*d.bpm/60;
+  const s=danceSample(d,beat);
+  const gr=d.groove;
+  if(gr){
+    const bb=gr.bob,sw=gr.sway,hb=gr.headBob;
+    /* 縦ノリ：足を床につけたまま沈みたいので root を下げるのではなく
+       膝を余分に曲げ、股関節と足首で帳尻を合わせる（ダンスデモの教訓） */
+    if(bb){
+      const k=bb.amp*(0.5+0.5*Math.cos(2*Math.PI*(beat/bb.per)));
+      s.j.kneeL[0]+=k; s.j.kneeR[0]+=k;
+      s.j.legL[0]-=k*0.5; s.j.legR[0]-=k*0.5;
+      s.j.ankleL[0]-=k*0.5; s.j.ankleR[0]-=k*0.5;
+      s.j.spine[0]+=k*0.3;
+    }
+    if(sw) s.rootR[2]+=sw.amp*Math.sin(2*Math.PI*(beat/sw.per));
+    if(hb) s.j.head[0]+=hb.amp*Math.cos(2*Math.PI*(beat/hb.per));
+  }
+  danceApply(rig,s);
+  return s;
+}
+/* エモートを止めた時に、踊りで動かした関節を全部 0 に戻す。
+   これをやらないと歩行アニメが触らない軸（肘・膝・背骨など）が
+   踊りの角度のまま残ってしまう */
+function danceReset(rig){
+  if(!rig) return;
+  const J=rig.joints;
+  DANCE_JOINT_NAMES.forEach(function(n){ if(J[n]) J[n].rotation.set(0,0,0); });
+  rig.group.position.set(0,0,0); rig.group.rotation.set(0,0,0);
+}
+
 /* 小物づくり用の軽量ヘルパー(bx/limbと同じ流儀。低セグメントで軽く) */
 function cy(parent,mat,rt,rb,h,x,y,z,seg){
   const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||8),mat);
@@ -5163,7 +5696,9 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     saDiveFrom:null,saDiveTo:null,saDiveHit:false,saDiveTarget:null,saHoldReady:false,
     /* 人形塚の番人(doll)専用。dlLevelは自動昇格する1〜3の段階、
        dlDollsは所持中の人形(0か1)、dlDownsはこの先生がダウンさせた人数 */
-    dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0};
+    dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0,
+    /* エモート(踊り)。em=-1で再生していない状態(2026-09-15) */
+    em:-1,emT:0};
   if(kind==='darknode'){
     /* 狼・コウモリそれぞれ専用の見た目を先に作っておき、能力2の変身時に
        teacher.meshの参照先を差し替えるだけにする（既存のアニメーション/
@@ -5245,7 +5780,9 @@ function spawnAll(){
       /* 2vs8モード用：今つかまっている/運ばれている相手がteacher/teacher2の
          どちらかを覚えておくフィールド(2026-09-11)。通常モード(先生1人)では
          常にteacherのままなので既存動作に影響しない */
-      grabber:null};
+      grabber:null,
+      /* エモート(踊り)。em=-1で再生していない状態(2026-09-15) */
+      em:-1,emT:0};
   });
   const far=spots.filter(function(w){
     return Math.hypot((w[0]-spots[0][0]),(w[1]-spots[0][1]))>14; });
@@ -5372,7 +5909,10 @@ function updFx(dt){
 const keys={}, input={mx:0,mz:0,run:false,act:false,actEdge:false,altEdge:false,
                       abEdge:false,abHold:false,tap:false,mash:false,altHold:false,
                       ab2Edge:false,stopEdge:false,aim:false,fireEdge:false,aimHold:false,
-                      itemHold:false};
+                      itemHold:false,
+                      /* エモート(踊り)。オンライン参加者はこの値を入力パケットに
+                         乗せてホストに「このエモートを再生したい」と伝える */
+                      emoteEdge:-1,emoteStopEdge:false};
 let camYaw=0,pitch=0;
 let sens=1.1,stkSens=1.0,deadZone=0.14,btnScale=1.0;
 let invert=false,holdRun=false,runToggle=false,autoCam=true,autoAct=true,leftHand=false;
@@ -5386,6 +5926,8 @@ addEventListener('keydown',function(e){
     if(e.code==='KeyR') input.ab2Edge=true;
     if(e.code==='KeyV') input.stopEdge=true;
     if(e.code==='KeyC') input.itemHold=true;
+    /* G キーでエモート(踊り)メニューを開閉(2026-09-15) */
+    if(e.code==='KeyG'&&started&&!over) emoteMenuToggle();
     if(e.code==='KeyF'||e.code==='KeyJ') input.mash=true;
     if(e.code==='Space'){ input.tap=true; e.preventDefault(); }
   }
@@ -5611,6 +6153,9 @@ function updActionRing(mode,pct,color){
 const elItemHud=document.getElementById('itemhud'),
       elItemHudBar=document.getElementById('itemhudBar'),elItemHudIcon=document.getElementById('itemhudIcon'),
       elItemHudPct=document.getElementById('itemhudPct');
+/* エモート(踊り)ボタン。layoutPad()から位置を決めるので同じ理由でここに置く */
+const elEmoteBtn=document.getElementById('emotebtn'),
+      elEmoteMenu=document.getElementById('emotemenu');
 /* 一ノ瀬「ラストスパート」持続時間セレクタ(試合中HUD版)の要素参照も
    同じ理由でここに置く(2026-09-10追加) */
 const elSprintHud=document.getElementById('sprintHud');
@@ -5662,6 +6207,96 @@ function layoutItemHud(){
     elItemHud.style.top=top+'px';
   });
 }
+/* エモート(💃)ボタンの配置。#itemhudと同じく操作ボタン群(#pad)の実測rectを
+   読んで「ボタン群の真上」に置くが、アイテムHUDと縦に積むと横画面スマホで
+   画面外へはみ出すため、横方向に1つぶんずらして横並びにしてある。
+   これで #pad の各ボタンとも #itemhud とも幾何学的に重ならない(2026-09-15) */
+function layoutEmoteBtn(){
+  requestAnimationFrame(function(){
+    const r=elPad.getBoundingClientRect();
+    if(!r.width&&!r.height) return;
+    const w=elEmoteBtn.offsetWidth||56, h=elEmoteBtn.offsetHeight||56;
+    const gap=96;
+    let left=leftHand?(r.left+gap):(r.right-w-gap);
+    let top=r.top-h-14;
+    left=Math.max(4,Math.min(left,innerWidth-w-4));
+    top=Math.max(4,Math.min(top,innerHeight-h-4));
+    /* 画面が低い時にミニマップ/ロースター等へ乗り上げてしまうことがあるので、
+       重なったら横へ逃がす(横に出られないなら下へ逃がす) */
+    ['mini','buffs','roster','sprintHud'].forEach(function(id){
+      const el=document.getElementById(id); if(!el) return;
+      if(getComputedStyle(el).display==='none') return;
+      const a=el.getBoundingClientRect(); if(!a.width||!a.height) return;
+      if(left+w<=a.left||left>=a.right||top+h<=a.top||top>=a.bottom) return;
+      const cand=leftHand?(a.right+8):(a.left-w-8);
+      if(cand>=4&&cand+w<=innerWidth-4) left=cand;
+      else top=Math.max(4,Math.min(innerHeight-h-4,a.bottom+8));
+    });
+    elEmoteBtn.style.left=left+'px';
+    elEmoteBtn.style.top=top+'px';
+    /* メニューはボタンの上に開く。上に入らなければ下に回す */
+    const mw=elEmoteMenu.offsetWidth||198, mh=elEmoteMenu.offsetHeight||220;
+    let ml=leftHand?left:(left+w-mw);
+    let mt=top-mh-8;
+    if(mt<4) mt=Math.max(4,Math.min(innerHeight-mh-4,top+h+8));
+    ml=Math.max(4,Math.min(ml,innerWidth-mw-4));
+    elEmoteMenu.style.left=ml+'px';
+    elEmoteMenu.style.top=mt+'px';
+  });
+}
+/* エモート選択メニューの中身。EMOTES に1つ足すだけで自動的に増える */
+function buildEmoteMenu(){
+  let html='';
+  EMOTES.forEach(function(em,i){
+    html+='<div class="emrow" data-i="'+i+'"><b>'+em.icon+'</b>'+
+      '<span>'+em.name+'<i>'+em.desc+'</i></span></div>';
+  });
+  html+='<div class="emrow stop" data-i="-1"><b>✋</b><span>やめる</span></div>';
+  elEmoteMenu.innerHTML=html;
+  Array.prototype.forEach.call(elEmoteMenu.querySelectorAll('.emrow'),function(d){
+    d.addEventListener('pointerdown',function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      const i=parseInt(d.dataset.i,10);
+      elEmoteMenu.classList.remove('on');
+      if(i<0) stopMyEmote(); else playEmote(i);
+    });
+  });
+}
+function emoteMenuToggle(force){
+  const want=(force===undefined)?!elEmoteMenu.classList.contains('on'):!!force;
+  elEmoteMenu.classList.toggle('on',want);
+  if(want) layoutEmoteBtn();
+}
+/* エモートを再生する。オンライン参加者はホストに要求を送るだけで、
+   実際に踊り出すかどうかはホストが判定する(ホスト権威モデルを踏襲) */
+function playEmote(i){
+  if(!EMOTES[i]||!started||over||!me) return;
+  if(netMode==='client'){ input.emoteEdge=i; return; }
+  if(!startEmote(me,i)){ toast('今はエモートを使えない'); return; }
+  toast(EMOTES[i].icon+' '+EMOTES[i].name);
+}
+function stopMyEmote(){
+  if(netMode==='client'){ input.emoteStopEdge=true; return; }
+  if(me) stopEmote(me);
+}
+/* 専用のボタン束縛(bindBtnはQTEのtap/mashも一緒に立ててしまうので使わない) */
+elEmoteBtn.addEventListener('pointerdown',function(e){
+  e.preventDefault(); e.stopPropagation();
+  elEmoteBtn.classList.add('press');
+  emoteMenuToggle();
+});
+['pointerup','pointercancel'].forEach(function(n){
+  elEmoteBtn.addEventListener(n,function(e){
+    e.preventDefault(); e.stopPropagation(); elEmoteBtn.classList.remove('press'); });
+});
+buildEmoteMenu();
+/* 試合中だけ出す。表示が切り替わった瞬間だけ位置を計算し直す */
+function setEmoteBtnOn(on){
+  if(elEmoteBtn.classList.contains('on')===on) return;
+  elEmoteBtn.classList.toggle('on',on);
+  if(!on) elEmoteMenu.classList.remove('on');
+  else layoutEmoteBtn();
+}
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
   const s=btnScale;
@@ -5693,7 +6328,7 @@ function layoutPad(){
     elActRing.style[side]='calc(env(safe-area-inset-right) + 34px)';
     elActRing.style[leftHand?'right':'left']='auto';
     elActRing.style.bottom='calc(env(safe-area-inset-bottom) + 180px)';
-    layoutItemHud();
+    layoutItemHud(); layoutEmoteBtn();
     return;
   }
   elPad.style.display='flex';
@@ -5723,7 +6358,7 @@ function layoutPad(){
   elActRing.style[side]='16px';
   elActRing.style[other]='auto';
   elActRing.style.bottom='calc(env(safe-area-inset-bottom) + 26px + '+padH+'px + 12px)';
-  layoutItemHud();
+  layoutItemHud(); layoutEmoteBtn();
 }
 /* チャットボタン配置：横画面スマホはボタン群の上あたりへ */
 function layoutChatBtn(){
@@ -9989,6 +10624,61 @@ function animateWalk(u,moved,dt){
   return br;
 }
 
+/* ===== エモート（その場で踊る）の再生 =====
+   踊りのデータと骨格への流し込みは person() の直後にまとめてある。
+   ここは「いつ踊れるか・いつ中断するか・毎フレームどう更新するか」だけ。
+   オンラインではホストが正（em/emT をスナップショットに乗せて配る）で、
+   参加者は受け取った値を再生するだけにしてある（2026-09-15） */
+const EMOTE_MAX_T=45;   /* ループするエモートも45秒で自動的に終わる */
+function emoteAllowed(e){
+  if(!e||!e.mesh||!e.mesh.userData||!e.mesh.userData.rig) return false;
+  if(e.state&&e.state!=='free') return false;
+  if(e.hide||e.trapped||e.crowActive) return false;
+  if((e.vault||0)>0||(e.vaultK||0)>0) return false;
+  if((e.freeze||0)>0||(e.knockT||0)>0||(e.drone||0)>0) return false;
+  if((e.guard||0)>0||(e.pushT||0)>0||(e.sleep||0)>0) return false;
+  if((e.tackle||0)>0) return false;
+  return true;
+}
+function startEmote(e,idx){
+  if(!EMOTES[idx]||!emoteAllowed(e)) return false;
+  e.em=idx; e.emT=0; e._emOn=false;
+  return true;
+}
+function stopEmote(e){
+  if(!e||e.em===undefined||e.em<0) return;
+  e.em=-1; e.emT=0; e._emOn=false;
+  const u=e.mesh&&e.mesh.userData;
+  if(u&&u.rig) danceReset(u.rig);
+}
+function isEmoting(e){ return !!(e&&e.em!==undefined&&e.em>=0); }
+/* 毎フレームの更新。trueを返したらこのフレームの姿勢はエモートが作ったので、
+   歩行アニメ等の通常モーションは飛ばす。
+   authoritative=true（オフライン／ホスト）の時だけ中断・終了の判定をする */
+function updEmoteAnim(e,dt,moved,authoritative){
+  const u=e.mesh&&e.mesh.userData;
+  const active=(u&&u.rig&&e.em!==undefined&&e.em>=0&&EMOTES[e.em]);
+  if(!active){
+    if(e._emOn){ e._emOn=false; if(u&&u.rig) danceReset(u.rig); }
+    return false;
+  }
+  if(authoritative&&(!emoteAllowed(e)||moved>0.02)){
+    stopEmote(e); return false;
+  }
+  const d=EMOTES[e.em].dance;
+  if(!d._frames) danceCompile(d);
+  e.emT=(e.emT||0)+dt;
+  if(authoritative){
+    if((!d.loop&&e.emT>=d._sec)||e.emT>=EMOTE_MAX_T){ stopEmote(e); return false; }
+  } else if(!d.loop&&e.emT>d._sec) e.emT=d._sec;
+  e._emOn=true;
+  e.mesh.rotation.x=0; e.mesh.rotation.z=0; e.mesh.position.y=0;
+  e.mesh.scale.set(1,1,1);
+  danceUpdate(u.rig,d,e.emT);
+  updSkirtPhys(u,e,dt);
+  return true;
+}
+
 /* スカート・コート裾・マント等の「揺れる布」を質点ばね(mass-spring)で近似する
    物理っぽい揺れ(oimo.io相当の剛体物理エンジンではなく、このゲームの既存方針
    ＝軽量な自前の疑似物理を踏襲。three.js r128のCDN構成はESMのOimoPhysics.jsと
@@ -10080,7 +10770,8 @@ function tick(now){
     if(updIntro(dt)){ renderScene(); return; }
   }
   if(!started||over){ renderScene(); return; }
-  if(evtRunning){ if(netMode==='client') evtClientTick(dt); else evtHostTick(dt); return; }
+  if(evtRunning){ setEmoteBtnOn(false);   /* 怪異退治モードはエモート対象外(2026-09-15) */
+    if(netMode==='client') evtClientTick(dt); else evtHostTick(dt); return; }
   if(netMode==='client'){ netClientTick(dt); return; }
   elapsed+=dt; lookIdle+=dt;
 
@@ -10463,6 +11154,9 @@ function tick(now){
     } else { abLabel='固有なし'; abDim=true; }
     if(input.ab2Edge&&SAB2[me.perk]&&me.state==='free') useStudentSkill2(me);
   }
+  /* エモート中に何か操作したら中断する（移動での中断はupdEmoteAnim側、2026-09-15） */
+  if(isEmoting(me)&&(input.act||input.actEdge||input.altEdge||input.abEdge||
+     input.ab2Edge||input.itemHold)) stopEmote(me);
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false;
 
@@ -10480,6 +11174,7 @@ function tick(now){
   bgmUpdateTension(dt);
 
   elChatBtn.style.display=(role==='student')?'flex':'none';
+  setEmoteBtnOn(started&&!over&&!!me);   /* エモート(💃)ボタン(2026-09-15) */
   /* ラストスパート持続時間の試合中HUD。一ノ瀬(perk:foot)本人にのみ表示する
      個人設定(2026-09-10追加、他プレイヤーの画面には出ない・影響しない) */
   elSprintHud.classList.toggle('on',role==='student'&&!!me&&me.perk==='foot');
@@ -11212,6 +11907,8 @@ function tick(now){
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw;
     e.mesh.rotation.z=0;
+    /* エモート中はここで姿勢を作りきる（歩行や各種モーションは飛ばす、2026-09-15） */
+    if(updEmoteAnim(e,dt,moved,true)) continue;
     if(e.knockT>0){
       /* 被弾ノックバック：見た目だけ吹き飛ぶ（当たり判定は動かさない） */
       const kk=Math.max(0,e.knockT/0.32), kease=kk*kk;
@@ -12735,6 +13432,14 @@ function netApplyStudentInput(s,inp,dt){
   s.crowTurnInput=(inp&&inp.crowTurn)||0;
   s.crowSlowInput=!!(inp&&inp.crowSlow);
   if(inp&&inp.fanYaw!==undefined) s.fanYaw=inp.fanYaw;
+  /* エモート(踊り)：開始要求はホストが条件を見てから通す。移動・行動・
+     能力ボタンのどれかが来たらその場で中断する(2026-09-15追加) */
+  if(inp){
+    if(inp.emote!==undefined&&inp.emote>=0) startEmote(s,inp.emote);
+    if(inp.emoteStop) stopEmote(s);
+    if(isEmoting(s)&&(inp.mag>0.02||inp.act||inp.altEdge||inp.abEdge||inp.ab2Edge)) stopEmote(s);
+    inp.emote=-1; inp.emoteStop=false;
+  }
   const canMove=(s.state==='free'&&!s.hide&&!s.trapped&&s.freeze<=0&&!(s.drone>0)&&!(s.tackle>0)&&!s.crowActive&&!healFrozen(s));
   if(updVault(s,dt)){ /* 乗り越え中 */ }
   else if(inp&&inp.mag>0.02&&canMove){
@@ -12839,7 +13544,9 @@ function netHostBroadcastSnapshot(dt){
       mrForm:teacher.mrForm||0, mrMimicIdx:(teacher.mrMimicIdx===undefined?-1:teacher.mrMimicIdx),
       mrBlend:!!(teacher.mrBlendT>0),
       mrBlendIdx:(teacher.mrBlendMesh&&teacher.mrMeshes)?teacher.mrMeshes.indexOf(teacher.mrBlendMesh):-1,
-      saForm:teacher.saForm||0, dlLevel:teacher.dlLevel||1 } },
+      saForm:teacher.saForm||0, dlLevel:teacher.dlLevel||1,
+      em:(teacher.em===undefined?-1:teacher.em),
+      emT:Math.round((teacher.emT||0)*100)/100 } },
     /* 2vs8モード：2人目の先生は固有能力を使わないので同期する情報は最小限
        (座標・向き・運搬中かどうか)のみで足りる(2026-09-11) */
     tea2: teacher2?{ x:teacher2.x, z:teacher2.z, yaw:teacher2.yaw,
@@ -12873,7 +13580,10 @@ function netHostBroadcastSnapshot(dt){
         /* 「疲労」を使う新パーク4種の状態(2026-09-12追加)。参加者側の
            ボタン表示(fatigued判定)などに使う */
         fatigue:s.fatigue||0, dodgeT:s.dodgeT||0, quickBurstT:s.quickBurstT||0,
-        catfeetT:s.catfeetT||0, lastgaspT:s.lastgaspT||0 } };
+        catfeetT:s.catfeetT||0, lastgaspT:s.lastgaspT||0,
+        /* エモート(踊り)：どのエモートを何秒目まで再生しているか、の2つだけ
+           配れば他の参加者の画面でも同じ振り付けが再現できる(2026-09-15) */
+        em:(s.em===undefined?-1:s.em), emT:Math.round((s.emT||0)*100)/100 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -13128,14 +13838,20 @@ function netClientTick(dt){
       /* 自己治療の心得(selfcare)の開始/中断ボタン(2026-09-12追加) */
       selfcareStart:!!input.selfcareStartEdge, selfcareCancel:!!input.selfcareCancelEdge,
       /* 起死回生の反射(lastreflex)のボタン(2026-09-12追加) */
-      lastReflex:!!input.lastReflexEdge});
+      lastReflex:!!input.lastReflexEdge,
+      /* エモート(踊り)の開始/中断。判定はホストが正なので、参加者は
+         「これを再生したい」という要求を送るだけ(2026-09-15追加) */
+      emote:(input.emoteEdge===undefined?-1:input.emoteEdge),
+      emoteStop:!!input.emoteStopEdge});
     netMashCount=0;
+    input.emoteEdge=-1; input.emoteStopEdge=false;
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
   input.tap=false; input.mash=false;
   input.selfcareStartEdge=false; input.selfcareCancelEdge=false; input.lastReflexEdge=false;
 
   elChatBtn.style.display='flex';
+  setEmoteBtnOn(started&&!over&&!!me);   /* エモート(💃)ボタン(2026-09-15) */
   elSprintHud.classList.toggle('on',me.perk==='foot');
   if(elAdminMiniBtn) elAdminMiniBtn.classList.toggle('on',isTouchDevice&&adminUnlocked&&started&&!over);
   {
@@ -13181,6 +13897,8 @@ function netClientTick(dt){
       continue;
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw; e.mesh.rotation.z=0;
+    /* エモート中（参加者側はホストから来た em/emT をそのまま再生するだけ） */
+    if(updEmoteAnim(e,dt,moved,false)) continue;
     if(e.knockT>0){
       const kk=Math.max(0,e.knockT/0.32), kease=kk*kk;
       e.mesh.position.x+=e.knockDX*kease*0.85;
@@ -14611,6 +15329,7 @@ function startMatch(){
   if(role==='student'&&me.skill==='reveal'){ setAura(teacher,'reveal',3); teacher.revealT=3; }
   document.getElementById('title').style.display='none';
   { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
+  elEmoteMenu.classList.remove('on'); layoutEmoteBtn();   /* エモートボタンの位置を再計算(2026-09-15) */
   document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイが試合開始後も残るバグ対策(2026-09-12) */
   if(role==='teacher') setFPWeapon(weaponPick||(LOOK[teacherKind]||{}).weapon||'ruler');
   /* 先生は一人称なのでカメラの向きと体の向きが半周ずれる。開始直後にクルッと
@@ -16282,6 +17001,7 @@ function evtStartMatch(){
   }
   document.getElementById('title').style.display='none';
   { const elHud=document.getElementById('hud'); if(elHud) elHud.style.display=''; }
+  elEmoteMenu.classList.remove('on'); layoutEmoteBtn();   /* エモートボタンの位置を再計算(2026-09-15) */
   document.getElementById('netwait').classList.remove('on');   /* クイックプレイのホスト待機オーバーレイ対策(2026-09-12、startMatch()と同様) */
   started=true; over=false; evtOver=false; evtRunning=true;
   camYaw=evtMe.yaw; last=performance.now();
