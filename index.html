@@ -906,6 +906,16 @@ body.mlands #chatbtn{left:auto;bottom:auto}
         <div data-v="skirt" class="sel">通常</div><div data-v="block">四角いブロック</div>
       </div>
 
+      <p class="lbl" style="margin-top:12px">モデルタイプ</p>
+      <div class="seg small" id="skModelSel">
+        <div data-v="standard" class="sel">標準</div><div data-v="dance">ダンスモデル</div>
+      </div>
+      <p class="hint" style="margin-top:4px;text-align:left">
+        ダンスモデルは肘・膝・足首・背骨の関節を使い、より自然な体つき・
+        歩き方になります（エモート用に元々ある骨格を流用、見た目のみで
+        能力に影響はありません）。
+      </p>
+
       <p class="lbl" style="margin-top:12px">装飾を追加（位置・色は自由）</p>
       <div class="seg small wrap" id="skAccTypeSel">
         <div data-v="pencil" class="sel">鉛筆</div><div data-v="mushroom">キノコ</div>
@@ -3806,7 +3816,7 @@ function makeCrowModel(){
   g.userData.wingL=wingL; g.userData.wingR=wingR;
   return g;
 }
-/* opt: uniform,hair,accent,tall,body,head,weapon,acc */
+/* opt: uniform,hair,accent,tall,body,head,weapon,acc,modelType('dance'でダンスモデル、2026-09-15追加) */
 function person(opt){
   const g=new THREE.Group();
   const S=opt.tall?1.14:1.0;
@@ -4310,7 +4320,28 @@ function person(opt){
     skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,
     aura:aura,auraMat:auraMat,heart:heart,hMat:hMat,hglow:hglow,hgMat:hgMat,trapMark:tm,
     torso:torso,blob:blob,paperMat:paperMat,
+    /* 見た目カスタマイズの「モデルタイプ：ダンスモデル」選択(2026-09-15追加)。
+       関節(rig.joints)自体は標準モデルにも常にあるが、animateWalk()は
+       このフラグが立っている時だけ肘・膝・足首・背骨をわずかに使い、
+       標準モデルの見た目には一切影響しない */
+    danceModel:!!(opt.modelType==='dance'),
     rig:{group:dRoot,baseObj:g,scale:S,joints:dj}};
+  /* 「ダンスモデル」選択時は、作った時点で軽く肘・膝を緩めた自然な立ち姿に
+     しておく(2026-09-15追加)。こうしておくと、実際に歩かなくても静止した
+     見た目カスタマイズのプレビューでも違いがひと目でわかる。in-game中は
+     animateWalk()が毎フレーム同じ関節を上書きするので競合しない。
+     DANCE_D2R はこのすぐ下で定義されるが、person()自体は後で(ゲーム中に)
+     呼ばれる関数なので、実行時には既に定義済みで問題ない */
+  if(opt.modelType==='dance'){
+    if(dj.kneeL) dj.kneeL.rotation.x=6*DANCE_D2R;
+    if(dj.kneeR) dj.kneeR.rotation.x=6*DANCE_D2R;
+    if(dj.ankleL) dj.ankleL.rotation.x=-4*DANCE_D2R;
+    if(dj.ankleR) dj.ankleR.rotation.x=-4*DANCE_D2R;
+    if(dj.elbowL) dj.elbowL.rotation.x=-14*DANCE_D2R;
+    if(dj.elbowR) dj.elbowR.rotation.x=-14*DANCE_D2R;
+    if(dj.spine) dj.spine.rotation.x=4*DANCE_D2R;
+    if(dj.chest) dj.chest.rotation.x=2*DANCE_D2R;
+  }
   scene.add(g); return g;
 }
 /* =====================================================================
@@ -10884,6 +10915,25 @@ function animateWalk(u,moved,dt){
   u.armL.rotation.x=-sw*0.7; u.armR.rotation.x=sw*0.7;
   const br=Math.sin(elapsed*2.2+u.phase*0.3)*0.02;
   if(u.torso) u.torso.scale.set(1+br,1-br*0.5,1+br);
+  /* 見た目カスタマイズで「ダンスモデル」を選んだキャラだけ、エモート用に
+     既に用意してある肘・膝・足首・背骨の関節をわずかに使い、直立/歩行を
+     より人間らしい姿勢にする(2026-09-15追加)。標準モデル(既定)はここを
+     一切通らないので既存の見た目に影響しない。関節を持たない体型
+     (獣化フォーム等)ではjointsが無いので何もしない */
+  if(u.danceModel){
+    const J=u.rig&&u.rig.joints;
+    if(J){
+      const kneeBend=(6+Math.max(0,Math.cos(u.phase))*10*u.walkAmp)*DANCE_D2R;
+      if(J.kneeL) J.kneeL.rotation.x=kneeBend;
+      if(J.kneeR) J.kneeR.rotation.x=kneeBend;
+      if(J.ankleL) J.ankleL.rotation.x=-4*DANCE_D2R;
+      if(J.ankleR) J.ankleR.rotation.x=-4*DANCE_D2R;
+      if(J.elbowL) J.elbowL.rotation.x=-14*DANCE_D2R;
+      if(J.elbowR) J.elbowR.rotation.x=-14*DANCE_D2R;
+      if(J.spine) J.spine.rotation.x=4*DANCE_D2R;
+      if(J.chest) J.chest.rotation.x=2*DANCE_D2R;
+    }
+  }
   return br;
 }
 
@@ -12487,7 +12537,7 @@ const PROFILE_ICONS=['🦊','🐱','🐰','🐼','🐸','🦉','🐧','🦁','�
    ローカル(自分の画面)限定にし、通信には一切乗せない */
 function defaultSkin(){
   return {hair:null,skin:null,uniform:null,accent:null,pants:null,shoe:null,
-    skirtShape:'skirt',accessories:[],tex:null,texTarget:'uniform'};
+    skirtShape:'skirt',modelType:'standard',accessories:[],tex:null,texTarget:'uniform'};
 }
 function loadSkin(){
   let o=defaultSkin();
@@ -12496,7 +12546,8 @@ function loadSkin(){
     if(raw){
       const s=JSON.parse(raw);
       if(s&&typeof s==='object') o=Object.assign(o,s,
-        {accessories:Array.isArray(s.accessories)?s.accessories.slice(0,8):[]});
+        {accessories:Array.isArray(s.accessories)?s.accessories.slice(0,8):[],
+         modelType:(s.modelType==='dance')?'dance':'standard'});
     }
   }catch(e){}
   return o;
@@ -12516,6 +12567,7 @@ function applySkinToOpt(baseOpt,skin,includeTex){
   if(skin.pants!=null) o.pants=skin.pants;
   if(skin.shoe!=null) o.shoeColor=skin.shoe;
   if(skin.skirtShape) o.skirtShape=skin.skirtShape;
+  if(skin.modelType==='dance') o.modelType='dance';   /* 見た目パネルの「ダンスモデル」選択(2026-09-15追加) */
   if(skin.accessories&&skin.accessories.length) o.accessories=skin.accessories;
   if(includeTex&&skin.tex&&skinPaintTexture) o.customTex={target:skin.texTarget||'uniform',texture:skinPaintTexture};
   return o;
@@ -12524,6 +12576,7 @@ function applySkinToOpt(baseOpt,skin,includeTex){
 function skinSyncData(){
   return {hair:mySkin.hair,skin:mySkin.skin,uniform:mySkin.uniform,accent:mySkin.accent,
     pants:mySkin.pants,shoe:mySkin.shoe,skirtShape:mySkin.skirtShape,
+    modelType:mySkin.modelType,
     accessories:(mySkin.accessories||[]).slice(0,8).map(function(a){
       return {type:a.type,x:a.x,y:a.y,z:a.z,color:a.color};
     })};
@@ -12538,6 +12591,7 @@ function sanitizeSkin(raw){
     hair:hexOrNull(raw.hair), skin:hexOrNull(raw.skin), uniform:hexOrNull(raw.uniform),
     accent:hexOrNull(raw.accent), pants:hexOrNull(raw.pants), shoe:hexOrNull(raw.shoe),
     skirtShape:(raw.skirtShape==='block')?'block':'skirt',
+    modelType:(raw.modelType==='dance')?'dance':'standard',
     accessories:Array.isArray(raw.accessories)?raw.accessories.slice(0,8).filter(function(a){
       return a&&ACCESSORY_DEFS[a.type];
     }).map(function(a){
@@ -15784,6 +15838,9 @@ function syncSkinColorInputs(){
   Array.prototype.forEach.call(document.querySelectorAll('#skShapeSel div'),function(x){
     x.classList.toggle('sel',x.dataset.v===(mySkin.skirtShape||'skirt'));
   });
+  Array.prototype.forEach.call(document.querySelectorAll('#skModelSel div'),function(x){
+    x.classList.toggle('sel',x.dataset.v===(mySkin.modelType||'standard'));
+  });
   Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(x){
     x.classList.toggle('sel',x.dataset.v===(mySkin.texTarget||'uniform'));
   });
@@ -15825,6 +15882,12 @@ function initSkinUI(){
     d.addEventListener('click',function(){
       Array.prototype.forEach.call(document.querySelectorAll('#skShapeSel div'),function(x){ x.classList.remove('sel'); });
       d.classList.add('sel'); mySkin.skirtShape=d.dataset.v; refreshSkinPreview();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#skModelSel div'),function(d){
+    d.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#skModelSel div'),function(x){ x.classList.remove('sel'); });
+      d.classList.add('sel'); mySkin.modelType=d.dataset.v; refreshSkinPreview();
     });
   });
   let skAccType='pencil';
