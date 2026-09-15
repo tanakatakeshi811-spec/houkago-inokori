@@ -196,12 +196,14 @@ canvas{display:block}
   border-radius:3px;overflow:hidden}
 #itemhudBar{display:block;height:100%;background:var(--yellow);width:100%}
 
-/* エモート（その場で踊る）ボタンと選択メニュー。#itemhud と同じく位置は
-   固定CSSではなく layoutEmoteBtn() が操作ボタン群(#pad)の実測値から決めるので、
-   縦画面/横画面/左手モードのどれでも既存ボタンと重ならない(2026-09-15追加) */
+/* エモート（その場で踊る）ボタンと選択メニュー。位置は固定CSSではなく
+   layoutEmoteBtn()が実測値から決める(2026-09-15追加)。当初は#pad(操作
+   ボタン群)の真上に置いていたが、しゅんりさんの要望で「管理😈ボタンの
+   右」の左上エリアへ移動(2026-09-15続報)。#heart/#gearと近いサイズの
+   小さめの円ボタンにして、いつでも見えていても邪魔にならないようにした */
 #emotebtn{position:fixed;display:none;align-items:center;justify-content:center;
-  width:56px;height:56px;border-radius:50%;background:#0b120ec2;
-  border:2px solid #d48ac8;color:var(--chalk);font-size:26px;line-height:1;
+  width:38px;height:38px;border-radius:50%;background:#0b120ec2;
+  border:2px solid #d48ac8;color:var(--chalk);font-size:18px;line-height:1;
   cursor:pointer;user-select:none;touch-action:none;z-index:6}
 #emotebtn.on{display:flex}
 #emotebtn.press{background:#d48ac855;transform:scale(0.94)}
@@ -6403,6 +6405,17 @@ function layoutSprintHud(){
     elSprintHud.style.top=Math.max(8,r.bottom+8)+'px';
   });
 }
+/* 管理😈ボタンのon/offをまとめて切り替えるヘルパー。tick()/netClientTick()
+   から毎フレーム呼ばれるので、状態が実際に変わった時だけ💃ボタンの位置を
+   再計算する(layoutEmoteBtn()は#adminMiniBtnの表示有無で置き場所を変える
+   ため、切り替わった瞬間に追従させないと2つのボタンが重なってしまう。
+   2026-09-15追加) */
+let _adminMiniOnPrev=false;
+function setAdminMiniBtnOn(on){
+  if(!elAdminMiniBtn) return;
+  elAdminMiniBtn.classList.toggle('on',on);
+  if(on!==_adminMiniOnPrev){ _adminMiniOnPrev=on; layoutEmoteBtn(); }
+}
 /* 管理者ミニボタンはロースターの右横に置く(下は既にsprintHudが使うため) */
 function layoutAdminMiniBtn(){
   requestAnimationFrame(function(){
@@ -6436,38 +6449,45 @@ function layoutItemHud(){
     elItemHud.style.top=top+'px';
   });
 }
-/* エモート(💃)ボタンの配置。#itemhudと同じく操作ボタン群(#pad)の実測rectを
-   読んで「ボタン群の真上」に置くが、アイテムHUDと縦に積むと横画面スマホで
-   画面外へはみ出すため、横方向に1つぶんずらして横並びにしてある。
-   これで #pad の各ボタンとも #itemhud とも幾何学的に重ならない(2026-09-15) */
+/* エモート(💃)ボタンの配置。当初は#pad(操作ボタン群)の真上に置いていたが、
+   しゅんりさんの要望で「管理😈ボタンの右、邪魔にならない程度」の左上エリア
+   へ移動(2026-09-15続報)。#adminMiniBtn(layoutAdminMiniBtn())と全く同じ
+   「#rosterの実測rectの右横」を基準にし、管理者ミニボタンが出ている時だけ
+   その右にもう1つずらす。管理者モードOFF(ボタン非表示)の時は#rosterの
+   右横に単独で置かれ、見た目上ちょうど管理😈ボタンがあった位置に収まる */
 function layoutEmoteBtn(){
   requestAnimationFrame(function(){
-    const r=elPad.getBoundingClientRect();
-    if(!r.width&&!r.height) return;
-    const w=elEmoteBtn.offsetWidth||56, h=elEmoteBtn.offsetHeight||56;
-    const gap=96;
-    let left=leftHand?(r.left+gap):(r.right-w-gap);
-    let top=r.top-h-14;
+    const w=elEmoteBtn.offsetWidth||38, h=elEmoteBtn.offsetHeight||38;
+    const adminOn=elAdminMiniBtn&&elAdminMiniBtn.classList.contains('on');
+    let left,top;
+    if(adminOn){
+      const a=elAdminMiniBtn.getBoundingClientRect();
+      left=a.width?a.right+8:8; top=Math.max(8,a.top);
+    } else {
+      const rosterEl=document.getElementById('roster');
+      const r=rosterEl?rosterEl.getBoundingClientRect():{width:0,right:0,top:0};
+      left=r.width?r.right+8:8; top=Math.max(8,r.top);
+    }
     left=Math.max(4,Math.min(left,innerWidth-w-4));
     top=Math.max(4,Math.min(top,innerHeight-h-4));
-    /* 画面が低い時にミニマップ/ロースター等へ乗り上げてしまうことがあるので、
-       重なったら横へ逃がす(横に出られないなら下へ逃がす) */
-    ['mini','buffs','roster','sprintHud'].forEach(function(id){
+    /* 画面が低い/狭い時にミニマップ・バフ表示・スプリントHUDへ乗り上げる
+       ことがあるので、重なったら横へ逃がす(入らなければ下へ)。#rosterと
+       #adminMiniBtn自体はわざと隣接させたいので、ここでは避ける対象に含めない */
+    ['mini','buffs','sprintHud'].forEach(function(id){
       const el=document.getElementById(id); if(!el) return;
       if(getComputedStyle(el).display==='none') return;
       const a=el.getBoundingClientRect(); if(!a.width||!a.height) return;
       if(left+w<=a.left||left>=a.right||top+h<=a.top||top>=a.bottom) return;
-      const cand=leftHand?(a.right+8):(a.left-w-8);
+      const cand=a.right+8;
       if(cand>=4&&cand+w<=innerWidth-4) left=cand;
       else top=Math.max(4,Math.min(innerHeight-h-4,a.bottom+8));
     });
     elEmoteBtn.style.left=left+'px';
     elEmoteBtn.style.top=top+'px';
-    /* メニューはボタンの上に開く。上に入らなければ下に回す */
+    /* メニューは画面の上寄りに来たのでボタンの下に開く。下に入らなければ上に回す */
     const mw=elEmoteMenu.offsetWidth||198, mh=elEmoteMenu.offsetHeight||220;
-    let ml=leftHand?left:(left+w-mw);
-    let mt=top-mh-8;
-    if(mt<4) mt=Math.max(4,Math.min(innerHeight-mh-4,top+h+8));
+    let ml=left, mt=top+h+8;
+    if(mt+mh>innerHeight-4) mt=Math.max(4,top-mh-8);
     ml=Math.max(4,Math.min(ml,innerWidth-mw-4));
     elEmoteMenu.style.left=ml+'px';
     elEmoteMenu.style.top=mt+'px';
@@ -10639,7 +10659,7 @@ function buildRoster(){
       nm:box.querySelector('.rn'),st:box.querySelector('.rs'),
       bar:box.querySelector('.rb'),fill:box.querySelector('.rb i')});
   });
-  layoutSprintHud(); layoutAdminMiniBtn();
+  layoutSprintHud(); layoutAdminMiniBtn(); layoutEmoteBtn();
 }
 function updRoster(){
   students.forEach(function(s,i){
@@ -11583,7 +11603,7 @@ function tick(now){
   if(carriedNow) elCarryGaugeI.style.width=((me.wig||0)*100)+'%';
   /* スマホ向け管理者パネル開閉ボタン。管理者モードが有効なタッチ操作端末で
      試合中だけ表示する(PCのF2キーに相当、2026-09-11追加) */
-  if(elAdminMiniBtn) elAdminMiniBtn.classList.toggle('on',isTouchDevice&&adminUnlocked&&started&&!over);
+  setAdminMiniBtnOn(isTouchDevice&&adminUnlocked&&started&&!over);
   updItemHud();
 
   /* --- AI --- */
@@ -14178,7 +14198,7 @@ function netClientTick(dt){
   elChatBtn.style.display='flex';
   setEmoteBtnOn(started&&!over&&!!me);   /* エモート(💃)ボタン(2026-09-15) */
   elSprintHud.classList.toggle('on',me.perk==='foot');
-  if(elAdminMiniBtn) elAdminMiniBtn.classList.toggle('on',isTouchDevice&&adminUnlocked&&started&&!over);
+  setAdminMiniBtnOn(isTouchDevice&&adminUnlocked&&started&&!over);
   {
     const carriedNow=(me.state==='carried');
     elCarryHands.classList.toggle('on',isTouchDevice&&carriedNow);
@@ -16053,6 +16073,7 @@ function adminTryLogin(){
     adminUnlocked=true; elAdminLogin.classList.remove('on'); elAdminPass.value='';
     elAdminPanel.classList.add('on');
     try{ localStorage.setItem('hi_admin_unlocked_v1','1'); }catch(e){}
+    layoutEmoteBtn();   /* 管理😈ボタンが出た/消えた瞬間に💃ボタンも位置を再計算(2026-09-15) */
   } else {
     elAdminPass.value='';
     elAdminLogin.classList.add('shake');
