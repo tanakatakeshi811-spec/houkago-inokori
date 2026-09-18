@@ -3523,7 +3523,7 @@ function bgmStart(){
 }
 function bgmStop(){
   if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; }
-  stopKaisenAudio();
+  stopEmoteAudio();
 }
 function bgmUpdateTension(dt){
   let target=0;
@@ -4566,6 +4566,277 @@ DANCE_POSES.freezeKick={
   armR:[-140,16,132],elbowR:[-12,0,10],
   armL:[28,-8,-26],elbowL:[-22,0,-8]
 };
+/* ---- H. K-POP風「クロスビート」専用ポーズ(2026-09-18追加) ----
+   実在楽曲・実在の振り付けは一切参考にしていない。K-POPのグループダンス
+   というジャンルでよく見る「シャープな停止(スナップ)」「胸の前で腕を
+   クロスする決めポーズ」「腰のアイソレーション(ヒップポップ)」「指差し」
+   という一般的な動きの"型"だけを踏まえ、拍と拍のあいだをピタッと止める
+   キレを意識してオリジナルで組んだ */
+DANCE_POSES.kpopReady={
+  spine:[8,0,0],chest:[4,0,0],neck:[-3,0,0],head:[-3,0,0],
+  armL:[-20,10,-20],elbowL:[-90,0,10],
+  armR:[-20,-10,20],elbowR:[-90,0,-10],
+  legL:[-10,-10,-16],kneeL:[22,0,0],ankleL:[-10,-8,4],
+  legR:[-10,10,16],kneeR:[22,0,0],ankleR:[-10,8,-4]
+};
+DANCE_POSES.kpopPointR={
+  root:{p:[0.08,0,0],r:[0,-6,0]},
+  hips:[0,0,6],
+  spine:[-6,4,-8],chest:[-4,3,-6],neck:[3,-5,4],head:[4,-7,5],
+  armL:[10,10,-30],elbowL:[-100,0,10],
+  armR:[-96,-8,30],elbowR:[-10,0,-4],
+  legL:[-14,-14,-22],kneeL:[30,0,0],ankleL:[-14,-12,6],
+  legR:[-6,10,18],kneeR:[10,0,0],ankleR:[-6,8,-6]
+};
+DANCE_POSES.kpopPointL=danceMirror(DANCE_POSES.kpopPointR);
+DANCE_POSES.kpopCrossX={
+  root:{p:[0,-0.02,0],r:[0,0,0]},
+  spine:[-6,0,4],chest:[-4,0,3],neck:[3,-3,-3],head:[4,-4,-4],
+  armL:[-50,20,50],elbowL:[-150,0,30],
+  armR:[-50,-20,-50],elbowR:[-150,0,-30],
+  legL:[-14,-16,-24],kneeL:[30,0,0],ankleL:[-14,-14,7],
+  legR:[-14,16,24],kneeR:[30,0,0],ankleR:[-14,14,-7]
+};
+DANCE_POSES.kpopHipR={
+  root:{p:[0.1,0,0],r:[0,0,-10]},
+  hips:[0,0,-14],
+  spine:[4,-6,10],chest:[2,-4,8],neck:[-2,6,-6],head:[-3,8,-7],
+  armL:[-8,6,-16],elbowL:[-18,0,6],
+  armR:[-30,-30,-70],elbowR:[-140,0,-10],
+  legL:[-4,-20,-36],kneeL:[10,0,0],ankleL:[-6,-18,10],
+  legR:[-18,20,20],kneeR:[36,0,0],ankleR:[-16,18,-6]
+};
+DANCE_POSES.kpopHipL=danceMirror(DANCE_POSES.kpopHipR);
+DANCE_POSES.kpopSnap={
+  root:{p:[0,0.04,0],r:[0,0,0]},
+  spine:[-14,0,0],chest:[-10,0,0],neck:[6,0,0],head:[7,0,0],
+  armL:[-150,6,20],elbowL:[-150,0,20],
+  armR:[-150,-6,-20],elbowR:[-150,0,-20],
+  legL:[-10,-10,-16],kneeL:[20,0,0],ankleL:[-10,-8,4],
+  legR:[-10,10,16],kneeR:[20,0,0],ankleR:[-10,8,-4]
+};
+DANCE_POSES.kpopSweepUpR={
+  root:{p:[0,0,0],r:[0,4,0]},
+  spine:[-6,3,-4],chest:[-3,2,-3],neck:[2,-3,2],head:[2,-4,3],
+  armL:[-4,4,-10],elbowL:[-14,0,4],
+  armR:[-150,-10,-40],elbowR:[-8,0,-6],
+  legL:[-8,-10,-16],kneeL:[16,0,0],ankleL:[-8,-8,4],
+  legR:[-8,10,16],kneeR:[16,0,0],ankleR:[-8,8,-4]
+};
+DANCE_POSES.kpopSweepDownR={
+  root:{p:[0,0,0],r:[0,4,0]},
+  spine:[6,3,-2],chest:[3,2,-2],neck:[-2,-3,2],head:[-3,-4,2],
+  armL:[-4,4,-10],elbowL:[-14,0,4],
+  armR:[40,-6,60],elbowR:[-10,0,-4],
+  legL:[-8,-10,-16],kneeL:[16,0,0],ankleL:[-8,-8,4],
+  legR:[-8,10,16],kneeR:[16,0,0],ankleR:[-8,8,-4]
+};
+DANCE_POSES.kpopSweepUpL=danceMirror(DANCE_POSES.kpopSweepUpR);
+DANCE_POSES.kpopSweepDownL=danceMirror(DANCE_POSES.kpopSweepDownR);
+DANCE_POSES.kpopFinal={
+  root:{p:[0.1,0.06,0.03],r:[0,-10,6]},
+  hips:[0,0,-8],
+  spine:[-16,6,-14],chest:[-10,4,-10],neck:[6,-8,8],head:[8,-10,10],
+  armL:[10,10,-20],elbowL:[-100,0,10],
+  armR:[-158,-14,40],elbowR:[-8,0,-6],
+  legL:[-20,-18,-30],kneeL:[38,0,0],ankleL:[-18,-16,10],
+  legR:[6,14,22],kneeR:[4,0,0],ankleR:[4,12,-14]
+};
+/* ---- I. パーティー系「サンシャインパーティー」専用ポーズ(2026-09-18追加) ----
+   実在楽曲・実在の振り付けは参考にしていない。「ジャズハンズ」「弾む
+   バウンス」「ディスコの天井を指差すポーズ」「両手を上げての回転」
+   「フィナーレの万歳」という、パーティー/ディスコ系ダンスで広く見られる
+   一般的な動きの"型"だけを踏まえたオリジナルの振り付け */
+DANCE_POSES.partyReady={
+  root:{p:[0,0,0],r:[0,0,0]},
+  spine:[3,0,0],chest:[2,0,0],neck:[-2,0,0],head:[-2,0,0],
+  armL:[-10,6,-16],elbowL:[-30,0,6],
+  armR:[-10,-6,16],elbowR:[-30,0,-6],
+  legL:[-6,-8,-12],kneeL:[14,0,0],ankleL:[-6,-6,3],
+  legR:[-6,8,12],kneeR:[14,0,0],ankleR:[-6,6,-3]
+};
+DANCE_POSES.partyReady360={
+  root:{p:[0,0,0],r:[0,360,0]},
+  spine:[3,0,0],chest:[2,0,0],neck:[-2,0,0],head:[-2,0,0],
+  armL:[-10,6,-16],elbowL:[-30,0,6],
+  armR:[-10,-6,16],elbowR:[-30,0,-6],
+  legL:[-6,-8,-12],kneeL:[14,0,0],ankleL:[-6,-6,3],
+  legR:[-6,8,12],kneeR:[14,0,0],ankleR:[-6,6,-3]
+};
+DANCE_POSES.bounceLow={
+  root:{p:[0,-0.05,0],r:[0,0,0]},
+  spine:[8,0,0],chest:[4,0,0],neck:[-3,0,0],head:[-3,0,0],
+  armL:[10,6,-20],elbowL:[-40,0,10],
+  armR:[10,-6,20],elbowR:[-40,0,-10],
+  legL:[-22,-10,-16],kneeL:[46,0,0],ankleL:[-20,-8,5],
+  legR:[-22,10,16],kneeR:[46,0,0],ankleR:[-20,8,-5]
+};
+DANCE_POSES.bounceHigh={
+  root:{p:[0,0.09,0],r:[0,0,0]},
+  spine:[-4,0,0],chest:[-3,0,0],neck:[2,0,0],head:[2,0,0],
+  armL:[-30,6,-16],elbowL:[-20,0,6],
+  armR:[-30,-6,16],elbowR:[-20,0,-6],
+  legL:[-2,-6,-10],kneeL:[4,0,0],ankleL:[6,-6,2],
+  legR:[-2,6,10],kneeR:[4,0,0],ankleR:[6,6,-2]
+};
+DANCE_POSES.jazzHandsUp={
+  root:{p:[0,0.05,0],r:[0,0,0]},
+  spine:[-10,0,0],chest:[-8,0,0],neck:[4,0,0],head:[5,0,0],
+  armL:[-172,10,20],elbowL:[-8,0,8],
+  armR:[-172,-10,-20],elbowR:[-8,0,-8],
+  legL:[-6,-10,-16],kneeL:[14,0,0],ankleL:[-6,-8,4],
+  legR:[-6,10,16],kneeR:[14,0,0],ankleR:[-6,8,-4]
+};
+DANCE_POSES.jazzHandsSide={
+  root:{p:[0,0.02,0],r:[0,0,0]},
+  spine:[-4,0,0],chest:[-3,0,0],neck:[2,0,0],head:[2,0,0],
+  armL:[2,0,-100],elbowL:[-6,0,6],
+  armR:[2,0,100],elbowR:[-6,0,-6],
+  legL:[-6,-12,-20],kneeL:[16,0,0],ankleL:[-8,-10,6],
+  legR:[-6,12,20],kneeR:[16,0,0],ankleR:[-8,10,-6]
+};
+DANCE_POSES.discoPointUpR={
+  root:{p:[0.08,0,0],r:[0,-4,4]},
+  hips:[0,0,6],
+  spine:[-6,3,-6],chest:[-4,2,-4],neck:[3,-4,4],head:[4,-5,5],
+  armL:[-20,-20,-60],elbowL:[-130,0,-10],
+  armR:[-150,-12,-30],elbowR:[-10,0,-4],
+  legL:[-10,-14,-20],kneeL:[22,0,0],ankleL:[-10,-12,6],
+  legR:[-4,10,16],kneeR:[8,0,0],ankleR:[-2,8,-4]
+};
+DANCE_POSES.discoPointUpL=danceMirror(DANCE_POSES.discoPointUpR);
+DANCE_POSES.spinPrep={
+  root:{p:[0,0,0],r:[0,24,0]},
+  spine:[2,-16,4],chest:[1,-14,3],neck:[-1,18,-2],head:[-1,22,-3],
+  armL:[-10,10,-20],elbowL:[-30,0,10],
+  armR:[-10,-10,20],elbowR:[-30,0,-10],
+  legL:[-8,-10,-16],kneeL:[16,0,0],ankleL:[-8,-8,4],
+  legR:[-8,10,16],kneeR:[16,0,0],ankleR:[-8,8,-4]
+};
+DANCE_POSES.spinPose={
+  root:{p:[0,0.02,0],r:[0,150,0]},
+  spine:[0,-6,0],chest:[0,-4,0],neck:[0,6,0],head:[0,8,0],
+  armL:[-16,4,-30],elbowL:[-60,0,10],
+  armR:[-16,-4,30],elbowR:[-60,0,-10],
+  legL:[-6,-8,-12],kneeL:[12,0,0],ankleL:[-6,-6,3],
+  legR:[-6,8,12],kneeR:[12,0,0],ankleR:[-6,6,-3]
+};
+DANCE_POSES.spinPose2={
+  root:{p:[0,0.04,0],r:[0,270,0]},
+  spine:[0,-2,0],chest:[0,-2,0],neck:[0,3,0],head:[0,4,0],
+  armL:[-10,4,-70],elbowL:[-20,0,10],
+  armR:[-10,-4,70],elbowR:[-20,0,-10],
+  legL:[-4,-10,-16],kneeL:[8,0,0],ankleL:[-4,-8,4],
+  legR:[-4,10,16],kneeR:[8,0,0],ankleR:[-4,8,-4]
+};
+DANCE_POSES.spinLand={
+  root:{p:[0,0,0],r:[0,360,0]},
+  spine:[4,0,0],chest:[2,0,0],neck:[-2,0,0],head:[-2,0,0],
+  armL:[-6,4,-16],elbowL:[-20,0,6],
+  armR:[-6,-4,16],elbowR:[-20,0,-6],
+  legL:[-8,-10,-16],kneeL:[16,0,0],ankleL:[-8,-8,4],
+  legR:[-8,10,16],kneeR:[16,0,0],ankleR:[-8,8,-4]
+};
+DANCE_POSES.cheerBurst360={
+  root:{p:[0,0.08,0],r:[0,360,0]},
+  spine:[-14,0,0],chest:[-10,0,0],neck:[6,0,0],head:[7,0,0],
+  armL:[-168,20,30],elbowL:[-10,0,10],
+  armR:[-168,-20,-30],elbowR:[-10,0,-10],
+  legL:[-4,-14,-22],kneeL:[10,0,0],ankleL:[-2,-12,8],
+  legR:[-4,14,22],kneeR:[10,0,0],ankleR:[-2,12,-8]
+};
+/* ---- J. ストリート/ヒップホップ系「グラウンドフロウ」専用ポーズ(2026-09-18追加) ----
+   実在楽曲・実在の振り付けは参考にしていない。重心を低く落としたグルーヴ、
+   胸のアイソレーション(チェストポップ)、腕を波打たせるアームロール、
+   低いディップ、クールなフリーズという、ストリート/ヒップホップダンスで
+   広く見られる一般的な動きの"型"だけを踏まえたオリジナルの振り付け */
+DANCE_POSES.streetReady={
+  root:{p:[0,-0.04,0],r:[0,0,0]},
+  spine:[10,0,0],chest:[5,0,0],neck:[3,0,0],head:[5,0,0],
+  armL:[16,6,-24],elbowL:[-40,0,10],
+  armR:[16,-6,24],elbowR:[-40,0,-10],
+  legL:[-18,-14,-24],kneeL:[38,0,0],ankleL:[-16,-12,6],
+  legR:[-18,14,24],kneeR:[38,0,0],ankleR:[-16,12,-6]
+};
+DANCE_POSES.crouchGroove={
+  root:{p:[0,-0.10,0],r:[0,0,0]},
+  spine:[16,0,0],chest:[8,0,0],neck:[5,0,0],head:[8,0,0],
+  armL:[22,8,-20],elbowL:[-56,0,14],
+  armR:[22,-8,20],elbowR:[-56,0,-14],
+  legL:[-30,-16,-26],kneeL:[56,0,0],ankleL:[-26,-14,7],
+  legR:[-30,16,26],kneeR:[56,0,0],ankleR:[-26,14,-7]
+};
+DANCE_POSES.chestPop={
+  root:{p:[0,-0.05,0],r:[0,0,0]},
+  spine:[6,0,-3],chest:[-8,0,-5],neck:[6,0,4],head:[7,0,5],
+  armL:[18,4,-20],elbowL:[-44,0,10],
+  armR:[18,-4,20],elbowR:[-44,0,-10],
+  legL:[-20,-14,-24],kneeL:[40,0,0],ankleL:[-18,-12,6],
+  legR:[-20,14,24],kneeR:[40,0,0],ankleR:[-18,12,-6]
+};
+DANCE_POSES.headTiltIsoR={
+  root:{p:[0,-0.05,0],r:[0,0,-3]},
+  spine:[10,2,-4],chest:[5,1,-3],neck:[2,-4,10],head:[3,-6,16],
+  armL:[16,6,-24],elbowL:[-40,0,10],
+  armR:[16,-6,24],elbowR:[-40,0,-10],
+  legL:[-18,-14,-24],kneeL:[38,0,0],ankleL:[-16,-12,6],
+  legR:[-18,14,24],kneeR:[38,0,0],ankleR:[-16,12,-6]
+};
+DANCE_POSES.headTiltIsoL=danceMirror(DANCE_POSES.headTiltIsoR);
+DANCE_POSES.armRollInR={
+  root:{p:[0,-0.05,0],r:[0,0,0]},
+  spine:[10,0,0],chest:[5,0,0],neck:[3,0,0],head:[5,0,0],
+  armL:[16,6,-24],elbowL:[-40,0,10],
+  armR:[-40,-10,10],elbowR:[-130,0,-30],
+  legL:[-18,-14,-24],kneeL:[38,0,0],ankleL:[-16,-12,6],
+  legR:[-18,14,24],kneeR:[38,0,0],ankleR:[-16,12,-6]
+};
+DANCE_POSES.armRollOutR={
+  root:{p:[0,-0.05,0],r:[0,0,0]},
+  spine:[10,0,0],chest:[5,0,0],neck:[3,0,0],head:[5,0,0],
+  armL:[16,6,-24],elbowL:[-40,0,10],
+  armR:[40,10,60],elbowR:[-10,0,-10],
+  legL:[-18,-14,-24],kneeL:[38,0,0],ankleL:[-16,-12,6],
+  legR:[-18,14,24],kneeR:[38,0,0],ankleR:[-16,12,-6]
+};
+DANCE_POSES.armRollInL=danceMirror(DANCE_POSES.armRollInR);
+DANCE_POSES.armRollOutL=danceMirror(DANCE_POSES.armRollOutR);
+DANCE_POSES.lowSway={
+  root:{p:[-0.08,-0.06,0],r:[0,0,6]},
+  hips:[0,0,8],
+  spine:[12,0,-6],chest:[6,0,-4],neck:[3,0,4],head:[5,0,6],
+  armL:[18,6,-16],elbowL:[-46,0,10],
+  armR:[18,-6,16],elbowR:[-46,0,-10],
+  legL:[-26,-18,-30],kneeL:[50,0,0],ankleL:[-22,-16,8],
+  legR:[-14,10,18],kneeR:[26,0,0],ankleR:[-12,8,-4]
+};
+DANCE_POSES.lowSway2=danceMirror(DANCE_POSES.lowSway);
+DANCE_POSES.dip={
+  root:{p:[0,-0.14,0],r:[0,0,0]},
+  spine:[22,0,0],chest:[10,0,0],neck:[6,0,0],head:[9,0,0],
+  armL:[50,10,-10],elbowL:[-24,0,6],
+  armR:[50,-10,10],elbowR:[-24,0,-6],
+  legL:[-40,-18,-28],kneeL:[72,0,0],ankleL:[-32,-16,8],
+  legR:[-40,18,28],kneeR:[72,0,0],ankleR:[-32,16,-8]
+};
+DANCE_POSES.floorTouch={
+  root:{p:[0.06,-0.12,0.02],r:[0,-8,10]},
+  hips:[0,0,-6],
+  spine:[30,-10,14],chest:[16,-8,10],neck:[-6,10,-8],head:[-8,14,-10],
+  armL:[70,10,-24],elbowL:[-30,0,10],
+  armR:[100,-30,60],elbowR:[-8,0,-6],
+  legL:[-36,-20,-26],kneeL:[64,0,0],ankleL:[-30,-18,8],
+  legR:[-20,16,24],kneeR:[36,0,0],ankleR:[-16,14,-6]
+};
+DANCE_POSES.freezeCross={
+  root:{p:[0.05,-0.06,0],r:[0,-6,4]},
+  hips:[0,0,-4],
+  spine:[14,-6,8],chest:[6,-5,6],neck:[2,7,-5],head:[3,9,-7],
+  armL:[10,20,60],elbowL:[-110,0,20],
+  armR:[10,-10,-24],elbowR:[-40,0,-10],
+  legL:[-22,-16,-26],kneeL:[44,0,0],ankleL:[-20,-14,7],
+  legR:[-22,16,26],kneeR:[44,0,0],ankleR:[-20,14,-7]
+};
 /* ---- おじぎ ---- */
 DANCE_POSES.bowStand={
   spine:[2,0,0],chest:[1,0,0],neck:[0,0,0],head:[0,0,0],
@@ -4708,6 +4979,134 @@ const DANCE_KAISEN={
     {b:16.00,pose:'standRelax',ease:'linear'}
   ]
 };
+/* K-POP風「クロスビート」(2026-09-18追加、128BPM・16拍・約7.5秒ループ)。
+   拍のあいだをピタッと止める「スナップ」の効いたキレを重視。実在楽曲・
+   実在の振り付けは不使用、ジャンルでよくある動きの型のみ参考のオリジナル */
+const DANCE_KPOP={
+  name:'クロスビート',bpm:128,lengthBeats:16,loop:true,
+  groove:{bob:{amp:3,per:1},sway:{amp:0.8,per:2},headBob:{amp:1.4,per:1}},
+  poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'kpopReady',ease:'outQuad'},
+    {b:0.50,pose:'kpopPointR',ease:'outBack'},
+    {b:1.00,pose:'guardC',ease:'outCubic'},
+    {b:1.50,pose:'kpopPointL',ease:'outBack'},
+    {b:2.00,pose:'guardC',ease:'outCubic'},
+    {b:2.50,pose:'kpopCrossX',ease:'outBack'},
+    {b:3.00,pose:'kpopCrossX',ease:'hold'},
+    {b:3.50,pose:'kpopHipR',ease:'outBack'},
+    {b:4.00,pose:'kpopHipL',ease:'outBack'},
+    {b:4.50,pose:'kpopSnap',ease:'outBack'},
+    {b:4.75,pose:'kpopSnap',ease:'hold'},
+    {b:5.00,pose:'guardC',ease:'outCubic'},
+    {b:5.50,pose:'kpopSweepUpR',ease:'outCubic'},
+    {b:6.00,pose:'kpopSweepDownR',ease:'outCubic'},
+    {b:6.50,pose:'kpopSweepUpL',ease:'outCubic'},
+    {b:7.00,pose:'kpopSweepDownL',ease:'outCubic'},
+    {b:7.50,pose:'kpopPointR',ease:'outBack'},
+    {b:8.00,pose:'kpopPointL',ease:'outBack'},
+    {b:8.50,pose:'kpopCrossX',ease:'outBack'},
+    {b:9.00,pose:'kpopHipR',ease:'outBack'},
+    {b:9.50,pose:'kpopHipL',ease:'outBack'},
+    {b:10.00,pose:'kpopSnap',ease:'outBack'},
+    {b:10.25,pose:'kpopSnap',ease:'hold'},
+    {b:10.50,pose:'guardC',ease:'outCubic'},
+    {b:11.00,pose:'kpopSweepUpR',ease:'outCubic'},
+    {b:11.50,pose:'kpopSweepDownR',ease:'outCubic'},
+    {b:12.00,pose:'kpopPointR',ease:'outBack'},
+    {b:12.50,pose:'kpopPointL',ease:'outBack'},
+    {b:13.00,pose:'kpopCrossX',ease:'outBack'},
+    {b:13.50,pose:'kpopFinal',ease:'outBack'},
+    {b:14.50,pose:'kpopFinal',ease:'hold'},
+    {b:15.00,pose:'kpopReady',ease:'outCubic'},
+    {b:16.00,pose:'kpopReady',ease:'linear'}
+  ]
+};
+/* パーティー系「サンシャインパーティー」(2026-09-18追加、120BPM・16拍・
+   約8秒ループ)。ジャズハンズ・バウンス・回転・万歳フィナーレという、
+   パーティー/ディスコ系ダンスの一般的な動きの型のみ参考のオリジナル。
+   回転部分は root.r.y を 0→360 まで積み上げて表現するため(見た目は
+   1周して元の向きに戻る)、360→0 へ戻す最後の1区間だけ ease:'hold' に
+   して「見た目は同じ姿勢のまま数値だけ一瞬で巻き戻す」ことで、逆再生の
+   ような不自然な巻き戻り回転が見えないようにしている */
+const DANCE_PARTY={
+  name:'サンシャインパーティー',bpm:120,lengthBeats:16,loop:true,
+  groove:{bob:{amp:4,per:1},sway:{amp:1.4,per:2},headBob:{amp:2,per:1}},
+  poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'partyReady',ease:'outQuad'},
+    {b:0.50,pose:'bounceLow',ease:'outCubic'},
+    {b:1.00,pose:'bounceHigh',ease:'outBack'},
+    {b:1.50,pose:'jazzHandsSide',ease:'outBack'},
+    {b:2.00,pose:'jazzHandsUp',ease:'outBack'},
+    {b:2.50,pose:'bounceLow',ease:'outCubic'},
+    {b:3.00,pose:'discoPointUpR',ease:'outBack'},
+    {b:3.50,pose:'discoPointUpL',ease:'outBack'},
+    {b:4.00,pose:'bounceHigh',ease:'outBack'},
+    {b:4.50,pose:'jazzHandsSide',ease:'outBack'},
+    {b:5.00,pose:'jazzHandsUp',ease:'outBack'},
+    {b:5.50,pose:'bounceLow',ease:'outCubic'},
+    {b:6.00,pose:'discoPointUpL',ease:'outBack'},
+    {b:6.50,pose:'discoPointUpR',ease:'outBack'},
+    {b:7.00,pose:'bounceHigh',ease:'outBack'},
+    {b:7.50,pose:'jazzHandsUp',ease:'outBack'},
+    {b:8.00,pose:'partyReady',ease:'outQuad'},
+    {b:8.50,pose:'bounceLow',ease:'outCubic'},
+    {b:9.00,pose:'bounceHigh',ease:'outBack'},
+    {b:9.50,pose:'discoPointUpR',ease:'outBack'},
+    {b:10.00,pose:'discoPointUpL',ease:'outBack'},
+    {b:10.50,pose:'jazzHandsSide',ease:'outBack'},
+    {b:11.00,pose:'jazzHandsUp',ease:'outBack'},
+    {b:11.50,pose:'bounceLow',ease:'outCubic'},
+    {b:12.00,pose:'spinPrep',ease:'outCubic'},
+    {b:12.50,pose:'spinPose',ease:'outBack'},
+    {b:13.00,pose:'spinPose2',ease:'outCubic'},
+    {b:13.50,pose:'spinLand',ease:'outCubic'},
+    {b:14.00,pose:'cheerBurst360',ease:'outBack'},
+    {b:14.70,pose:'cheerBurst360',ease:'hold'},
+    {b:15.30,pose:'partyReady360',ease:'outCubic'},
+    {b:16.00,pose:'partyReady',ease:'hold'}
+  ]
+};
+/* ストリート/ヒップホップ系「グラウンドフロウ」(2026-09-18追加、95BPM・
+   16拍・約10.1秒ループ)。重心を低く落としたグルーヴ・チェストのアイソ
+   レーション・アームロール・ディップ・クールなフリーズという、ストリート
+   系ダンスの一般的な動きの型のみ参考のオリジナル */
+const DANCE_STREET={
+  name:'グラウンドフロウ',bpm:95,lengthBeats:16,loop:true,
+  groove:{bob:{amp:6,per:1},sway:{amp:1.6,per:2},headBob:{amp:1.2,per:1}},
+  poses:DANCE_POSES,
+  keys:[
+    {b:0.00,pose:'streetReady',ease:'outQuad'},
+    {b:1.00,pose:'crouchGroove',ease:'outCubic'},
+    {b:2.00,pose:'streetReady',ease:'outCubic'},
+    {b:2.50,pose:'chestPop',ease:'outBack'},
+    {b:3.00,pose:'streetReady',ease:'outCubic'},
+    {b:3.50,pose:'headTiltIsoR',ease:'outCubic'},
+    {b:4.00,pose:'headTiltIsoL',ease:'outCubic'},
+    {b:4.50,pose:'streetReady',ease:'outCubic'},
+    {b:5.00,pose:'armRollInR',ease:'outCubic'},
+    {b:5.50,pose:'armRollOutR',ease:'outBack'},
+    {b:6.00,pose:'armRollInL',ease:'outCubic'},
+    {b:6.50,pose:'armRollOutL',ease:'outBack'},
+    {b:7.00,pose:'lowSway',ease:'outCubic'},
+    {b:7.75,pose:'lowSway2',ease:'outCubic'},
+    {b:8.50,pose:'crouchGroove',ease:'outCubic'},
+    {b:9.00,pose:'dip',ease:'outCubic'},
+    {b:9.75,pose:'dip',ease:'hold'},
+    {b:10.25,pose:'streetReady',ease:'outCubic'},
+    {b:10.75,pose:'chestPop',ease:'outBack'},
+    {b:11.25,pose:'headTiltIsoL',ease:'outCubic'},
+    {b:11.75,pose:'armRollInR',ease:'outCubic'},
+    {b:12.25,pose:'armRollOutR',ease:'outBack'},
+    {b:12.75,pose:'floorTouch',ease:'outCubic'},
+    {b:13.50,pose:'floorTouch',ease:'hold'},
+    {b:14.00,pose:'crouchGroove',ease:'outCubic'},
+    {b:14.50,pose:'freezeCross',ease:'outBack'},
+    {b:15.50,pose:'freezeCross',ease:'hold'},
+    {b:16.00,pose:'streetReady',ease:'linear'}
+  ]
+};
 const DANCE_BOW={
   name:'おじぎ',bpm:120,lengthBeats:4,loop:false,poses:DANCE_POSES,
   keys:[
@@ -4751,7 +5150,17 @@ const EMOTES=[
   {key:'swing',name:'スイングステップ',icon:'💃',dance:DANCE_SWING,
    desc:'138BPMのキレのあるダンス（止めるまで踊り続ける）'},
   {key:'kaisen',name:'凱旋ダンス',    icon:'🕺',dance:DANCE_KAISEN,
+   bgm:'assets/emote_kaisen.mp3',
    desc:'ノリノリのガッツポーズダンス。専用BGM付き（止めるまで踊り続ける）'},
+  {key:'kpop',  name:'クロスビート',   icon:'⚡',dance:DANCE_KPOP,
+   bgm:'assets/emote_kpop.mp3',
+   desc:'キレのあるK-POP風グループダンス。専用BGM付き（止めるまで踊り続ける）'},
+  {key:'party', name:'サンシャインパーティー',icon:'🎉',dance:DANCE_PARTY,
+   bgm:'assets/emote_party.mp3',
+   desc:'ノリノリで陽気なパーティーダンス。専用BGM付き（止めるまで踊り続ける）'},
+  {key:'street',name:'グラウンドフロウ',icon:'🔥',dance:DANCE_STREET,
+   bgm:'assets/emote_street.mp3',
+   desc:'重心低めでクールなストリートダンス。専用BGM付き（止めるまで踊り続ける）'},
   {key:'bow',  name:'おじぎ',        icon:'🙇',dance:DANCE_BOW,
    desc:'ぺこりと一礼する'},
   {key:'wave', name:'手をふる',      icon:'👋',dance:DANCE_WAVE,
@@ -4759,37 +5168,69 @@ const EMOTES=[
   {key:'sit',  name:'体育座り',      icon:'🧎',dance:DANCE_SIT,
    desc:'その場にしゃがんで座り込む（止めるまで座ったまま）'}
 ];
-/* 「凱旋ダンス」専用のBGM(2026-09-15追加)。他のエモートには音源を付けず、
-   このエモートだけ音源ファイルを再生する。誰か1人でもこのエモートを
-   踊っていれば鳴らす、全員止めたら止める、という単純な仕組み(複数人が
-   同時に踊っても多重再生はしない)。設定の音楽ON/OFF(bgmOn)と音楽音量
-   (bgmVol)にそのまま従う(通常のプロシージャルBGMと同じ設定を共用)。
-   採用曲: Happy Dance / HoliznaCC0 / CC0 1.0 Universal（パブリックドメイン
-   相当、帰属表示不要。[[コダマ会議]]のカラオケ機能で既にライセンス確認
-   済みの楽曲をそのまま流用、出典 https://freemusicarchive.org/music/
-   holiznacc0/power-pop） */
-let kaisenAudioEl=null;
-function ensureKaisenAudio(){
-  if(!kaisenAudioEl){
-    kaisenAudioEl=new Audio('assets/emote_kaisen.mp3');
-    kaisenAudioEl.loop=true;
+/* エモート専用BGM(2026-09-15新設、2026-09-18に3種追加で共通化)。EMOTES側に
+   bgmを持たせておけば1つ足すだけで対応できる汎用の仕組み。誰か1人でもその
+   エモートを踊っていれば鳴らす、全員止めたら止める(複数人が同時に踊っても
+   多重再生はしない)。設定の音楽ON/OFF(bgmOn)と音楽音量(bgmVol)にそのまま
+   従う(通常のプロシージャルBGMと同じ設定を共用)。
+   採用曲と出典・ライセンス(いずれもCC0 1.0 Universal、帰属表示不要):
+   - 凱旋ダンス: Happy Dance / HoliznaCC0（[[コダマ会議]]のカラオケ機能で
+     既にライセンス確認済みの楽曲をそのまま流用）
+   - クロスビート: Retro Synths / HoliznaCC0（同上、コダマ会議のカラオケから流用）
+   - サンシャインパーティー: Back In The 80s / HoliznaCC0（同上、コダマ会議のカラオケから流用）
+     以上3曲の出典: https://freemusicarchive.org/music/holiznacc0/power-pop
+   - グラウンドフロウ: Make Funk / HoliznaCC0（アルバム「BASSIC」、今回新規に
+     個別トラックページでCC0 1.0 Universalライセンスを確認の上で調達）
+     出典: https://freemusicarchive.org/music/holiznacc0/bassic/make-funk */
+/* EMOTES配列のインデックスをkeyから引く。固有スキルがエモートを起動する
+   箇所(ショウタイム/ハイタッチ等)は配列の並び順に依存させたくないので、
+   マジックナンバーではなく必ずこのヘルパー経由でindexを取る(2026-09-18、
+   新エモート3種を配列の途中に挿すことになりindexがズレたため導入。実は
+   この時点で既存の「ハイタッチ」が本来意図の'wave'ではなく別のエモートを
+   起動してしまっていた実バグも発見したので、あわせて修正) */
+function emoteIndexByKey(key){ return EMOTES.findIndex(function(e){ return e.key===key; }); }
+const _emoteAudioEls={};
+function ensureEmoteAudio(em){
+  if(!_emoteAudioEls[em.key]){
+    const a=new Audio(em.bgm);
+    a.loop=true;
+    _emoteAudioEls[em.key]=a;
   }
-  return kaisenAudioEl;
+  return _emoteAudioEls[em.key];
 }
-function anyoneDoingKaisen(){
+function anyoneDoingEmote(key){
   return players.some(function(p){
-    return isEmoting(p)&&EMOTES[p.em]&&EMOTES[p.em].key==='kaisen';
+    return isEmoting(p)&&EMOTES[p.em]&&EMOTES[p.em].key===key;
   });
 }
-function updKaisenAudio(){
-  const a=ensureKaisenAudio();
-  a.volume=0.55*(typeof bgmVol==='number'?bgmVol:1);
-  if(bgmOn&&anyoneDoingKaisen()){
-    if(a.paused) a.play().catch(function(){});
-  } else if(!a.paused) a.pause();
+/* BGM付きエモートが4種(凱旋/クロスビート/サンシャインパーティー/グラウンド
+   フロウ)に増えたので(2026-09-18)、違う踊りを踊る人が同時にいると曲が
+   二重に重なって鳴ってしまう。「今鳴らす1曲」を_emoteAudioPlayingKeyで
+   管理し、常に同時に1曲だけ鳴らす(既に鳴っている曲を踊っている人がまだ
+   いればそのまま継続、いなくなったら他の踊っている人の曲に切り替える) */
+let _emoteAudioPlayingKey=null;
+function updEmoteAudio(){
+  const activeKeys=EMOTES.filter(function(em){ return em.bgm&&anyoneDoingEmote(em.key); })
+    .map(function(em){ return em.key; });
+  if(!(_emoteAudioPlayingKey&&activeKeys.indexOf(_emoteAudioPlayingKey)>=0)){
+    _emoteAudioPlayingKey=activeKeys.length?activeKeys[0]:null;
+  }
+  EMOTES.forEach(function(em){
+    if(!em.bgm) return;
+    const a=ensureEmoteAudio(em);
+    a.volume=0.55*(typeof bgmVol==='number'?bgmVol:1);
+    if(bgmOn&&em.key===_emoteAudioPlayingKey){
+      if(a.paused) a.play().catch(function(){});
+    } else if(!a.paused){ a.pause(); a.currentTime=0; }
+  });
 }
-function stopKaisenAudio(){
-  if(kaisenAudioEl&&!kaisenAudioEl.paused){ kaisenAudioEl.pause(); kaisenAudioEl.currentTime=0; }
+function stopEmoteAudio(){
+  _emoteAudioPlayingKey=null;
+  EMOTES.forEach(function(em){
+    if(!em.bgm) return;
+    const a=_emoteAudioEls[em.key];
+    if(a&&!a.paused){ a.pause(); a.currentTime=0; }
+  });
 }
 const DANCE_EASE={
   linear:function(t){ return t; },
@@ -7562,7 +8003,7 @@ function useStudentSkill(s,netDurOverride){
        つないだ技。実際にスイングステップを踊り出し、近くの仲間のスタミナを
        全回復＋加速させる代わりに、自分の居場所を先生に知らせてしまう */
     s.abCd=s.abMax;
-    startEmote(s,0);
+    startEmote(s,emoteIndexByKey('swing'));
     let n=0;
     students.forEach(function(o){
       if(o.state!=='free'||Math.hypot(o.x-s.x,o.z-s.z)>14) return;
@@ -7602,7 +8043,7 @@ function useStudentSkill(s,netDurOverride){
       if(o!==s&&o.abCd>0) o.abCd=Math.max(0,o.abCd-5);
     });
     s.abCd=Math.max(0,s.abCd-5);
-    startEmote(a,2);   /* 相手は「手をふる」で応える */
+    startEmote(a,emoteIndexByKey('wave'));   /* 相手は「手をふる」で応える */
     say(s.name,'ハイタッチ！','sys');
     if(s===me||a===me) toast('ハイタッチ：'+s.name+'と'+a.name+'が加速（クールダウン-5秒）');
     beep(988,0.12,'square',0.11); setTimeout(function(){ beep(1318,0.16,'square',0.1); },90);
@@ -10958,7 +11399,7 @@ function hud(dt){
   elBlackoutVeil.classList.toggle('on',blackoutT>0&&role!=='teacher');
   /* 隠れられる掃除用具入れ/ロッカー：隠れている間はほぼ視界ゼロになるリスク */
   elHideVeil.classList.toggle('on',role==='student'&&!!me.hide);
-  updKaisenAudio();
+  updEmoteAudio();
   drawMini();
 }
 
