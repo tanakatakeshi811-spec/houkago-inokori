@@ -6198,7 +6198,13 @@ const LOOK={
   sakasa:{body:'human',hairStyle:'long',acc:'',weapon:'',accent:0x2a2438,
           hair:0x0e0c12,skin:0xc9c0d4,eye:0xff3b2e},
   doll:{body:'human',hairStyle:'none',acc:'',weapon:'',accent:0x8a2f28,
-        hair:0x2a2018,skin:0xe4d4c4,eye:0x1a1614}
+        hair:0x2a2018,skin:0xe4d4c4,eye:0x1a1614},
+  /* モノマネキン：市販の洋品店マネキンのような、髪も表情もほぼ無い
+     単色の素体をイメージした見た目(2026-09-18)。既製の3Dモデル(Sketchfab)は
+     glTF/GLB配布が無くこのゲームの完全自前アニメ骨格(person())とも
+     噛み合わないため、既存の他キャラと同じ手続き生成方式で作った */
+  mane:{body:'human',hairStyle:'none',acc:'',weapon:'hand',accent:0xb8ae9a,
+        hair:0xcfc7b4,skin:0xcfc7b4,eye:0xb8ae9a}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -6282,7 +6288,8 @@ const KINDS={
   radio:{name:'放送室の主', ability:'偽の終業チャイム／校内放送ジャック', color:0x24242c, cd:20},
   mirror:{name:'にせもの', ability:'擬態／化け直し・正体を現す', color:0x6b1f2c, cd:8},
   sakasa:{name:'渡り廊下の逆さ女', ability:'壁走り／天井からの落下奇襲', color:0x2a2438, cd:3},
-  doll:{name:'人形塚の番人', ability:'人形投げ／人形の視線', color:0x8a2f28, cd:9}
+  doll:{name:'人形塚の番人', ability:'人形投げ／人形の視線', color:0x8a2f28, cd:9},
+  mane:{name:'モノマネキン', ability:'モノマネ（変身）', color:0xcfc7b4, cd:0.4}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -6324,7 +6331,8 @@ const TCH=[
  {key:'radio',desc:'偽の終業チャイム｜発動すると、しばらく生徒全員のミニマップの位置表示が隠れる/ずれる／校内放送ジャック｜生徒を1人名指しすると、その生徒の位置は全員に見えるようになる代わりに、放送を聞いた他の生徒はしばらく課題の進みが遅くなる'},
  {key:'mirror',desc:'擬態形態｜試合開始時、生徒の誰かにそっくり化けている（速度も生徒並み・攻撃不可）。Q｜近くの別の生徒に化け直す／R｜3秒の無防備な変身を経て正体を現す（片道）。正体形態｜通常の先生と同じ攻撃力。Q（ホールド）｜自分そっくりの偽物を3体ばら撒く。生徒をダウンさせるたび侵食ゲージが貯まり、満ちると60秒「二重人格」になり近くの生徒に成り代わって紛れられる'},
  {key:'sakasa',desc:'床形態（3形態で一番遅い）｜通常攻撃可。Q｜壁走り形態（狼並みの速さ・気配減少・攻撃不可）に変身／壁走り中に天井の張り付き地点でQ｜天井形態（ホールドして待ち構え、真下を生徒が通ると自動で落下奇襲。外すと3秒動けない）。奇襲を3回決めると60秒「双子の逆さ女」になり、もう一体の逆さ女が同時出現する'},
- {key:'doll',desc:'人形投げ｜命中で数秒間 金縛り。人形は1個のみ、投げたら人形塚（槍箱と同じ地点）で補充。生徒を1人ダウンさせるか3分経過でレベル2（速度+8%・人形がブーメラン式に強化・R「人形の視線」で生徒の位置が見える）。さらに2人ダウン＋一定時間でレベル3（速度最大・Qが踏み込み範囲攻撃＝板も破壊できるに変化・人形の視線が常時発動）'}
+ {key:'doll',desc:'人形投げ｜命中で数秒間 金縛り。人形は1個のみ、投げたら人形塚（槍箱と同じ地点）で補充。生徒を1人ダウンさせるか3分経過でレベル2（速度+8%・人形がブーメラン式に強化・R「人形の視線」で生徒の位置が見える）。さらに2人ダウン＋一定時間でレベル3（速度最大・Qが踏み込み範囲攻撃＝板も破壊できるに変化・人形の視線が常時発動）'},
+ {key:'mane',desc:'モノマネ｜生徒を選んで変身。三人称・攻撃不可・心音が鳴らない。もう一度押すと解除（皮をはぎモノマネキンが出るモーションに2秒、周囲10m以内の生徒を2.2秒スタン。解除直後は0.5秒減速→0.4秒加速）／窓封鎖・板封鎖｜向いている先の窓か板が常にピンク色でハイライトされ、能力2でそこを10秒封鎖（モノマネ人形を設置、CD15秒）。対象がすでに倒れている板なら即座に完全破壊してモノマネ人形を設置し、その場にいた生徒の足を40%遅くする'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -6405,6 +6413,18 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     /* 人形塚の番人(doll)専用。dlLevelは自動昇格する1〜3の段階、
        dlDollsは所持中の人形(0か1)、dlDownsはこの先生がダウンさせた人数 */
     dlLevel:1,dlDolls:1,dlDowns:0,dlLevel2At:0,dlSightT:0,
+    /* モノマネキン(mane)専用。mnForm:0=本体(モノマネキン)/1=変身中(生徒に化けている)。
+       mrForm(にせもの)とは0/1の意味を逆にしてある(このキャラは試合開始時は
+       変身していない状態からスタートするため)。mnMimicIdx=化けている生徒の
+       students配列index(-1=なし)。mnReveal>0で「皮をはぎモノマネキンが出る」
+       解除モーション再生中(2秒、teacher.stunと連動)。mnPostSlowT/mnPostFastTは
+       解除直後の緩急(0.5秒50%→0.4秒160%)。mnSealKind/mnSealIdx/mnSealTは
+       窓('window')／板('pallet')封鎖の対象と残り秒数、'brokendoll'は倒れていた
+       板を即壊した後の人形だけ表示用(封鎖効果は無い)。mnHiliteKind/mnHiliteIdxは
+       毎フレーム再計算する「向いている先の対象」表示用 */
+    mnForm:0,mnMimicIdx:-1,mnReveal:0,mnPostSlowT:0,mnPostFastT:0,
+    mnSealKind:'',mnSealIdx:-1,mnSealT:0,mnHiliteKind:'',mnHiliteIdx:-1,
+    mnDollMesh:null,
     /* エモート(踊り)。em=-1で再生していない状態(2026-09-15) */
     em:-1,emT:0};
   if(kind==='darknode'){
@@ -6433,6 +6453,20 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     if(disguiseMeshes[idx]) disguiseMeshes[idx].visible=true;
     t.mrMeshes=disguiseMeshes; t.mrTrueMesh=trueMesh;
     t.mrMimicIdx=idx; t.mesh=disguiseMeshes[idx]||trueMesh; t.mrForm=0;
+  }
+  if(kind==='mane'){
+    /* モノマネキンも、にせもの(mirror)と全く同じ「生徒分の見た目を先に
+       全部作っておき参照を差し替えるだけ」方式。ただしこちらは試合開始時
+       点では誰にも化けていない(本体=モノマネキンの姿のまま)ので、全ての
+       disguiseMeshesはvisible=falseのまま、trueMeshを表示し続ける */
+    const trueMesh2=t.mesh;
+    const disguiseMeshes2=students.map(function(s){
+      const dm=person(Object.assign({uniform:s.color,hair:s.hairC,accent:0xe4e0d4,
+        tall:false,propKey:s.perk},SLOOK[s.perk]||{}));
+      dm.visible=false; return dm;
+    });
+    t.mnMeshes=disguiseMeshes2; t.mnTrueMesh=trueMesh2;
+    t.mnMimicIdx=-1; t.mnForm=0; t.mesh=trueMesh2; t.mesh.visible=true;
   }
   return t;
 }
@@ -7288,6 +7322,16 @@ function tryVault(e){
   if(!isVault(at(a[0],a[1]))) a=tileOf(e.x+sx*3.2,e.z+sz*3.2);
   if(!isVault(at(a[0],a[1]))) return false;
   const kind=at(a[0],a[1]);
+  /* モノマネキンの能力2で封鎖された窓は、封鎖中(mnSealT>0)だけ乗り越え不可に
+     なる(モノマネ人形が窓を塞いでいる見た目と対応)。倒れた板(K)側は封鎖対象に
+     しない仕様なのでここではwindowSpotsだけ見ればよい */
+  if(kind==='W'&&teacher&&teacher.kindKey==='mane'&&teacher.mnSealKind==='window'&&teacher.mnSealT>0){
+    const wsp=windowSpots[teacher.mnSealIdx];
+    if(wsp&&wsp.c===a[0]&&wsp.r===a[1]){
+      if(e===me) toast('モノマネ人形で塞がれている');
+      return false;
+    }
+  }
   const dc=(Math.abs(sx)>Math.abs(sz))?(sx>0?1:-1):0;
   const dr=(Math.abs(sx)>Math.abs(sz))?0:(sz>0?1:-1);
   const b=[a[0]+dc,a[1]+dr];
@@ -7401,6 +7445,8 @@ function tasksDone(){ return tasks.filter(function(t){return t.prog>=1;}).length
 /* ===== 掃除ロッカー（板） ===== */
 function nearPallet(e,state){
   return pallets.filter(function(p){
+    if(state==='up'&&teacher&&teacher.kindKey==='mane'&&teacher.mnSealKind==='pallet'&&
+       teacher.mnSealT>0&&pallets.indexOf(p)===teacher.mnSealIdx) return false;   /* モノマネ人形で封鎖中は倒せない */
     return p.state===state&&Math.hypot(p.x-e.x,p.z-e.z)<4.2&&los(e.x,e.z,p.x,p.z);
   })[0];
 }
@@ -9217,6 +9263,143 @@ function dlSpeedMul(t){
   if(t.dlLevel>=2) return 1.08;
   return 1;
 }
+/* モノマネキン：解除直後だけ緩急がつく(0.5秒50%減速→0.4秒60%加速) */
+function mnSpeedMul(t){
+  if(t.kindKey!=='mane') return 1;
+  if(t.mnPostSlowT>0) return 0.5;
+  if(t.mnPostFastT>0) return 1.6;
+  return 1;
+}
+/* モノマネキン専用ヘルパー群(2026-09-18)。能力1=モノマネ(生徒に変身/解除)、
+   能力2=窓封鎖・板封鎖。既存のにせもの(mirror)のメッシュ差し替え方式・
+   掃除ロッカー(pallets)/小窓(windowSpots)の仕組みをそのまま流用する */
+const elMnPicker=document.getElementById('warp'), elMnPickerList=document.getElementById('warpList');
+function mnOpenPicker(){
+  const t=teacher;
+  if(t.carrying){ toast('運搬中は変身できない'); return; }
+  document.querySelector('#warp .wt').textContent='モノマネする生徒を選ぶ';
+  elMnPickerList.innerHTML=''; warpRows=[]; warpIdx=0;
+  students.forEach(function(s,i){
+    if(s.state!=='free') return;
+    const row=document.createElement('div');
+    row.className='wi';
+    const sw='<b style="display:inline-block;width:10px;height:10px;border-radius:50%;'+
+      'background:#'+('000000'+s.color.toString(16)).slice(-6)+';margin-right:6px;vertical-align:middle"></b>';
+    row.innerHTML='<div>'+sw+s.name+'</div><span>'+Math.round(Math.hypot(s.x-t.x,s.z-t.z)/T)+'マス</span>';
+    const idx=warpRows.length;
+    row.addEventListener('pointerdown',function(e){ e.stopPropagation(); warpIdx=idx; closeWarp(); mnStartMimic(i); });
+    elMnPickerList.appendChild(row);
+    warpRows.push({el:row,action:function(){ mnStartMimic(i); }});
+  });
+  if(!warpRows.length){ toast('モノマネできる生徒がいない'); return; }
+  warpHighlight();
+  elMnPicker.classList.add('on');
+}
+function mnStartMimic(idx){
+  const t=teacher;
+  if(t.kindKey!=='mane'||t.mnForm!==0||t.mnReveal>0) return;
+  const s=students[idx];
+  if(!s||s.state!=='free'){ toast('その生徒はもう対象にならない'); return; }
+  if(t.mnMeshes[t.mnMimicIdx]) t.mnMeshes[t.mnMimicIdx].visible=false;
+  if(t.mnTrueMesh) t.mnTrueMesh.visible=false;
+  t.mnMimicIdx=idx; t.mesh=t.mnMeshes[idx]; t.mesh.visible=true; t.mnForm=1;
+  t.abCd=KINDS.mane.cd;
+  toast(s.name+'にモノマネ変身！（攻撃不可・心音なし）');
+  beep(320,0.25,'sine',0.12);
+}
+function mnStartReveal(){
+  const t=teacher;
+  if(t.kindKey!=='mane'||t.mnForm!==1||t.mnReveal>0) return;
+  t.mnReveal=2.0; t.stun=Math.max(t.stun,2.0);
+  toast('皮をはぎモノマネキンが出る…（2秒、無防備）');
+  beep(150,0.5,'sawtooth',0.13);
+}
+/* 向いている方向で一番近い窓／板(封鎖対象)を探す。板は既に完全破壊(broken)
+   された物だけ除外(倒れているdown状態は特殊ケースとして対象に含む) */
+function mnFindTarget(t){
+  const fx=Math.sin(t.yaw),fz=Math.cos(t.yaw);
+  let best=null,bd=1e9;
+  windowSpots.forEach(function(w,i){
+    const p=center(w.c,w.r);
+    const dx=p.x-t.x,dz=p.z-t.z,d=Math.hypot(dx,dz);
+    if(d<0.1||d>22) return;
+    if((dx*fx+dz*fz)/d<0.6) return;
+    if(!los(t.x,t.z,p.x,p.z)) return;
+    if(d<bd){ bd=d; best={kind:'window',idx:i,x:p.x,z:p.z}; }
+  });
+  pallets.forEach(function(p,i){
+    if(p.state==='broken') return;
+    const dx=p.x-t.x,dz=p.z-t.z,d=Math.hypot(dx,dz);
+    if(d<0.1||d>22) return;
+    if((dx*fx+dz*fz)/d<0.6) return;
+    if(!los(t.x,t.z,p.x,p.z)) return;
+    if(d<bd){ bd=d; best={kind:'pallet',idx:i,x:p.x,z:p.z}; }
+  });
+  return best;
+}
+const mnHiliteMesh=(function(){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(1.05,2.5,1.25),
+    new THREE.MeshBasicMaterial({color:0xff2f9e,transparent:true,opacity:0.32}));
+  m.visible=false; scene.add(m); return m;
+})();
+function mnUpdateHilite(){
+  const t=teacher;
+  if(!t||t.kindKey!=='mane'){ mnHiliteMesh.visible=false; return; }
+  const tg=mnFindTarget(t);
+  if(!tg){ mnHiliteMesh.visible=false; t.mnHiliteKind=''; t.mnHiliteIdx=-1; return; }
+  t.mnHiliteKind=tg.kind; t.mnHiliteIdx=tg.idx;
+  mnHiliteMesh.position.set(tg.x,1.75,tg.z);
+  mnHiliteMesh.rotation.y=Math.atan2(Math.sin(t.yaw),Math.cos(t.yaw));
+  mnHiliteMesh.visible=true;
+}
+/* モノマネ人形の表示。窓/板封鎖(mnSealKind+mnSealIdx+mnSealT>0)の場所へ
+   モノマネキンのモデルを縮小しただけの人形を出す(新規モデル無し) */
+function mnSyncDoll(t){
+  const on=(t.mnSealT>0&&t.mnSealKind);
+  if(!on){ if(t.mnDollMesh){ scene.remove(t.mnDollMesh); t.mnDollMesh=null; } return; }
+  let x,z;
+  if(t.mnSealKind==='window'){ const w=windowSpots[t.mnSealIdx]; if(!w) return; const p=center(w.c,w.r); x=p.x; z=p.z; }
+  else { const p=pallets[t.mnSealIdx]; if(!p) return; x=p.x; z=p.z; }
+  if(!t.mnDollMesh){
+    const dm=person(Object.assign({uniform:KINDS.mane.color,propKey:'mane'},LOOK.mane));
+    dm.scale.setScalar(0.45); scene.add(dm); t.mnDollMesh=dm;
+  }
+  t.mnDollMesh.position.set(x,0,z);
+}
+function mnClearSeal(t){ t.mnSealKind=''; t.mnSealIdx=-1; t.mnSealT=0; }
+function updMane(dt){
+  const t=teacher;
+  if(t.kindKey!=='mane'){
+    if(t.mnDollMesh){ scene.remove(t.mnDollMesh); t.mnDollMesh=null; }
+    return;
+  }
+  if(t.mnReveal>0){
+    t.mnReveal-=dt;
+    if(t.mnReveal<=0){
+      t.mnReveal=0;
+      if(t.mnMeshes&&t.mnMeshes[t.mnMimicIdx]) t.mnMeshes[t.mnMimicIdx].visible=false;
+      t.mnMimicIdx=-1; t.mnForm=0;
+      if(t.mnTrueMesh){ t.mesh=t.mnTrueMesh; t.mesh.visible=true; }
+      let n=0;
+      students.forEach(function(s){
+        if(s.state==='free'&&!s.hide&&Math.hypot(s.x-t.x,s.z-t.z)<10){ s.freeze=Math.max(s.freeze||0,2.2); n++; }
+      });
+      t.mnPostSlowT=0.5; t.mnPostFastT=0;
+      toast('モノマネキンが正体を現した！'+(n?('（周囲'+n+'人がスタン）'):''));
+      beep(180,0.4,'sawtooth',0.15); noise(t.x,t.z,12);
+    }
+  }
+  if(t.mnPostSlowT>0){
+    t.mnPostSlowT-=dt;
+    if(t.mnPostSlowT<=0){ t.mnPostSlowT=0; t.mnPostFastT=0.4; }
+  } else if(t.mnPostFastT>0) t.mnPostFastT=Math.max(0,t.mnPostFastT-dt);
+  if(t.mnSealT>0){
+    t.mnSealT-=dt;
+    if(t.mnSealT<=0) mnClearSeal(t);
+  }
+  mnSyncDoll(t);
+  mnUpdateHilite();
+}
 function updMirror(dt){
   const t=teacher;
   if(t.kindKey!=='mirror'){
@@ -9560,6 +9743,7 @@ function swing(force){
   if(possessT>0) return;
   if(teacher.wheelOn){ toast('車輪では攻撃できない'); return; }
   if(teacher.kindKey==='mirror'&&teacher.mrForm===0){ toast('擬態中は攻撃できない'); return; }
+  if(teacher.kindKey==='mane'&&teacher.mnForm===1){ toast('モノマネ中は攻撃できない'); return; }
   if(teacher.kindKey==='sakasa'&&teacher.saForm>0){ toast('この形態では攻撃できない'); return; }
   teacher.idleT=0; teacher.cloak=0;
   if(teacher.cool>0||teacher.stun>0||teacher.wipe>0||teacher.dive>0||teacher.phase>0) return;
@@ -9650,6 +9834,7 @@ function updSwing(dt){
 function doAction(){
   if(role!=='teacher'||teacher.stun>0||teacher.wipe>0||teacher.dive>0) return;
   if(teacher.kindKey==='mirror'&&teacher.mrForm===0) return;
+  if(teacher.kindKey==='mane'&&teacher.mnForm===1) return;
   if(teacher.kindKey==='sakasa'&&teacher.saForm>0) return;
   if(teacher.kindKey==='darknode'&&teacher.dnForm===1&&!teacher.carrying&&teacher.dnBreak<=0){
     /* 狼形態：倒れた板が近くにあれば、噛みついてその場で破壊する
@@ -9722,12 +9907,40 @@ const AB2={
   hanako:'ノックの数当て', kuchisake:'質問', radio:'校内放送ジャック',
   model:'', pe:'', math:'', jan:'', teke:'', garden:'', magnet:'', band:'',
   oni:'', ripper:'', dogman:'', nurse:'', wolf:'', pool:'', sewing:'',
-  mirror:'正体を現す', sakasa:'', doll:'人形の視線'
+  mirror:'正体を現す', sakasa:'', doll:'人形の視線', mane:'窓封鎖・板封鎖'
 };
 function useAbility2(){
   const t=teacher;
   if(t.stun>0||t.wipe>0||t.dive>0) return;
   const k=t.kindKey;
+  if(k==='mane'){
+    if(t.ab2Cd>0) return;
+    const tg=mnFindTarget(t);
+    if(!tg){ toast('封鎖できる窓や板が見当たらない'); return; }
+    t.ab2Cd=15;
+    if(tg.kind==='pallet'&&pallets[tg.idx].state==='down'){
+      /* 特殊ケース：すでに生徒に倒された板は、封鎖の代わりに即座に完全破壊し
+         その場にモノマネ人形を設置。居合わせた生徒は足が40%遅くなる */
+      const p=pallets[tg.idx];
+      p.state='broken'; grid[p.r][p.c]='.'; grid[p.pr][p.pc]='.';
+      p.mesh.material=M.broken; p.mesh.position.y=0.3; p.fall=0;
+      if(netMode==='host') netDirtyPallets.push([pallets.indexOf(p),'broken']);
+      let n=0;
+      students.forEach(function(s){
+        if(s.state==='free'&&Math.hypot(s.x-p.x,s.z-p.z)<3.0){
+          s.slow=Math.max(s.slow||0,6.0); s.slowMul=0.6; n++;
+        }
+      });
+      t.mnSealKind='brokendoll'; t.mnSealIdx=tg.idx; t.mnSealT=6.0;
+      toast('倒れていた板を破壊してモノマネ人形を設置！'+(n?('（'+n+'人が減速）'):''));
+      beep(150,0.4,'sawtooth',0.15); bigNoise(0.15,0.4);
+    } else {
+      t.mnSealKind=tg.kind; t.mnSealIdx=tg.idx; t.mnSealT=10;
+      toast((tg.kind==='window'?'窓':'板')+'を封鎖した（10秒）');
+      beep(260,0.3,'square',0.1);
+    }
+    return;
+  }
   if(k==='hunt'){
     if(t.ammo>0){ toast('もう装填されている'); return; }
     if(t.reloadT<=0){ t.reloadT=1.6; beep(300,0.1,'square',0.07); }
@@ -9971,6 +10184,12 @@ function useAbility(){
   }
   if(t.kindKey==='model'){
     fireShot(); t.abCd=KINDS.model.cd; toast('パーツを射出した'); return;
+  }
+  if(t.kindKey==='mane'){
+    /* 本体(モノマネキン)ならモノマネ先を選ぶ一覧を開く、変身中なら
+       同じボタンで解除(皮をはぎモノマネキンが出るモーション)を始める */
+    if(t.mnForm===0) mnOpenPicker(); else mnStartReveal();
+    return;
   }
   if(t.kindKey==='seitokai'){
     const tg=students.filter(function(x){ return x.state==='free'&&!x.hide&&
@@ -11411,7 +11630,11 @@ function hud(dt){
   const d=(role==='teacher')?99:Math.hypot(heartT.x-me.x,heartT.z-me.z);
   /* 停電：先生の索敵(心音の届く範囲)も一緒に縮む(2026-09-13、新要素「停電」) */
   const hbRange=terrorRadius(me)*blackoutMul();
-  const inHbRange=(role!=='teacher'&&d<hbRange&&heartT.stealth<=0);
+  /* モノマネキン：変身(モノマネ)中は心音そのものが鳴らない特殊仕様。
+     このキャラの変身中限定なので、既存の心音判定に1項差し込むだけにして
+     他キャラの心音仕様には一切影響させない(2026-09-18) */
+  const inHbRange=(role!=='teacher'&&d<hbRange&&heartT.stealth<=0&&
+    !(heartT.kindKey==='mane'&&heartT.mnForm===1));
   if(inHbRange){
     elHeart.style.display='flex'; elHeart.classList.add('on');
     heartbeat(d,dt,hbRange);
@@ -11873,6 +12096,10 @@ function tick(now){
         t.dash=0.5+t.charge*1.3; t.dashHit=[]; t.slash=true; t.abCd=KINDS.doll.cd; t.charge=0;
         beep(200,0.3,'sawtooth',0.12); toast('人形塚の踏み込み！');
       } else t.charge=0;
+    } else if(t.kindKey==='mane'){
+      abLabel=(t.mnForm===0)?(t.mnReveal>0?'解除中…':'モノマネ変身'):'変身解除';
+      abDim=t.mnReveal>0;
+      if(input.abEdge) useAbility();
     } else if(input.abEdge) useAbility();
     if(input.ab2Edge&&AB2[t.kindKey]) useAbility2();
 
@@ -12447,6 +12674,7 @@ function tick(now){
   updMirror(dt);
   updSakasa(dt);
   updDoll(dt);
+  updMane(dt);
   /* 巻き戻し用の位置履歴 */
   teacher.histT=(teacher.histT||0)+dt;
   if(teacher.histT>0.25){
@@ -12501,7 +12729,7 @@ function tick(now){
     (teacher.crawl>0?1.6:1)*(teacher.phase>0?1.5:1)*
     dnSpeedMul(teacher)*
     ((teacher.kindKey==='darknode'&&teacher.dnForm!==2&&teacher.charge>0)?0.3:1)*
-    pdSpeedMul(teacher)*mrSpeedMul(teacher)*saSpeedMul(teacher)*dlSpeedMul(teacher)*
+    pdSpeedMul(teacher)*mrSpeedMul(teacher)*saSpeedMul(teacher)*dlSpeedMul(teacher)*mnSpeedMul(teacher)*
     (role==='teacher'?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
   updWarp(dt);
   updShots(dt);
@@ -12915,7 +13143,8 @@ function tick(now){
   if(role==='teacher'&&!(puppet&&puppet!==teacher)&&
      !(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
      !(teacher.kindKey==='wheel'&&teacher.wheelOn)&&
-     !(teacher.kindKey==='sakasa'&&teacher.saForm>0)){
+     !(teacher.kindKey==='sakasa'&&teacher.saForm>0)&&
+     !(teacher.kindKey==='mane'&&teacher.mnForm===1)){
     teacher.mesh.visible=false; ruler.visible=true;
     const shake=(teacher.stun>0?Math.sin(elapsed*38)*0.09:0)
                +(teacher.wipe>0?Math.sin(elapsed*9)*0.02:0);
@@ -14615,6 +14844,12 @@ function netHostBroadcastSnapshot(dt){
       mrBlend:!!(teacher.mrBlendT>0),
       mrBlendIdx:(teacher.mrBlendMesh&&teacher.mrMeshes)?teacher.mrMeshes.indexOf(teacher.mrBlendMesh):-1,
       saForm:teacher.saForm||0, dlLevel:teacher.dlLevel||1,
+      /* モノマネキン(mane)：変身の見た目・窓/板封鎖の状態を参加者側にも
+         反映するための最小限の同期(2026-09-18)。x/zはwindowSpots/pallets側の
+         静的な位置から復元できるので送らない */
+      mnForm:teacher.mnForm||0, mnMimicIdx:(teacher.mnMimicIdx===undefined?-1:teacher.mnMimicIdx),
+      mnSealKind:teacher.mnSealKind||'', mnSealIdx:(teacher.mnSealIdx===undefined?-1:teacher.mnSealIdx),
+      mnSealOn:!!(teacher.mnSealT>0),
       em:(teacher.em===undefined?-1:teacher.em),
       emT:Math.round((teacher.emT||0)*100)/100 } },
     /* 2vs8モード：2人目の先生は固有能力を使わないので同期する情報は最小限
@@ -14754,6 +14989,21 @@ function netInterpolate(dt){
       teacher.mrMeshes.forEach(function(m,i){ m.visible=(i===wantIdx); });
       if(wantIdx>=0){ teacher.mrTrueMesh.visible=false; teacher.mesh=teacher.mrMeshes[wantIdx]; }
       else { teacher.mrTrueMesh.visible=true; teacher.mesh=teacher.mrTrueMesh; }
+    }
+    /* モノマネキン：参加者側にも変身の見た目・窓/板封鎖の人形とピンクの
+       ハイライトを反映する(2026-09-18)。座標はwindowSpots/pallets(静的な
+       マップデータ)から復元するのでスナップショットにx/zは乗せていない */
+    if(teacher.kindKey==='mane'&&teacher.mnMeshes&&teacher.mnTrueMesh){
+      const f=snap.tea.f;
+      const wantIdx=(f.mnForm===1)?f.mnMimicIdx:-1;
+      teacher.mnMeshes.forEach(function(m,i){ m.visible=(i===wantIdx); });
+      if(wantIdx>=0){ teacher.mnTrueMesh.visible=false; teacher.mesh=teacher.mnMeshes[wantIdx]; }
+      else { teacher.mnTrueMesh.visible=true; teacher.mesh=teacher.mnTrueMesh; }
+      teacher.mnSealKind=f.mnSealOn?f.mnSealKind:'';
+      teacher.mnSealIdx=(f.mnSealIdx===undefined?-1:f.mnSealIdx);
+      teacher.mnSealT=f.mnSealOn?1:0;
+      mnSyncDoll(teacher);
+      mnUpdateHilite();
     }
   }
   if(snap.tea2&&teacher2){
@@ -16439,6 +16689,11 @@ function softReset(keepNet){
      players側のループでは消えないので、ここでまとめて片付ける */
   if(teacher&&teacher.dnMeshes) teacher.dnMeshes.forEach(function(m){ scene.remove(m); });
   if(teacher2&&teacher2.dnMeshes) teacher2.dnMeshes.forEach(function(m){ scene.remove(m); });
+  /* モノマネキン：生徒分の擬態メッシュとモノマネ人形を毎試合きちんと片付ける
+     (2026-09-18、人数が多い試合だと数十体分のメッシュが残ってしまうため) */
+  if(teacher&&teacher.mnMeshes) teacher.mnMeshes.forEach(function(m){ scene.remove(m); });
+  if(teacher&&teacher.mnDollMesh) scene.remove(teacher.mnDollMesh);
+  if(typeof mnHiliteMesh!=='undefined') mnHiliteMesh.visible=false;
   students=[]; teacher=null; teacher2=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
   chemTraps.forEach(function(c){ scene.remove(c.m); }); chemTraps.length=0;
