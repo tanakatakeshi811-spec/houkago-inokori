@@ -682,6 +682,12 @@ body.mlands #chatbtn{left:auto;bottom:auto}
 .skAccItem .rm{margin-left:auto;opacity:.6;cursor:pointer;padding:0 4px}
 .skAccItem .rm:active{opacity:1;color:#e05a52}
 #skinPaintCanvas{cursor:crosshair}
+/* 2026-09-18: お絵かき/画像/動画の複数レイヤー機能用 */
+#skLayerList,#skVideoBox{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.skLayerItem{padding:6px 8px;border:1px solid #ffffff20;border-radius:3px;background:#ffffff08}
+.skLayerHead{display:flex;align-items:center;font-size:10.5px;margin-bottom:3px}
+.skLayerHead .rm{margin-left:auto;opacity:.6;cursor:pointer;padding:0 4px}
+.skLayerHead .rm:active{opacity:1;color:#e05a52}
 /* 2026-09-13: 見た目編集パネル専用の常設プレビュー。position:stickyで
    パネル内をスクロールしても常に上端に張り付いたままにする(依頼の
    「常に隣か上に表示され続ける」に対応)。#panelbox自体がoverflow-y:auto
@@ -941,24 +947,41 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div class="tog on" id="skAccAdd" style="text-align:center;width:100%;box-sizing:border-box;margin-top:6px">この装飾を追加</div>
       <div id="skAccList"></div>
 
-      <p class="lbl" style="margin-top:12px">お絵かき/画像（自分の画面にだけ表示）</p>
-      <canvas id="skinPaintCanvas" width="160" height="160"
-        style="background:#f4f2ea;border:1px solid #ffffff33;border-radius:3px;touch-action:none;display:block;margin:0 auto"></canvas>
+      <p class="lbl" style="margin-top:12px">お絵かき/画像/動画（自分の画面にだけ表示）</p>
+      <canvas id="skinPaintCanvas" width="512" height="512"
+        style="background:#f4f2ea;border:1px solid #ffffff33;border-radius:3px;touch-action:none;display:block;margin:0 auto;width:220px;height:220px"></canvas>
       <div class="skinRow" style="margin-top:6px;justify-content:center"><span style="width:auto">ペン色</span><input type="color" id="skPaintColor" value="#c94a52"></div>
+      <div class="skinSliders" style="margin-top:2px">
+        <label>ペンの太さ<input type="range" id="skPaintSize" min="4" max="30" step="1" value="13"></label>
+      </div>
       <div class="seg small" style="margin-top:6px">
-        <div id="skPaintClear" style="flex:1;text-align:center">消す</div>
-        <div id="skTexNone" style="flex:1;text-align:center">外す</div>
+        <div id="skPaintClear" style="flex:1;text-align:center">お絵かきを消す</div>
+        <div id="skTexNone" style="flex:1;text-align:center">すべて外す</div>
       </div>
       <label class="tog" style="display:block;text-align:center;margin-top:6px;cursor:pointer">
-        画像を読み込む<input type="file" id="skImgFile" accept="image/*" style="display:none">
+        画像を追加（複数選択OK・最大4枚）<input type="file" id="skImgFile" accept="image/*" multiple style="display:none">
       </label>
+      <div id="skLayerList"></div>
+      <label class="tog" style="display:block;text-align:center;margin-top:6px;cursor:pointer">
+        動画を追加（ループ再生・15MBまで）<input type="file" id="skVidFile" accept="video/*" style="display:none">
+      </label>
+      <div id="skVideoBox"></div>
+      <p class="hint" style="margin-top:6px;text-align:left">
+        動画は自分のキャラから半径5m以内にいる間だけ再生され、離れると自動で
+        止まって処理が軽くなります（動画は容量が大きいためページ再読み込みでは
+        引き継がれません。画像/お絵かきは引き継がれます）。
+      </p>
+      <p class="lbl" style="margin-top:8px">貼るサイズ</p>
+      <div class="skinSliders">
+        <label><input type="range" id="skTexScale" min="0.6" max="1.8" step="0.05" value="1"></label>
+      </div>
       <p class="lbl" style="margin-top:8px">貼る場所</p>
       <div class="seg small" id="skTexTargetSel">
         <div data-v="uniform" class="sel">上半身(前)</div><div data-v="bottom">下半身(前)</div>
       </div>
       <p class="hint" style="margin-top:8px;text-align:left">
         色・形・装飾は他の参加者にも見えます。<br>
-        お絵かき/画像は自分の画面にだけ表示され、他の人には見えません。
+        お絵かき/画像/動画は自分の画面にだけ表示され、他の人には見えません。
       </p>
       <div class="tog" id="skResetAll" style="text-align:center;width:100%;box-sizing:border-box;margin-top:10px">見た目をすべてリセット</div>
     </div>
@@ -4291,7 +4314,11 @@ function person(opt){
      なので、opt.customTexは自分の見た目を組み立てる呼び出し元でしか渡さない */
   if(opt.customTex&&opt.customTex.texture){
     const dmat=new THREE.MeshBasicMaterial({map:opt.customTex.texture,transparent:true});
-    const plane=new THREE.Mesh(new THREE.PlaneGeometry(0.62*S,0.72*S),dmat);
+    /* 2026-09-18: 「貼るサイズ」スライダー対応。0.6〜1.8倍の範囲でクランプ
+       (異常値が来ても破綻しないように) */
+    const texScl=(opt.customTex.scale&&isFinite(opt.customTex.scale))?
+      Math.max(0.6,Math.min(1.8,opt.customTex.scale)):1;
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(0.62*S*texScl,0.72*S*texScl),dmat);
     if(opt.customTex.target==='bottom'){
       plane.position.set(0,hipY+0.05*S,(opt.male?0.5:0.68)*S);
     } else {
@@ -11571,6 +11598,10 @@ let last=performance.now();
 function tick(now){
   requestAnimationFrame(tick);
   const dt=Math.max(0,Math.min(0.05,(now-last)/1000)); last=now;
+  /* スキン機能(2026-09-18)：動画レイヤーの5m範囲プレゼンス判定を毎フレーム
+     ここで一元的に行う(タイトル/ロビー/試合中いずれの分岐に入っても通る
+     ただ1箇所なので、対象ブランチが増えても漏れない) */
+  try{ updateSkinVideoPresence(); }catch(e){}
   if(!started&&!over){
     try{ updLobby(dt); }catch(e){}
     renderScene();
@@ -13042,11 +13073,19 @@ const PROFILE_ICONS=['🦊','🐱','🐰','🐼','🐸','🦉','🐧','🦁','�
 /* ===== スキン機能(見た目カスタマイズ)：2026-09-13追加 =====
    髪・肌・服の色/下半身の形/自由配置の装飾アクセサリは軽量なデータ
    (色コード・文字列・数値)なので、そのままオンライン対戦でも同期する。
-   自分で描いた絵/アップロード画像(tex)だけはデータ量が大きいので
+   自分で描いた絵/アップロード画像/動画(tex系)だけはデータ量が大きいので
    ローカル(自分の画面)限定にし、通信には一切乗せない */
+/* 2026-09-18: お絵かき/画像/動画のサイズ大型化・複数枚化・高画質化・動画対応。
+   canvas解像度を160→512(約10倍の画素数)に、画像は最大4枚まで独立した
+   レイヤー(位置/大きさ/回転を個別調整可)として重ねられるようにした */
+const SKIN_CANVAS_SIZE=512, MAX_IMG_LAYERS=4;
 function defaultSkin(){
   return {hair:null,skin:null,uniform:null,accent:null,pants:null,shoe:null,
-    skirtShape:'skirt',modelType:'standard',accessories:[],tex:null,texTarget:'uniform'};
+    skirtShape:'skirt',modelType:'standard',accessories:[],
+    tex:null,texTarget:'uniform',texScale:1,
+    texPaint:null,     // お絵かき(フリーハンド)だけの透明レイヤー(dataURL)
+    texLayers:[],      // 画像レイヤー(最大MAX_IMG_LAYERS枚) {src,x,y,w,h,rot}
+    texVideo:null};    // 動画レイヤーの配置情報のみ{x,y,w,h,rot}(動画データ自体は保存しない＝再読み込みでは引き継がれない)
 }
 function loadSkin(){
   let o=defaultSkin();
@@ -13054,15 +13093,36 @@ function loadSkin(){
     const raw=localStorage.getItem('hi_skin_v1');
     if(raw){
       const s=JSON.parse(raw);
-      if(s&&typeof s==='object') o=Object.assign(o,s,
-        {accessories:Array.isArray(s.accessories)?s.accessories.slice(0,8):[],
-         modelType:(s.modelType==='dance')?'dance':'standard'});
+      if(s&&typeof s==='object'){
+        o=Object.assign(o,s,
+          {accessories:Array.isArray(s.accessories)?s.accessories.slice(0,8):[],
+           modelType:(s.modelType==='dance')?'dance':'standard',
+           texLayers:Array.isArray(s.texLayers)?s.texLayers.slice(0,MAX_IMG_LAYERS):[],
+           texScale:(typeof s.texScale==='number'&&isFinite(s.texScale)&&s.texScale>0)?s.texScale:1,
+           texVideo:null});   // 動画は保存しない仕様なので読み込み時は必ず空
+        /* 旧バージョン(お絵かき+画像を1枚のcanvasに焼き込み済みのtex)からの
+           移行措置。分離はできないので、そのまま1枚の画像レイヤーとして
+           引き継ぐ(次に何か編集すれば新形式で保存し直される) */
+        if(s.tex&&!o.texLayers.length&&!o.texPaint){
+          o.texLayers=[{src:s.tex,x:0.5,y:0.5,w:1,h:1,rot:0}];
+        }
+        o.tex=null;
+      }
     }
   }catch(e){}
   return o;
 }
 let mySkin=loadSkin();
-function saveSkin(){ try{ localStorage.setItem('hi_skin_v1',JSON.stringify(mySkin)); }catch(e){} }
+function saveSkin(){
+  try{ localStorage.setItem('hi_skin_v1',JSON.stringify(mySkin)); }
+  catch(e){
+    /* 2026-09-18: 画像を複数枚+高解像度化した影響でlocalStorageの容量上限
+       (ブラウザによるが目安5〜10MB)に達する可能性が出てきたための保険。
+       保存に失敗しても画面表示自体は壊れない(メモリ上のmySkinはそのまま
+       使われ続ける)ので、次に読み込んだ時だけ最新状態が失われる形になる */
+    try{ toast('見た目の保存容量オーバー：画像を減らすか小さくしてください'); }catch(e2){}
+  }
+}
 /* 見た目を組み立てるopt(person()に渡す引数)に、選ばれているスキンを
    上書きで乗せる。includeTexがtrueの時だけ自分専用のcustomTex(お絵かき/
    画像)も乗せる＝「自分の画面にだけ映る」を実現する呼び方の切り替え */
@@ -13078,8 +13138,14 @@ function applySkinToOpt(baseOpt,skin,includeTex){
   if(skin.skirtShape) o.skirtShape=skin.skirtShape;
   if(skin.modelType==='dance') o.modelType='dance';   /* 見た目パネルの「ダンスモデル」選択(2026-09-15追加) */
   if(skin.accessories&&skin.accessories.length) o.accessories=skin.accessories;
-  if(includeTex&&skin.tex&&skinPaintTexture) o.customTex={target:skin.texTarget||'uniform',texture:skinPaintTexture};
+  if(includeTex&&skinHasCustomTex(skin)&&skinPaintTexture)
+    o.customTex={target:skin.texTarget||'uniform',texture:skinPaintTexture,scale:skin.texScale||1};
   return o;
+}
+/* お絵かき/画像/動画のいずれかが1つでも設定されているか(2026-09-18追加、
+   複数レイヤー化に伴い旧来の「skin.texがあるか」だけの判定では足りなくなった) */
+function skinHasCustomTex(skin){
+  return !!(skin&&((skin.texLayers&&skin.texLayers.length)||skin.texPaint||skin.texVideo||skin.tex));
 }
 /* オンライン対戦で他の参加者に配る軽量版(色/形/装飾のみ、tex抜き) */
 function skinSyncData(){
@@ -13127,28 +13193,196 @@ function sanitizeSkinsMap(raw){
   Object.keys(raw).forEach(function(k){ const s=sanitizeSkin(raw[k]); if(s) out[k]=s; });
   return out;
 }
-/* お絵かき/画像アップロード用のCanvasTexture。ローカル限定機能なので
-   THREE.Textureのまま使い回し、ネットワークには一切乗せない */
+/* お絵かき/画像/動画用のCanvasTexture。ローカル限定機能なので
+   THREE.Textureのまま使い回し、ネットワークには一切乗せない。
+   2026-09-18: 「1枚のcanvasに直接お絵かき」方式から、
+   お絵かき用の透明レイヤー(skinFreehandCanvas)＋画像レイヤー(最大4枚)＋
+   動画レイヤー(最大1個)を毎回合成して最終canvas(skinPaintCanvas＝テクスチャ本体)
+   に描き直す方式に変更。フリーハンドの描画だけは別canvasに直接書き込み、
+   それ以外は合成時にdrawImageするだけなので、ペン描画の反応速度は従来通り */
 let skinPaintCanvas=null, skinPaintCtx=null, skinPaintTexture=null;
+let skinFreehandCanvas=null, skinFreehandCtx=null;
+let skinLayerImages=[];   // mySkin.texLayersと同じ並びのImageオブジェクトキャッシュ
 function initSkinPaint(){
   if(skinPaintCanvas) return;
   skinPaintCanvas=document.getElementById('skinPaintCanvas');
   if(!skinPaintCanvas||typeof THREE==='undefined') return;
   skinPaintCtx=skinPaintCanvas.getContext('2d');
+  skinFreehandCanvas=document.createElement('canvas');
+  skinFreehandCanvas.width=skinPaintCanvas.width; skinFreehandCanvas.height=skinPaintCanvas.height;
+  skinFreehandCtx=skinFreehandCanvas.getContext('2d');
   skinPaintCtx.fillStyle='#f4f2ea';
   skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
   skinPaintTexture=new THREE.CanvasTexture(skinPaintCanvas);
+  /* 2026-09-18: 画質改善。解像度を160→512(画素数で約10倍)に上げた上、
+     異方性フィルタリングを最大値まで上げて斜めから見た時のにじみを抑える
+     (以前は一切のフィルタ設定をしておらず、既定値+低解像度の組み合わせで
+     「とても荒い」見え方になっていた) */
+  try{
+    skinPaintTexture.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    skinPaintTexture.minFilter=THREE.LinearMipmapLinearFilter;
+    skinPaintTexture.magFilter=THREE.LinearFilter;
+  }catch(e){}
   skinPaintTexture.needsUpdate=true;
-  if(mySkin.tex){
+  if(mySkin.texPaint){
     const img=new Image();
     img.onload=function(){
-      skinPaintCtx.clearRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
-      skinPaintCtx.drawImage(img,0,0,skinPaintCanvas.width,skinPaintCanvas.height);
-      skinPaintTexture.needsUpdate=true;
-      refreshSkinPreview();
+      skinFreehandCtx.drawImage(img,0,0,skinFreehandCanvas.width,skinFreehandCanvas.height);
+      rebuildSkinComposite(); refreshSkinPreview();
     };
-    img.src=mySkin.tex;
+    img.src=mySkin.texPaint;
   }
+  syncLayerImageCache();
+}
+/* 画像レイヤー・動画レイヤー・お絵かきレイヤーを合成して最終canvasに描き直す。
+   呼ぶたびに必ずtexture.needsUpdate=trueにする(このコストが動画の
+   5m判定で「遠いと呼ばない」ことによる負荷軽減の本体) */
+function rebuildSkinComposite(){
+  if(!skinPaintCtx) return;
+  const cv=skinPaintCanvas, ctx=skinPaintCtx;
+  ctx.fillStyle='#f4f2ea'; ctx.fillRect(0,0,cv.width,cv.height);
+  (mySkin.texLayers||[]).forEach(function(L,i){
+    const im=skinLayerImages[i];
+    if(im&&im.complete&&im.naturalWidth) drawSkinLayerImg(ctx,cv,im,L,false);
+  });
+  if(skinVideoEl&&mySkin.texVideo&&skinVideoEl.readyState>=2){
+    drawSkinLayerImg(ctx,cv,skinVideoEl,mySkin.texVideo,true);
+  }
+  if(skinFreehandCanvas) ctx.drawImage(skinFreehandCanvas,0,0);
+  if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+}
+/* 1枚の画像(または動画の1フレーム)を、位置(x,y=0〜1・キャンバス比率の中心)・
+   大きさ(w,h=0〜1・キャンバス比率の枠)・回転(rot=度)で描く共通処理 */
+function drawSkinLayerImg(ctx,cv,srcEl,L,isVideo){
+  const iw=isVideo?srcEl.videoWidth:srcEl.width, ih=isVideo?srcEl.videoHeight:srcEl.height;
+  if(!iw||!ih) return;
+  const cx=(L.x==null?0.5:L.x)*cv.width, cy=(L.y==null?0.5:L.y)*cv.height;
+  const boxW=Math.max(8,(L.w==null?0.5:L.w)*cv.width), boxH=Math.max(8,(L.h==null?0.5:L.h)*cv.height);
+  const scale=Math.min(boxW/iw,boxH/ih);
+  const dw=iw*scale, dh=ih*scale;
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate((L.rot||0)*Math.PI/180);
+  ctx.drawImage(srcEl,-dw/2,-dh/2,dw,dh);
+  ctx.restore();
+}
+/* mySkin.texLayers(保存データ)からImageオブジェクトのキャッシュを作り直す。
+   読み込みが終わるたびに合成しなおす(枚数は最大4枚なのでコストは小さい) */
+function syncLayerImageCache(cb){
+  const layers=mySkin.texLayers||[];
+  /* src未確定(読み込み中に予約しただけ)のレイヤーはImage化をスキップする。
+     addImageLayerFromFile()参照 */
+  const pendingLayers=layers.filter(function(L){ return L.src; });
+  if(!pendingLayers.length){ skinLayerImages=[]; rebuildSkinComposite(); if(cb) cb(); return; }
+  let pending=pendingLayers.length;
+  const done=function(){ pending--; if(pending<=0){ rebuildSkinComposite(); if(cb) cb(); } };
+  skinLayerImages=layers.map(function(L){
+    if(!L.src) return null;
+    const im=new Image();
+    im.onload=done; im.onerror=done;
+    im.src=L.src;
+    return im;
+  });
+}
+/* アップロードされた画像ファイルを、保存容量を抑えるためSKIN_CANVAS_SIZEを
+   上限に縮小してからdataURL化する(元写真が数千pxでもそのまま保存しない) */
+function loadImageFileDownscaled(file,cb){
+  const reader=new FileReader();
+  reader.onload=function(){
+    const img=new Image();
+    img.onload=function(){
+      const cap=SKIN_CANVAS_SIZE;
+      const scale=Math.min(1,cap/Math.max(img.width,img.height));
+      const w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+      const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
+      const tctx=tmp.getContext('2d');
+      try{ tctx.imageSmoothingQuality='high'; }catch(e){}
+      tctx.drawImage(img,0,0,w,h);
+      try{ cb(tmp.toDataURL('image/png')); }catch(e){}
+    };
+    img.onerror=function(){};
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+/* 新しい画像レイヤーを追加(最大4枚、複数ファイル選択にも対応)。
+   毎回まったく同じ位置に重なって見づらくならないよう、追加順に
+   簡単な配置プリセットへ振り分ける(あとからスライダーで自由に調整できる) */
+const SKIN_LAYER_PRESET=[[0.5,0.5],[0.3,0.35],[0.7,0.35],[0.3,0.7],[0.7,0.7]];
+function addImageLayerFromFile(file){
+  if(!mySkin.texLayers) mySkin.texLayers=[];
+  if(mySkin.texLayers.length>=MAX_IMG_LAYERS){
+    try{ toast('画像は最大'+MAX_IMG_LAYERS+'枚までです'); }catch(e){}
+    return;
+  }
+  /* 2026-09-18: 複数ファイルを一気に選んだ時、枚数チェック(length>=MAX)と
+     実際に配列へpushするのが画像デコード完了後(非同期)だと、チェックの
+     タイミングがずれて上限を超えてしまう競合バグがあった(headless Chromeの
+     検証で実際に5枚入ってしまうことを確認して発覚)。ここで「枠」を
+     同期的に確保してからファイルを読み込むことで、複数同時選択でも
+     必ず上限内に収まるようにする */
+  const n=mySkin.texLayers.length;
+  const p=SKIN_LAYER_PRESET[n%SKIN_LAYER_PRESET.length];
+  const layer={src:null,x:p[0],y:p[1],w:0.45,h:0.45,rot:0};
+  mySkin.texLayers.push(layer);
+  loadImageFileDownscaled(file,function(dataUrl){
+    layer.src=dataUrl;
+    syncLayerImageCache(function(){ renderSkinLayerList(); refreshSkinPreview(); });
+  });
+}
+function removeImageLayer(i){
+  if(!mySkin.texLayers) return;
+  mySkin.texLayers.splice(i,1);
+  syncLayerImageCache(function(){ renderSkinLayerList(); refreshSkinPreview(); });
+}
+/* ===== 動画レイヤー(2026-09-18追加) =====
+   動画は容量が大きすぎてlocalStorageでの永続化に向かないため、Blob URLで
+   セッション中だけ保持する(ページ再読み込みでは引き継がれない、と
+   パネルにも明記)。既存の「お絵かき/画像は自分の画面限定」という方針を
+   そのまま踏襲し、動画もオンライン対戦では一切送信しない */
+let skinVideoEl=null, skinVideoUrl=null, skinVideoActive=false;
+const SKIN_VIDEO_MAX_MB=15, SKIN_VIDEO_RANGE=5;   // 5m以内でだけ再生(負荷軽減)
+function setVideoFromFile(file){
+  if(!file) return;
+  if(file.size>SKIN_VIDEO_MAX_MB*1024*1024){
+    try{ toast('動画は'+SKIN_VIDEO_MAX_MB+'MBまでです'); }catch(e){}
+    return;
+  }
+  removeVideo();
+  skinVideoUrl=URL.createObjectURL(file);
+  const v=document.createElement('video');
+  v.loop=true; v.muted=true; v.playsInline=true; v.autoplay=false; v.src=skinVideoUrl;
+  v.addEventListener('loadeddata',function(){
+    skinVideoEl=v;
+    if(!mySkin.texVideo) mySkin.texVideo={x:0.5,y:0.5,w:0.6,h:0.6,rot:0};
+    updateSkinVideoPresence(true);
+    renderSkinVideoBox(); refreshSkinPreview();
+  });
+  v.addEventListener('error',function(){ try{ toast('動画を読み込めませんでした'); }catch(e){} });
+}
+function removeVideo(){
+  if(skinVideoEl){ try{ skinVideoEl.pause(); }catch(e){} skinVideoEl=null; }
+  if(skinVideoUrl){ try{ URL.revokeObjectURL(skinVideoUrl); }catch(e){} skinVideoUrl=null; }
+  skinVideoActive=false;
+  mySkin.texVideo=null;
+}
+/* 毎フレーム呼ぶ。試合中は「自分のキャラ(me)からカメラが5m以内にいる間だけ
+   再生+テクスチャ更新」、それ以外(タイトル/ロビーでの編集プレビュー中など)は
+   常に再生して見た目をすぐ確認できるようにする。範囲外では動画そのものも
+   pause()するのでデコード負荷ごと止まる(単に描画を止めるより軽い) */
+function updateSkinVideoPresence(forcePreview){
+  if(!skinVideoEl||!mySkin.texVideo) return;
+  let near=true;
+  if(!forcePreview&&typeof started!=='undefined'&&started&&!over&&typeof me!=='undefined'&&me){
+    const dx=camera.position.x-me.x, dz=camera.position.z-me.z;
+    const dy=camera.position.y-((me.y||0)+1);
+    near=(dx*dx+dy*dy+dz*dz)<=(SKIN_VIDEO_RANGE*SKIN_VIDEO_RANGE);
+  }
+  if(near){
+    if(skinVideoEl.paused){ skinVideoEl.play().catch(function(){}); }
+    if(skinVideoEl.readyState>=2) rebuildSkinComposite();
+  } else if(!skinVideoEl.paused){ skinVideoEl.pause(); }
+  skinVideoActive=near;
 }
 /* 色/形/装飾/テクスチャのどれかを変えたら呼ぶ共通の再反映処理。
    保存→タイトル画面の3Dプレビュー/待機ロビーの自キャラモデルを作り直す */
@@ -16377,6 +16611,78 @@ function renderSkinAccList(){
     wrap.appendChild(row);
   });
 }
+/* 2026-09-18: 画像レイヤー一覧(位置/大きさ/回転のスライダー+削除)を描画 */
+function renderSkinLayerList(){
+  const wrap=document.getElementById('skLayerList'); if(!wrap) return;
+  wrap.innerHTML='';
+  (mySkin.texLayers||[]).forEach(function(L,i){
+    const row=document.createElement('div'); row.className='skLayerItem';
+    const head=document.createElement('div'); head.className='skLayerHead';
+    const nm=document.createElement('span'); nm.textContent='画像 #'+(i+1);
+    const rm=document.createElement('span'); rm.className='rm'; rm.textContent='✕';
+    rm.addEventListener('click',function(){ removeImageLayer(i); });
+    head.appendChild(nm); head.appendChild(rm); row.appendChild(head);
+    const sliders=document.createElement('div'); sliders.className='skinSliders';
+    function mk(label,key,min,max,step,isSize){
+      const lb=document.createElement('label'); lb.textContent=label;
+      const inp=document.createElement('input'); inp.type='range';
+      inp.min=min; inp.max=max; inp.step=step;
+      inp.value=(L[key]==null?(key==='rot'?0:0.5):L[key]);
+      inp.addEventListener('input',function(){
+        const v=parseFloat(inp.value); L[key]=v; if(isSize) L.h=v;
+        rebuildSkinComposite(); refreshSkinPreview();
+      });
+      lb.appendChild(inp); return lb;
+    }
+    sliders.appendChild(mk('横(X)','x',0,1,0.02));
+    sliders.appendChild(mk('縦(Y)','y',0,1,0.02));
+    sliders.appendChild(mk('大きさ','w',0.15,1,0.02,true));
+    sliders.appendChild(mk('回転','rot',-180,180,1));
+    row.appendChild(sliders);
+    wrap.appendChild(row);
+  });
+}
+/* 動画レイヤーの位置/大きさ/回転スライダー+削除ボタンを描画(動画が
+   設定されている時だけ表示、無ければ空のまま) */
+function renderSkinVideoBox(){
+  const wrap=document.getElementById('skVideoBox'); if(!wrap) return;
+  wrap.innerHTML='';
+  if(!mySkin.texVideo) return;
+  const L=mySkin.texVideo;
+  const row=document.createElement('div'); row.className='skLayerItem';
+  const head=document.createElement('div'); head.className='skLayerHead';
+  const nm=document.createElement('span'); nm.textContent='動画（5m以内でだけ再生）';
+  const rm=document.createElement('span'); rm.className='rm'; rm.textContent='✕';
+  rm.addEventListener('click',function(){
+    removeVideo(); rebuildSkinComposite(); renderSkinVideoBox(); refreshSkinPreview();
+  });
+  head.appendChild(nm); head.appendChild(rm); row.appendChild(head);
+  const sliders=document.createElement('div'); sliders.className='skinSliders';
+  function mk(label,key,min,max,step,isSize){
+    const lb=document.createElement('label'); lb.textContent=label;
+    const inp=document.createElement('input'); inp.type='range';
+    inp.min=min; inp.max=max; inp.step=step; inp.value=(L[key]==null?0:L[key]);
+    inp.addEventListener('input',function(){
+      const v=parseFloat(inp.value); L[key]=v; if(isSize) L.h=v;
+      rebuildSkinComposite(); refreshSkinPreview();
+    });
+    lb.appendChild(inp); return lb;
+  }
+  sliders.appendChild(mk('横(X)','x',0,1,0.02));
+  sliders.appendChild(mk('縦(Y)','y',0,1,0.02));
+  sliders.appendChild(mk('大きさ','w',0.15,1,0.02,true));
+  sliders.appendChild(mk('回転','rot',-180,180,1));
+  row.appendChild(sliders);
+  wrap.appendChild(row);
+}
+/* 「すべて外す」「見た目をすべてリセット」共通：お絵かき/画像/動画を
+   まとめて空にする(2026-09-18、レイヤー化に伴い分離が必要になった) */
+function clearAllSkinTex(){
+  mySkin.texPaint=null; mySkin.texLayers=[]; skinLayerImages=[];
+  if(skinFreehandCtx) skinFreehandCtx.clearRect(0,0,skinFreehandCanvas.width,skinFreehandCanvas.height);
+  removeVideo();
+  rebuildSkinComposite();
+}
 function initSkinUI(){
   if(!document.getElementById('skHair')) return;
   syncSkinColorInputs();
@@ -16427,67 +16733,66 @@ function initSkinUI(){
   });
   document.getElementById('skResetAll').addEventListener('click',function(){
     mySkin=defaultSkin();
-    if(skinPaintCtx){
-      skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
-      if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
-    }
-    syncSkinColorInputs(); renderSkinAccList(); refreshSkinPreview();
+    clearAllSkinTex();
+    syncSkinColorInputs(); renderSkinAccList(); renderSkinLayerList(); renderSkinVideoBox();
+    document.getElementById('skTexScale').value=1;
+    refreshSkinPreview();
   });
-  /* お絵かき/画像アップロード(自分の画面にだけ反映するローカル限定機能) */
+  /* お絵かき/画像/動画(自分の画面にだけ反映するローカル限定機能) */
   initSkinPaint();
+  renderSkinLayerList(); renderSkinVideoBox();
   Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(d){
     d.addEventListener('click',function(){
       Array.prototype.forEach.call(document.querySelectorAll('#skTexTargetSel div'),function(x){ x.classList.remove('sel'); });
       d.classList.add('sel'); mySkin.texTarget=d.dataset.v;
-      if(mySkin.tex) refreshSkinPreview(); else saveSkin();
+      if(skinHasCustomTex(mySkin)) refreshSkinPreview(); else saveSkin();
     });
   });
+  const skTexScaleEl=document.getElementById('skTexScale');
+  if(skTexScaleEl){
+    skTexScaleEl.value=mySkin.texScale||1;
+    skTexScaleEl.addEventListener('input',function(){
+      mySkin.texScale=parseFloat(this.value)||1; refreshSkinPreview();
+    });
+  }
   let skPainting=false;
   function skPaintAt(ev){
-    if(!skinPaintCtx) return;
+    if(!skinFreehandCtx) return;
     const rect=skinPaintCanvas.getBoundingClientRect();
     const px=((ev.touches?ev.touches[0].clientX:ev.clientX)-rect.left)*(skinPaintCanvas.width/rect.width);
     const py=((ev.touches?ev.touches[0].clientY:ev.clientY)-rect.top)*(skinPaintCanvas.height/rect.height);
-    skinPaintCtx.fillStyle=document.getElementById('skPaintColor').value;
-    skinPaintCtx.beginPath(); skinPaintCtx.arc(px,py,4,0,Math.PI*2); skinPaintCtx.fill();
-    if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
+    const r=parseFloat(document.getElementById('skPaintSize').value)||13;
+    skinFreehandCtx.fillStyle=document.getElementById('skPaintColor').value;
+    skinFreehandCtx.beginPath(); skinFreehandCtx.arc(px,py,r,0,Math.PI*2); skinFreehandCtx.fill();
+    rebuildSkinComposite();
   }
   if(skinPaintCanvas){
     skinPaintCanvas.addEventListener('pointerdown',function(ev){ skPainting=true; skPaintAt(ev); ev.preventDefault(); });
     skinPaintCanvas.addEventListener('pointermove',function(ev){ if(skPainting){ skPaintAt(ev); ev.preventDefault(); } });
     addEventListener('pointerup',function(){
       if(!skPainting) return; skPainting=false;
-      try{ mySkin.tex=skinPaintCanvas.toDataURL('image/png'); }catch(e){}
+      try{ mySkin.texPaint=skinFreehandCanvas.toDataURL('image/png'); }catch(e){}
       refreshSkinPreview();
     });
   }
   document.getElementById('skPaintClear').addEventListener('click',function(){
-    if(!skinPaintCtx) return;
-    skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
-    if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
-    mySkin.tex=null; refreshSkinPreview();
+    if(!skinFreehandCtx) return;
+    skinFreehandCtx.clearRect(0,0,skinFreehandCanvas.width,skinFreehandCanvas.height);
+    mySkin.texPaint=null;
+    rebuildSkinComposite(); refreshSkinPreview();
   });
   document.getElementById('skTexNone').addEventListener('click',function(){
-    mySkin.tex=null; refreshSkinPreview();
+    clearAllSkinTex();
+    renderSkinLayerList(); renderSkinVideoBox(); refreshSkinPreview();
   });
   document.getElementById('skImgFile').addEventListener('change',function(ev){
-    const f=ev.target.files&&ev.target.files[0]; if(!f||!skinPaintCtx) return;
-    const reader=new FileReader();
-    reader.onload=function(){
-      const img=new Image();
-      img.onload=function(){
-        skinPaintCtx.fillStyle='#f4f2ea'; skinPaintCtx.fillRect(0,0,skinPaintCanvas.width,skinPaintCanvas.height);
-        const cw=skinPaintCanvas.width, ch=skinPaintCanvas.height;
-        const scale=Math.min(cw/img.width,ch/img.height);
-        const dw=img.width*scale, dh=img.height*scale;
-        skinPaintCtx.drawImage(img,(cw-dw)/2,(ch-dh)/2,dw,dh);
-        if(skinPaintTexture) skinPaintTexture.needsUpdate=true;
-        try{ mySkin.tex=skinPaintCanvas.toDataURL('image/png'); }catch(e){}
-        refreshSkinPreview();
-      };
-      img.src=reader.result;
-    };
-    reader.readAsDataURL(f);
+    const files=ev.target.files; if(!files||!files.length){ return; }
+    Array.prototype.forEach.call(files,function(f){ addImageLayerFromFile(f); });
+    ev.target.value='';
+  });
+  document.getElementById('skVidFile').addEventListener('change',function(ev){
+    const f=ev.target.files&&ev.target.files[0];
+    if(f) setVideoFromFile(f);
     ev.target.value='';
   });
 }
