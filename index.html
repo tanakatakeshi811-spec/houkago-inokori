@@ -3262,20 +3262,30 @@ const bonePiles=[];
     spr.scale.set(1.5,0.88,1);   /* bone_pile.pngの縦横比(632x371)に合わせた固定値 */
     spr.position.set(p.x,0.5,p.z);
     scene.add(spr);
-    /* 常時見える青いハイライトリング(在庫無限・いつでも使える目印) */
+    /* 常時見える青いハイライト(在庫無限・いつでも使える目印)。星読み
+       (revealMap/revealPillars)と同じ「depthTest:false+高renderOrderで
+       壁を貫通して見せる」やり方を使い、足元のリングだけでなく高さ8mの
+       光の柱も立てて、壁の向こう・遠くからでも気づけるようにする
+       (2026-09-21追加) */
     const glow=new THREE.Mesh(new THREE.RingGeometry(0.9,1.3,20),
       new THREE.MeshBasicMaterial({color:0x4fb5ff,transparent:true,opacity:0.55,
         side:THREE.DoubleSide,depthTest:false}));
     glow.rotation.x=-Math.PI/2; glow.position.set(p.x,0.08,p.z); glow.renderOrder=985;
     scene.add(glow);
-    bonePiles.push({x:p.x,z:p.z,spr:spr,glow:glow});
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,8,10),
+      new THREE.MeshBasicMaterial({color:0x4fb5ff,transparent:true,opacity:0.4,depthTest:false}));
+    beam.position.set(p.x,4,p.z); beam.renderOrder=985;
+    scene.add(beam);
+    bonePiles.push({x:p.x,z:p.z,spr:spr,glow:glow,beam:beam});
   }
 })();
 function updBonePiles(dt){
   bonePiles.forEach(function(b){
     b.spr.material.rotation+=dt*0.4;
-    b.glow.material.opacity=0.4+Math.abs(Math.sin(elapsed*2.4))*0.35;
+    const pulse=0.4+Math.abs(Math.sin(elapsed*2.4))*0.35;
+    b.glow.material.opacity=pulse;
     b.glow.rotation.z+=dt*0.3;
+    b.beam.material.opacity=pulse*0.7;
   });
   if(netMode==='client') return;   /* 収集判定はホスト権威 */
   const all=students.filter(function(s){ return s.state==='free'&&!s.hide; }).concat([teacher]);
