@@ -3368,6 +3368,37 @@ function boneDuelResolve(teacherWon){
   }
   boneDuelEnd();
 }
+/* 生徒が先生を刺す時、先生がかわし損なった場合の専用ペナルティ(2026-09-21追加)。
+   かわせた場合は(かわし逃げではなく)必ずそのまま連打の攻防戦に突入する
+   ―― こちらはboneDuel本体の分岐(dodgeフェーズ)側で処理する。
+   かわし損なった場合はここで、7秒スタン→(スタン解除後)5秒足90%減速→
+   20秒間クラス全員に位置がわかる、の3段階を順番に発生させる */
+function boneDuelTeacherFail(){
+  const bd=boneDuel; if(!bd) return;
+  const s=bd.student;
+  toast(s.name+'が先生を刺した！');
+  beep(200,0.3,'sawtooth',0.14);
+  teacher.stun=Math.max(teacher.stun,7); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+  teacher.boneFailStage=1; teacher.boneSlowT=0;
+  boneDuelEnd();
+}
+function updBoneFailPenalty(dt){
+  const t=teacher;
+  if(t.boneFailStage===1){
+    if(t.stun<=0){
+      t.boneFailStage=2; t.boneSlowT=5;
+      toast('先生の足が90%遅くなった（5秒）');
+    }
+  } else if(t.boneFailStage===2){
+    t.boneSlowT-=dt;
+    if(t.boneSlowT<=0){
+      t.boneSlowT=0; t.boneFailStage=0;
+      setAura(teacher,'reveal',20); teacher.revealT=Math.max(teacher.revealT||0,20);
+      toast('先生の位置が20秒間、生徒全員に見えるようになった');
+      beep(300,0.3,'sawtooth',0.12);
+    }
+  }
+}
 function boneScanTrigger(dt){
   if(teacher.bone>0){
     const s=boneNearestTarget(teacher);
@@ -3385,17 +3416,34 @@ function boneScanTrigger(dt){
 }
 function updBoneDuel(dt){
   if(netMode==='client') return;   /* 判定は全てホスト権威 */
+  updBoneFailPenalty(dt);
   const bd=boneDuel;
   if(!bd){ boneScanTrigger(dt); return; }
   const s=bd.student;
   if(s.state!=='duel'||!students.includes(s)){ boneDuelEnd(); return; }
   if(bd.phase==='dodge'){
     bd.t-=dt;
-    const defender=bd.teacherAtk?s:teacher;
-    const defRate=bd.teacherAtk?2.6:2.2;
+    /* 先生が刺される側(生徒が攻撃側)の場合だけ特別ルール：かわせても
+       逃げ切れず必ず連打の攻防戦になり、かわし損なうとboneDuelTeacherFail()の
+       重いペナルティが発生する。先生が刺す側(生徒が刺される側)は従来通り、
+       かわせればそのまま終わる */
+    const teacherIsDefender=!bd.teacherAtk;
+    const defender=teacherIsDefender?teacher:s;
+    const defRate=teacherIsDefender?2.2:2.6;
     const n=boneTapCount(defender,dt,defRate);
-    if(n>0){ boneDuelDodged(); return; }
-    if(bd.t<=0){ bd.phase='fight'; bd.gauge=7.5; toast('骨の取り合い開始！連打！'); }
+    if(n>0){
+      if(teacherIsDefender){
+        bd.phase='fight'; bd.gauge=7.5;
+        toast('先生がかわした！そのまま骨の取り合いに！');
+        boneSyncDuel();
+        return;
+      }
+      boneDuelDodged(); return;
+    }
+    if(bd.t<=0){
+      if(teacherIsDefender){ boneDuelTeacherFail(); return; }
+      bd.phase='fight'; bd.gauge=7.5; toast('骨の取り合い開始！連打！');
+    }
     boneSyncDuel();
     return;
   }
@@ -12976,6 +13024,7 @@ function tick(now){
      updItemUse()側で0.3秒ずつ立て直す方式(2026-09-11追加) */
   teacher.fanSlowT=Math.max(0,(teacher.fanSlowT||0)-dt);
   teacher.speed=teacher.base*(teacher.boost>0?1.5:1)*((teacher.slowT>0)?0.8:1)*
+    (teacher.boneSlowT>0?0.1:1)*
     (teacher.shadow>0?0.86:1)*(teacher.invis>0?1.35:1)*(teacher.wrath>0?1.1:1)*
     (teacher.crouch>0?0.82:1)*(1+(teacher.scentBonus||0))*(1+(teacher.blood||0))*
     (teacher.cloak>0?1.32:1)*(teacher.mistBoost||1)*
