@@ -3531,10 +3531,10 @@ function updBoneDuel(dt){
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
   /* botの攻防戦(連打)の強さ：2倍→120%アップ(2.2倍、計4.4倍)まで上げた結果
-     強すぎたため、そこから70%落として1.32倍にした(2026-09-21再修正)。
-     常時の連打頻度自体はboneFightTapCount()で維持しつつ、3回に1回だけ
-     ボーナスでゲージがまとめて増える */
-  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3;
+     強すぎたため70%落として1.32倍に→そこからさらに50%アップして1.98倍に
+     調整(2026-09-21再修正)。常時の連打頻度自体はboneFightTapCount()で
+     維持しつつ、3回に1回だけボーナスでゲージがまとめて増える */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3*1.5, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3*1.5;
   const na=boneFightTapCount(atkE,dt,atkRate), nd=boneFightTapCount(defE,dt,defRate);
   bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
   boneSyncDuel();
