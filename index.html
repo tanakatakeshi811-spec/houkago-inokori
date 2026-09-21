@@ -3227,12 +3227,13 @@ function updItemBoxes(dt){
     }
   });
 }
-/* 骨の山：先生・生徒どちらも拾える「刺す」用アイテム。持っている間に
-   相手の近くで骨ボタン(B/専用ボタン)を押すと刺しかかり、相手はボタンで
-   かわすか、かわし損なうと連打の攻防(骨の取り合い)になる。かわされる
-   か攻防に負けると骨は消費される。ワゴン/槍箱と同じくホスト権威、
-   減った箱はitemBoxesと同じ「dirty配列をスナップショットに便乗させる」
-   方式で参加者にも伝える(2026-09-21追加) */
+/* 骨の山：先生・生徒どちらも拾える「刺す」用アイテム。骨の山はクールタイム
+   無し・在庫無限で常に使える置物で、常時青くハイライトされる。近くで
+   骨ボタン(B/専用ボタン)を15回連打すると骨を1本ゲットでき、最大2本まで
+   持てる。骨を持っている間に相手の近くで同じボタンを押すと刺しかかり、
+   相手はボタンでかわすか、かわし損なうと連打の攻防(骨の取り合い)になる
+   (2026-09-21追加、2026-09-21改修：拾い方を接触即時から連打式に、所持数を
+   1→2に、山を無限在庫に変更) */
 const boneTex=new THREE.TextureLoader().load('assets/bone_pile.png');
 const bonePiles=[];
 (function(){
@@ -3261,43 +3262,38 @@ const bonePiles=[];
     spr.scale.set(1.5,0.88,1);   /* bone_pile.pngの縦横比(632x371)に合わせた固定値 */
     spr.position.set(p.x,0.5,p.z);
     scene.add(spr);
-    bonePiles.push({x:p.x,z:p.z,spr:spr,taken:false,respawnT:0});
+    /* 常時見える青いハイライトリング(在庫無限・いつでも使える目印) */
+    const glow=new THREE.Mesh(new THREE.RingGeometry(0.9,1.3,20),
+      new THREE.MeshBasicMaterial({color:0x4fb5ff,transparent:true,opacity:0.55,
+        side:THREE.DoubleSide,depthTest:false}));
+    glow.rotation.x=-Math.PI/2; glow.position.set(p.x,0.08,p.z); glow.renderOrder=985;
+    scene.add(glow);
+    bonePiles.push({x:p.x,z:p.z,spr:spr,glow:glow});
   }
 })();
-/* 試合開始時：全ての骨の山を満タンに戻す(itemBoxesのrollItemBoxes()に相当) */
-function resetBonePiles(){
-  bonePiles.forEach(function(b){ b.taken=false; b.respawnT=0; b.spr.visible=true; });
-}
-let netDirtyBones=[];   // host: 直近に拾われた/補充された骨の山 {i,taken}
 function updBonePiles(dt){
-  bonePiles.forEach(function(b,idx){
-    if(b.taken){
-      if(netMode==='client') return;
-      b.respawnT-=dt;
-      if(b.respawnT<=0){
-        b.taken=false; b.spr.visible=true;
-        if(netMode==='host') netDirtyBones.push({i:idx,taken:false});
-      }
-      return;
-    }
+  bonePiles.forEach(function(b){
     b.spr.material.rotation+=dt*0.4;
-    if(netMode==='client') return;   /* 骨の取得判定はホスト権威 */
-    const cands=students.filter(function(s){ return s.state==='free'&&!s.hide&&!s.bone; });
-    if(!teacher.bone) cands.push(teacher);
-    for(const e of cands){
-      if(Math.hypot(e.x-b.x,e.z-b.z)<2.3){
-        b.taken=true; b.respawnT=26; b.spr.visible=false; e.bone=true;
-        toast((e===teacher?'先生':e.name)+'が骨を拾った');
+    b.glow.material.opacity=0.4+Math.abs(Math.sin(elapsed*2.4))*0.35;
+    b.glow.rotation.z+=dt*0.3;
+  });
+  if(netMode==='client') return;   /* 収集判定はホスト権威 */
+  const all=students.filter(function(s){ return s.state==='free'&&!s.hide; }).concat([teacher]);
+  for(const e of all){
+    if(e.duel){ e.boneMashN=0; continue; }
+    if((e.bone||0)>=2){ e.boneMashN=0; continue; }
+    const near=bonePiles.some(function(b){ return Math.hypot(e.x-b.x,e.z-b.z)<2.3; });
+    if(!near){ e.boneMashN=0; continue; }
+    const n=boneTapCount(e,dt,e===teacher?2.6:2.0);
+    if(n>0){
+      e.boneMashN=(e.boneMashN||0)+n;
+      if(e.boneMashN>=15){
+        e.boneMashN=0; e.bone=(e.bone||0)+1;
+        toast((e===teacher?'先生':e.name)+'が骨を1本手に入れた（'+e.bone+'/2）');
         beep(560,0.18,'triangle',0.09);
-        if(netMode==='host') netDirtyBones.push({i:idx,taken:true});
-        break;
       }
     }
-  });
-}
-function netApplyBoneDirty(idx,taken){
-  const b=bonePiles[idx]; if(!b) return;
-  b.taken=taken; b.spr.visible=!taken;
+  }
 }
 /* ===== 骨の刺し合い ===== */
 const BONE_DODGE_WINDOW=0.85;
@@ -3337,7 +3333,7 @@ function boneDuelStart(s,teacherAtk){
 function boneDuelEnd(){
   const bd=boneDuel; if(!bd) return;
   const atkE=bd.teacherAtk?teacher:bd.student;
-  atkE.bone=false;
+  atkE.bone=Math.max(0,(atkE.bone||0)-1);
   if(bd.student.state==='duel') bd.student.state='free';
   bd.student.duel=null; teacher.duel=null;
   boneDuel=null;
@@ -3363,7 +3359,7 @@ function boneDuelResolve(teacherWon){
   boneDuelEnd();
 }
 function boneScanTrigger(dt){
-  if(teacher.bone){
+  if(teacher.bone>0){
     const s=boneNearestTarget(teacher);
     if(s){
       const n=boneTapCount(teacher,dt,2.4);
@@ -3371,7 +3367,7 @@ function boneScanTrigger(dt){
     }
   }
   for(const s of students){
-    if(!s.bone||s.state!=='free'||s.hide) continue;
+    if(!(s.bone>0)||s.state!=='free'||s.hide) continue;
     if(Math.hypot(s.x-teacher.x,s.z-teacher.z)>3.0) continue;
     const n=boneTapCount(s,dt,1.8);
     if(n>0){ boneDuelStart(s,false); return; }
@@ -3407,24 +3403,33 @@ function updBoneDuel(dt){
 function updBoneUi(){
   const e=me;
   const d=e&&e.duel;
-  let show=false,label='';
+  let show=false,label='',gaugeShow=false,gaugePct=0,gaugeLabel='';
   if(d){
-    show=true;
+    show=true; gaugeShow=(d.phase==='fight');
     label=(d.phase==='dodge')?(d.role==='defender'?'かわせ！':'かわされるか…'):'連打！';
-  } else if(e&&e.bone){
-    const near=(role==='teacher')
-      ? students.some(function(s){ return s.state==='free'&&!s.hide&&Math.hypot(s.x-e.x,s.z-e.z)<3.0; })
-      : (e.state==='free'&&!e.hide&&Math.hypot(e.x-teacher.x,e.z-teacher.z)<3.0);
-    if(near){ show=true; label='骨を刺す'; }
+    if(gaugeShow){
+      gaugePct=Math.max(0,Math.min(100,(d.gauge/15)*100));
+      gaugeLabel=(d.role==='attacker')?'押し切れ！':'押し返せ！';
+    }
+  } else if(e){
+    const nearPile=e.state!=='duel'&&!e.hide&&bonePiles.some(function(b){ return Math.hypot(e.x-b.x,e.z-b.z)<2.3; });
+    if(nearPile&&(e.bone||0)<2){
+      show=true; label='骨を集める（'+(e.bone||0)+'/2）'; gaugeShow=true;
+      gaugePct=Math.max(0,Math.min(100,((e.boneMashN||0)/15)*100));
+      gaugeLabel='連打！';
+    } else if(e.bone>0){
+      const near=(role==='teacher')
+        ? students.some(function(s){ return s.state==='free'&&!s.hide&&Math.hypot(s.x-e.x,s.z-e.z)<3.0; })
+        : (e.state==='free'&&!e.hide&&Math.hypot(e.x-teacher.x,e.z-teacher.z)<3.0);
+      if(near){ show=true; label='骨を刺す（残り'+e.bone+'）'; }
+    }
   }
   elBoneUi.classList.toggle('on',!!show);
   elBoneLabel.textContent=label;
-  const gShow=!!(d&&d.phase==='fight');
-  elBoneGaugeWrap.classList.toggle('on',gShow);
-  if(gShow){
-    const pct=Math.max(0,Math.min(100,(d.gauge/15)*100));
-    elBoneGaugeFill.style.width=pct+'%';
-    elBoneGaugeLabel.textContent=(d.role==='attacker')?'押し切れ！':'押し返せ！';
+  elBoneGaugeWrap.classList.toggle('on',!!gaugeShow);
+  if(gaugeShow){
+    elBoneGaugeFill.style.width=gaugePct+'%';
+    elBoneGaugeLabel.textContent=gaugeLabel;
   }
 }
 /* 化学トラップ */
@@ -14374,7 +14379,7 @@ function netHostAttachConnHandlers(){
 function netOpenHost(){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
-  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netDirtyBones=[]; netRoomCode='';
+  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netRoomCode='';
   netSetStatus('部屋を作っています…',true);
   netLockRoleToggle(true);
   /* 部屋コードとpeer IDを分離する（今までは「houkago-inokori-」+部屋コードを
@@ -15103,7 +15108,7 @@ function netHostBroadcastSnapshot(dt){
       emT:Math.round((teacher.emT||0)*100)/100,
       /* 骨の刺し合い(2026-09-21追加)。duelはnullかプレーンオブジェクトのみで
          循環参照を持たないので、そのままスナップショットに乗せて良い */
-      bone:!!teacher.bone, duel:teacher.duel||null } },
+      bone:teacher.bone||0, duel:teacher.duel||null } },
     /* 2vs8モード：2人目の先生は固有能力を使わないので同期する情報は最小限
        (座標・向き・運搬中かどうか)のみで足りる(2026-09-11) */
     tea2: teacher2?{ x:teacher2.x, z:teacher2.z, yaw:teacher2.yaw,
@@ -15141,7 +15146,7 @@ function netHostBroadcastSnapshot(dt){
         /* エモート(踊り)：どのエモートを何秒目まで再生しているか、の2つだけ
            配れば他の参加者の画面でも同じ振り付けが再現できる(2026-09-15) */
         em:(s.em===undefined?-1:s.em), emT:Math.round((s.emT||0)*100)/100,
-        bone:!!s.bone, duel:s.duel||null } };
+        bone:s.bone||0, boneMashN:s.boneMashN||0, duel:s.duel||null } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -15150,7 +15155,6 @@ function netHostBroadcastSnapshot(dt){
   };
   if(netDirtyPallets.length){ snap.pal=netDirtyPallets; netDirtyPallets=[]; }
   if(netDirtyBoxes.length){ snap.box=netDirtyBoxes; netDirtyBoxes=[]; }
-  if(netDirtyBones.length){ snap.bone=netDirtyBones; netDirtyBones=[]; }
   netEvents=[];
   netBroadcast(snap);
 }
@@ -15273,7 +15277,6 @@ function netInterpolate(dt){
   });
   if(snap.pal) snap.pal.forEach(function(pr){ netApplyPalletDirty(pr[0],pr[1]); });
   if(snap.box) snap.box.forEach(function(i){ netApplyBoxDirty(i); });
-  if(snap.bone) snap.bone.forEach(function(b){ netApplyBoneDirty(b.i,b.taken); });
   gateOpen=snap.gateOpen; endTimer=snap.endTimer;
   blackoutT=snap.blackout||0; labShareT=snap.labShare||0;
   rumors=(snap.rumors||[]).map(function(r){ return {x:r[0],z:r[1],left:r[2]}; });
@@ -16893,7 +16896,6 @@ function startMatch(){
   netMatchSkins=buildNetMatchSkins(false);   /* スキン機能：自分/接続中の参加者の見た目を確定 */
   spawnAll();
   rollItemBoxes();
-  resetBonePiles();
   applyLoadout();
   buildRoster();
   if(netMode==='host'){
@@ -16901,7 +16903,7 @@ function startMatch(){
       const idx=netStudentIndexForSlot(c.slot);
       if(students[idx]) students[idx].netSlot=c.slot;
     });
-    netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netDirtyBones=[]; netSendT=0;
+    netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netSendT=0;
     const taskDesks=tasks.map(function(d){ return {c:d.c,r:d.r}; });
     const itemBoxRoll=itemBoxes.map(function(b){ return b.item; });
     const skinsForWire=buildNetMatchSkins(true);   /* スキン機能：tex抜きの軽量版だけ配信 */
