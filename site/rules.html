@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ルール・遊び方 | 放課後の居残り</title>
+<meta name="description" content="「放課後の居残り」の基本ルール・操作方法・3つのモードの違いと、スキルチェック/もがき/攻撃回避のミニ体験。">
+<meta property="og:title" content="ルール・遊び方 | 放課後の居残り">
+<meta property="og:image" content="/img/ogp.png">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon.png" sizes="512x512">
+<link rel="apple-touch-icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="chalk-noise"></div>
+<a class="skip-link" href="#main">本文へ</a>
+
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/"><span class="brand-mark">居</span><span>放課後の居残り<small>HOUKAGO INOKORI</small></span></a>
+    <nav class="nav-links">
+      <a href="/">ホーム</a>
+      <a href="/rules.html" class="active">ルール</a>
+      <a href="/characters.html">キャラ図鑑</a>
+      <a href="/history.html">歴史</a>
+      <a href="/ranking.html">ランキング</a>
+      <a href="/about.html">このゲームについて</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="/play/"><span>▶</span><span class="long">今すぐ遊ぶ</span></a>
+      <button class="nav-toggle" aria-label="メニュー" aria-expanded="false">☰</button>
+    </div>
+  </div>
+  <nav class="mobile-nav">
+    <a href="/">ホーム</a>
+    <a href="/rules.html" class="active">ルール・遊び方</a>
+    <a href="/characters.html">キャラ図鑑</a>
+    <a href="/history.html">歴史</a>
+    <a href="/ranking.html">ランキング</a>
+    <a href="/about.html">このゲームについて</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">ホーム</a> / ルール・遊び方</div>
+    <h1>ルール・遊び方</h1>
+    <p class="text-dim" style="max-width:640px;margin-top:10px">このページを読めばすぐ試合ができる。下にはミニ体験もあるので、操作の感覚も先につかんでおこう。</p>
+  </div>
+</section>
+
+<!-- まず結論 -->
+<section class="tight">
+  <div class="container">
+    <div class="rule-block reveal" style="background:linear-gradient(160deg,var(--board),#1b2621);border-color:var(--border-strong)">
+      <h3>🎯 まず結論</h3>
+      <p style="margin:10px 0 0;font-size:16px">生徒は逃げて脱出。先生は全員捕まえる。それだけ。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 生徒・先生の目標 -->
+<section class="tight">
+  <div class="container">
+    <div class="grid-2">
+      <div class="rule-block reveal">
+        <h3>🏃 生徒側の目標</h3>
+        <ul>
+          <li>校舎内の課題をこなして、脱出ゲージを進める</li>
+          <li>先生に捕まると担がれる → 椅子に座らせられる</li>
+          <li>仲間を救助できる。ただし<b>2回目に座らされた相手は32秒で強制的にスキルチェックが飛んでくる</b>し、<b>危険な状態から救助した直後は即死してしまう</b>ので注意</li>
+          <li>ロッカーに隠れる(<span class="kbd">H</span>キー)、板や窓を使って逃げ道を作る</li>
+        </ul>
+      </div>
+      <div class="rule-block reveal reveal-delay-1">
+        <h3>👨‍🏫 先生側の目標</h3>
+        <ul>
+          <li>生徒を見つけて攻撃 → 担いで椅子へ運ぶ</li>
+          <li>生徒全員を椅子に座らせたら勝ち</li>
+          <li>心音(ハートビート)で生徒に接近が伝わってしまうので、正面突破より奇襲の工夫がものを言う</li>
+          <li>先生ごとに全く違う固有能力を持つ。キャラ図鑑で相性の良い戦い方を探そう</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 操作方法 -->
+<section class="tight">
+  <div class="container">
+    <div class="eyebrow reveal">CONTROLS</div>
+    <h2 class="section-title reveal">操作方法</h2>
+    <p class="section-lead reveal">PCでもスマホでも、同じことができるように作ってある。</p>
+    <div class="table-wrap reveal">
+      <table>
+        <thead><tr><th>操作</th><th>PC</th><th>スマホ</th></tr></thead>
+        <tbody>
+          <tr><td>移動</td><td><span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span></td><td>左スティック</td></tr>
+          <tr><td>視点</td><td>マウス</td><td>右スワイプ</td></tr>
+          <tr><td>走る</td><td><span class="kbd">Shift</span></td><td>ダッシュボタン</td></tr>
+          <tr><td>使う / 乗り越える</td><td><span class="kbd">F</span></td><td>Fボタン</td></tr>
+          <tr><td>隠れる</td><td><span class="kbd">H</span></td><td>近接時に出るボタン</td></tr>
+          <tr><td>アイテム使用</td><td>専用ボタン</td><td>Fボタン直下のボタン</td></tr>
+          <tr><td>エモート(踊る)</td><td>💃ボタン</td><td>💃ボタン</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 3モードの違い -->
+<section class="tight">
+  <div class="container">
+    <div class="eyebrow reveal">MODES</div>
+    <h2 class="section-title reveal">3つのモードの違い</h2>
+    <div class="table-wrap reveal">
+      <table>
+        <thead><tr><th>モード</th><th>人数</th><th>特徴</th></tr></thead>
+        <tbody>
+          <tr><td>通常モード</td><td>先生1 vs 生徒4</td><td>基本形。まずはここから</td></tr>
+          <tr><td>2vs8モード</td><td>先生2 vs 生徒8</td><td>先生が2人になる大人数戦。2人目はAIのことも</td></tr>
+          <tr><td>怪異退治モード</td><td>追跡者1 vs 生徒最大7</td><td>御札を集めて追跡者を封印・撃退できる特殊勝利あり</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 持ち物・パーク簡易版 -->
+<section class="tight">
+  <div class="container">
+    <div class="eyebrow reveal">ITEMS & PERKS</div>
+    <h2 class="section-title reveal">持ち物・パークの基本</h2>
+    <div class="grid-3">
+      <div class="pill-card reveal"><span class="icon">🔦</span><h3>持ち物(アイテム)</h3><p>懐中電灯や注射器など。使い方次第で形勢が変わる、試合中に使う道具。</p></div>
+      <div class="pill-card reveal reveal-delay-1"><span class="icon">⭐</span><h3>パーク</h3><p>キャラクターごとの個性を伸ばす特殊能力。33種類あり、使い込むほどレベルアップして効果が強くなる。</p></div>
+      <div class="pill-card reveal reveal-delay-2"><span class="icon">🧩</span><h3>アドオン</h3><p>持ち物にさらに追加効果をつける小道具。組み合わせ次第で戦略の幅が広がる。</p></div>
+    </div>
+    <p style="margin-top:18px"><a href="/characters.html">→ キャラ図鑑で1人1人の固有能力を見てみる</a></p>
+  </div>
+</section>
+
+<!-- ミニ体験 -->
+<section>
+  <div class="container">
+    <div class="eyebrow reveal">TRY IT</div>
+    <h2 class="section-title reveal">遊ぶ前に、感覚をつかもう</h2>
+    <p class="section-lead reveal">本編で実際に出てくる3つの緊張の瞬間を、軽いミニ体験で先取りできる。3Dモデルは使っていない簡易版だけど、雰囲気は伝わるはず。</p>
+
+    <div class="mg-wrap reveal" id="mg-skillcheck">
+      <div class="mg-head">
+        <div>
+          <h3>① スキルチェックに挑戦</h3>
+          <p>椅子から2回目に仲間を助け出すと、32秒後に必ずこの「スキルチェック」が飛んでくる。針がオレンジのゾーンに入った瞬間にボタンを押そう。</p>
+        </div>
+        <div class="mg-status" id="sc-status">タップして開始</div>
+      </div>
+      <div class="mg-stage">
+        <div class="qte-ring">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <circle class="track" cx="100" cy="100" r="86"></circle>
+            <circle class="zone" id="sc-zone" cx="100" cy="100" r="86" stroke-dasharray="0 540" stroke-dashoffset="0"></circle>
+            <circle id="sc-needle" cx="100" cy="14" r="7" fill="#ff8c42"></circle>
+          </svg>
+          <div class="qte-center">
+            <div id="sc-result" style="font-size:30px">🎯</div>
+            <div class="qte-label">SPACEキー / タップ</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:18px">
+        <button class="mg-btn" id="sc-btn">押す!</button>
+      </div>
+      <div class="mg-foot" id="sc-foot">成功: 0 / 挑戦: 0</div>
+    </div>
+
+    <div class="mg-wrap reveal" id="mg-mash">
+      <div class="mg-head">
+        <div>
+          <h3>② もがき(拘束からの抵抗)を体験</h3>
+          <p>先生に担がれてしまった時は、両手を交互に連打して抵抗できる。制限時間内にゲージを満タンにしよう。</p>
+        </div>
+        <div class="mg-status" id="mash-status">タップして開始</div>
+      </div>
+      <div class="mg-stage" style="flex-direction:column;gap:10px;padding:22px">
+        <div class="mash-meter-wrap"><div class="mash-meter"><div class="mash-fill" id="mash-fill"></div></div></div>
+        <div class="mash-buttons">
+          <button class="mash-key" id="mash-left" aria-label="左手(左矢印キー/Aキー)">L</button>
+          <button class="mash-key" id="mash-right" aria-label="右手(右矢印キー/Dキー)">R</button>
+        </div>
+        <div class="mg-foot" id="mash-time" style="margin-top:0">残り 6.0秒</div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:14px">
+        <button class="mg-btn" id="mash-start">スタート</button>
+      </div>
+    </div>
+
+    <div class="mg-wrap reveal" id="mg-dodge">
+      <div class="mg-head">
+        <div>
+          <h3>③ 攻撃・回避のコツを体験</h3>
+          <p>先生は攻撃の前に一瞬「構え」を見せる。その構えを見てからよけボタンを押そう。早すぎても遅すぎても被弾する。</p>
+        </div>
+        <div class="mg-status" id="dodge-status">タップして開始</div>
+      </div>
+      <div class="mg-stage" style="padding:22px">
+        <div class="dodge-flash" id="dodge-flash"></div>
+        <div class="dodge-windup" id="dodge-windup">構え!</div>
+        <div class="dodge-stage">
+          <div class="dodge-lane"></div>
+          <div class="dodge-teacher" id="dodge-teacher" style="left:6%">🧑‍🏫</div>
+          <div class="dodge-player">🏃</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:14px">
+        <button class="mg-btn" id="dodge-btn">はじめる</button>
+      </div>
+      <div class="mg-foot" id="dodge-foot">成功: 0 / 挑戦: 0</div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="tight">
+  <div class="container">
+    <div class="eyebrow reveal">FAQ</div>
+    <h2 class="section-title reveal">よくある質問</h2>
+    <div class="reveal">
+      <details class="faq-item">
+        <summary>重い・カクつく</summary>
+        <p>設定メニューから画質(解像度・シャドウなど)を下げてみてください。特にスマホでは画質を1段階下げるだけで大きく改善することが多いです。</p>
+      </details>
+      <details class="faq-item">
+        <summary>マイクが使えない(近接ボイスチャットが聞こえない)</summary>
+        <p>ブラウザがマイクの使用許可を求めるポップアップを出しているはずなので「許可」を選んでください。誤って拒否してしまった場合は、ブラウザのアドレスバー付近のサイト設定からマイク権限を許可し直してください。</p>
+      </details>
+      <details class="faq-item">
+        <summary>友達と繋がらない</summary>
+        <p>部屋コードに誤りがないか確認してください。数字・記号を含めて完全に一致している必要があります。それでも繋がらない場合は、時間を置いてもう一度部屋を作り直してみてください。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container">
+    <div class="cta-band reveal">
+      <h2>感覚はつかめた? あとは本編で試すだけ。</h2>
+      <a class="btn btn-primary btn-lg" href="/play/" style="margin-top:20px">▶ 今すぐ遊ぶ(無料)</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h5>放課後の居残り</h5>
+        <p class="text-dim" style="max-width:280px">放課後の学校で、生徒が逃げて先生が捕まえる。ブラウザで遊べる3Dオンライン鬼ごっこ。インストール不要・無料。</p>
+      </div>
+      <div><h5>サイト</h5><ul>
+        <li><a href="/rules.html">ルール・遊び方</a></li>
+        <li><a href="/characters.html">キャラ図鑑</a></li>
+        <li><a href="/history.html">歴史</a></li>
+        <li><a href="/ranking.html">ランキング</a></li>
+      </ul></div>
+      <div><h5>ゲーム</h5><ul>
+        <li><a href="/play/">今すぐ遊ぶ</a></li>
+        <li><a href="/about.html">このゲームについて</a></li>
+      </ul></div>
+      <div><h5>制作者</h5><ul>
+        <li><span class="text-dim">下山しゅんり</span></li>
+        <li><a href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHub</a></li>
+      </ul></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> 下山しゅんり。個人制作のオリジナル作品です。</span>
+      <span>既存作品の名称・素材は使用していません。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/minigames.js"></script>
+<script src="/js/common.js"></script>
+</body>
+</html>

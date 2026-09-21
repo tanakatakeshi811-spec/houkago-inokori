@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>このゲームについて | 放課後の居残り</title>
+<meta name="description" content="「放課後の居残り」の制作者情報・使用技術・権利表記。既存作品の名称・素材は一切使用していません。">
+<meta property="og:title" content="このゲームについて | 放課後の居残り">
+<meta property="og:image" content="/img/ogp.png">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon.png" sizes="512x512">
+<link rel="apple-touch-icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="chalk-noise"></div>
+<a class="skip-link" href="#main">本文へ</a>
+
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/"><span class="brand-mark">居</span><span>放課後の居残り<small>HOUKAGO INOKORI</small></span></a>
+    <nav class="nav-links">
+      <a href="/">ホーム</a>
+      <a href="/rules.html">ルール</a>
+      <a href="/characters.html">キャラ図鑑</a>
+      <a href="/history.html">歴史</a>
+      <a href="/ranking.html">ランキング</a>
+      <a href="/about.html" class="active">このゲームについて</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="/play/"><span>▶</span><span class="long">今すぐ遊ぶ</span></a>
+      <button class="nav-toggle" aria-label="メニュー" aria-expanded="false">☰</button>
+    </div>
+  </div>
+  <nav class="mobile-nav">
+    <a href="/">ホーム</a>
+    <a href="/rules.html">ルール・遊び方</a>
+    <a href="/characters.html">キャラ図鑑</a>
+    <a href="/history.html">歴史</a>
+    <a href="/ranking.html">ランキング</a>
+    <a href="/about.html" class="active">このゲームについて</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">ホーム</a> / このゲームについて</div>
+    <h1>このゲームについて</h1>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container" style="max-width:760px">
+
+    <div class="legal-box reveal">
+      <h3>制作者</h3>
+      <p>「放課後の居残り」は、下山しゅんりが個人で制作したオリジナルのゲームです。学生の個人制作として、企画・プログラム・キャラクターデザイン・世界観まで、すべて自分の手で作りました。</p>
+    </div>
+
+    <div class="legal-box reveal reveal-delay-1">
+      <h3>権利について(必ずお読みください)</h3>
+      <p>「放課後の居残り」は、下山しゅんりが個人で制作したオリジナルのゲームです。既存の作品の名前・キャラクター・画像・音楽などは一切使用していません。</p>
+      <p>非対称対戦(複数人 vs 1人)というジャンルのルールの考え方については、先行する既存の作品を参考にしていますが、キャラクター・世界観・名称・すべての素材は完全に新規に制作したものです。他の作品との比較や、特定の作品を意識させる表現は意図的に避けています。</p>
+    </div>
+
+    <div class="legal-box reveal reveal-delay-2">
+      <h3>使っている技術</h3>
+      <ul>
+        <li><b>three.js</b> ― ブラウザ上で3Dグラフィックスを描画するライブラリ</li>
+        <li><b>PeerJS(WebRTC)</b> ― プレイヤー同士を直接つなぐオンライン対戦の通信</li>
+        <li><b>Cloudflare Workers / D1</b> ― 部屋の検索・クイックプレイ・ランキング集計を支える裏方の仕組み</li>
+      </ul>
+      <p>ビルド不要の素のHTML/CSS/JavaScriptだけで作られています。フレームワークは使っていません。</p>
+    </div>
+
+    <div class="legal-box reveal reveal-delay-3">
+      <h3>音源のライセンス表記</h3>
+      <p>ゲーム内で使用しているBGMはすべて <b>HoliznaCC0</b> による <b>CC0 1.0 Universal</b>(著作権なし・帰属表示不要)の楽曲です。法的な表示義務はありませんが、敬意を込めてここに記載します。</p>
+      <div class="credit-row"><span>Happy Dance</span><span>HoliznaCC0 / CC0 1.0</span></div>
+      <div class="credit-row"><span>Retro Synths</span><span>HoliznaCC0 / CC0 1.0</span></div>
+      <div class="credit-row"><span>Back In The 80s</span><span>HoliznaCC0 / CC0 1.0</span></div>
+      <div class="credit-row"><span>Make Funk</span><span>HoliznaCC0 / CC0 1.0</span></div>
+      <p style="margin-top:10px;font-size:12.5px">出典: Free Music Archive</p>
+    </div>
+
+    <div class="legal-box reveal">
+      <h3>お願い</h3>
+      <p>このサイト・ゲームには掲示板やコメント欄はありません。ご意見・不具合報告などは、下記のGitHubリポジトリのIssue、または制作者のSNSまでお願いします。ランキングに表示される名前は各プレイヤーが自由に設定できるため、不適切な表示があった場合は運営側で対応を検討します。</p>
+      <div style="margin-top:14px">
+        <a class="btn btn-outline" href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHubリポジトリを見る</a>
+      </div>
+    </div>
+
+    <div class="legal-box reveal">
+      <h3>制作者の他の作品</h3>
+      <ul>
+        <li>コダマ会議 ― P2Pのオンライン会議アプリ</li>
+        <li>ちかマップ ― GPS地図フレンドアプリ</li>
+        <li>物理サンドボックス ― 自由な物理演算サンドボックス</li>
+        <li>カードゲームハブ ― オリジナルカードバトル+定番トランプ集</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h5>放課後の居残り</h5>
+        <p class="text-dim" style="max-width:280px">放課後の学校で、生徒が逃げて先生が捕まえる。ブラウザで遊べる3Dオンライン鬼ごっこ。インストール不要・無料。</p>
+      </div>
+      <div><h5>サイト</h5><ul>
+        <li><a href="/rules.html">ルール・遊び方</a></li>
+        <li><a href="/characters.html">キャラ図鑑</a></li>
+        <li><a href="/history.html">歴史</a></li>
+        <li><a href="/ranking.html">ランキング</a></li>
+      </ul></div>
+      <div><h5>ゲーム</h5><ul>
+        <li><a href="/play/">今すぐ遊ぶ</a></li>
+        <li><a href="/about.html">このゲームについて</a></li>
+      </ul></div>
+      <div><h5>制作者</h5><ul>
+        <li><span class="text-dim">下山しゅんり</span></li>
+        <li><a href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHub</a></li>
+      </ul></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> 下山しゅんり。個人制作のオリジナル作品です。</span>
+      <span>既存作品の名称・素材は使用していません。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/common.js"></script>
+</body>
+</html>

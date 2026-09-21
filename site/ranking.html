@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ランキング | 放課後の居残り</title>
+<meta name="description" content="「放課後の居残り」の全国ランキング。勝利数・脱出数の合計ポイントで競う。">
+<meta property="og:title" content="ランキング | 放課後の居残り">
+<meta property="og:image" content="/img/ogp.png">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon.png" sizes="512x512">
+<link rel="apple-touch-icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="chalk-noise"></div>
+<a class="skip-link" href="#main">本文へ</a>
+
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/"><span class="brand-mark">居</span><span>放課後の居残り<small>HOUKAGO INOKORI</small></span></a>
+    <nav class="nav-links">
+      <a href="/">ホーム</a>
+      <a href="/rules.html">ルール</a>
+      <a href="/characters.html">キャラ図鑑</a>
+      <a href="/history.html">歴史</a>
+      <a href="/ranking.html" class="active">ランキング</a>
+      <a href="/about.html">このゲームについて</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="/play/"><span>▶</span><span class="long">今すぐ遊ぶ</span></a>
+      <button class="nav-toggle" aria-label="メニュー" aria-expanded="false">☰</button>
+    </div>
+  </div>
+  <nav class="mobile-nav">
+    <a href="/">ホーム</a>
+    <a href="/rules.html">ルール・遊び方</a>
+    <a href="/characters.html">キャラ図鑑</a>
+    <a href="/history.html">歴史</a>
+    <a href="/ranking.html" class="active">ランキング</a>
+    <a href="/about.html">このゲームについて</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">ホーム</a> / ランキング</div>
+    <h1>ランキング</h1>
+    <p class="text-dim" style="max-width:640px;margin-top:10px">全モード合計。ポイント = 勝利 + 脱出成功の回数。あなたの名前も、ここに載るかもしれない。</p>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container">
+    <p class="mg-status reveal" id="rank-status" style="display:inline-block;margin-bottom:18px">読み込み中…</p>
+    <div class="table-wrap reveal">
+      <table>
+        <thead>
+          <tr><th>順位</th><th>プレイヤー</th><th>ポイント</th><th>試合数</th><th>勝率</th><th>先生 勝利/試合</th><th>生徒 脱出/試合</th></tr>
+        </thead>
+        <tbody id="rank-tbody"></tbody>
+      </table>
+    </div>
+    <p class="text-dim" style="margin-top:16px;font-size:13px">※ランキングは全モード合計の集計です。試合結果はプレイヤーのブラウザから自己申告される仕組みのため、明らかに異常な値だけを弾く簡易的なチェックのみ行っています。</p>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container">
+    <div class="cta-band reveal">
+      <h2>ランキングに名前を刻もう。</h2>
+      <a class="btn btn-primary btn-lg" href="/play/" style="margin-top:20px">▶ 今すぐ遊ぶ(無料)</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h5>放課後の居残り</h5>
+        <p class="text-dim" style="max-width:280px">放課後の学校で、生徒が逃げて先生が捕まえる。ブラウザで遊べる3Dオンライン鬼ごっこ。インストール不要・無料。</p>
+      </div>
+      <div><h5>サイト</h5><ul>
+        <li><a href="/rules.html">ルール・遊び方</a></li>
+        <li><a href="/characters.html">キャラ図鑑</a></li>
+        <li><a href="/history.html">歴史</a></li>
+        <li><a href="/ranking.html">ランキング</a></li>
+      </ul></div>
+      <div><h5>ゲーム</h5><ul>
+        <li><a href="/play/">今すぐ遊ぶ</a></li>
+        <li><a href="/about.html">このゲームについて</a></li>
+      </ul></div>
+      <div><h5>制作者</h5><ul>
+        <li><span class="text-dim">下山しゅんり</span></li>
+        <li><a href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHub</a></li>
+      </ul></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> 下山しゅんり。個人制作のオリジナル作品です。</span>
+      <span>既存作品の名称・素材は使用していません。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/ranking.js"></script>
+<script src="/js/common.js"></script>
+</body>
+</html>

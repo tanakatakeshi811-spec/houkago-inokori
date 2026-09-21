@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>キャラ図鑑 | 放課後の居残り</title>
+<meta name="description" content="「放課後の居残り」の先生41種・生徒35種、全キャラクターの固有能力を紹介するキャラ図鑑。">
+<meta property="og:title" content="キャラ図鑑 | 放課後の居残り">
+<meta property="og:image" content="/img/ogp.png">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon.png" sizes="512x512">
+<link rel="apple-touch-icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="chalk-noise"></div>
+<a class="skip-link" href="#main">本文へ</a>
+
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/"><span class="brand-mark">居</span><span>放課後の居残り<small>HOUKAGO INOKORI</small></span></a>
+    <nav class="nav-links">
+      <a href="/">ホーム</a>
+      <a href="/rules.html">ルール</a>
+      <a href="/characters.html" class="active">キャラ図鑑</a>
+      <a href="/history.html">歴史</a>
+      <a href="/ranking.html">ランキング</a>
+      <a href="/about.html">このゲームについて</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="/play/"><span>▶</span><span class="long">今すぐ遊ぶ</span></a>
+      <button class="nav-toggle" aria-label="メニュー" aria-expanded="false">☰</button>
+    </div>
+  </div>
+  <nav class="mobile-nav">
+    <a href="/">ホーム</a>
+    <a href="/rules.html">ルール・遊び方</a>
+    <a href="/characters.html" class="active">キャラ図鑑</a>
+    <a href="/history.html">歴史</a>
+    <a href="/ranking.html">ランキング</a>
+    <a href="/about.html">このゲームについて</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">ホーム</a> / キャラ図鑑</div>
+    <h1>キャラ図鑑</h1>
+    <p class="text-dim" style="max-width:640px;margin-top:10px">先生41種・生徒35種、あわせて76体。それぞれ全く違う固有能力を持っている。タップして固有スキルを確認しよう。</p>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container">
+    <div class="char-toolbar reveal">
+      <div class="tabbar">
+        <button class="tab-btn active" data-side="teacher">先生(41)</button>
+        <button class="tab-btn" data-side="student">生徒(35)</button>
+      </div>
+      <div class="search-box">
+        <span>🔍</span>
+        <input type="text" id="char-search" placeholder="名前で検索…" aria-label="キャラクターを名前で検索">
+      </div>
+      <div class="char-count" id="char-count">41体</div>
+    </div>
+
+    <div class="char-grid" id="char-grid"></div>
+    <div class="char-empty" id="char-empty" style="display:none">見つかりませんでした。検索語を変えてみてください。</div>
+  </div>
+</section>
+
+</main>
+
+<div class="modal-overlay" id="char-modal">
+  <div class="modal-card" id="char-modal-body"></div>
+</div>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h5>放課後の居残り</h5>
+        <p class="text-dim" style="max-width:280px">放課後の学校で、生徒が逃げて先生が捕まえる。ブラウザで遊べる3Dオンライン鬼ごっこ。インストール不要・無料。</p>
+      </div>
+      <div><h5>サイト</h5><ul>
+        <li><a href="/rules.html">ルール・遊び方</a></li>
+        <li><a href="/characters.html">キャラ図鑑</a></li>
+        <li><a href="/history.html">歴史</a></li>
+        <li><a href="/ranking.html">ランキング</a></li>
+      </ul></div>
+      <div><h5>ゲーム</h5><ul>
+        <li><a href="/play/">今すぐ遊ぶ</a></li>
+        <li><a href="/about.html">このゲームについて</a></li>
+      </ul></div>
+      <div><h5>制作者</h5><ul>
+        <li><span class="text-dim">下山しゅんり</span></li>
+        <li><a href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHub</a></li>
+      </ul></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> 下山しゅんり。個人制作のオリジナル作品です。</span>
+      <span>既存作品の名称・素材は使用していません。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/characters-data.js"></script>
+<script src="/js/characters.js"></script>
+<script src="/js/common.js"></script>
+</body>
+</html>

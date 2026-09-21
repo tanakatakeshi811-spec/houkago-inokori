@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>歴史 | 放課後の居残り</title>
+<meta name="description" content="1つのファイルから始まった「放課後の居残り」が、今の形になるまでの歩み。">
+<meta property="og:title" content="歴史 | 放課後の居残り">
+<meta property="og:image" content="/img/ogp.png">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/img/favicon.png" sizes="512x512">
+<link rel="apple-touch-icon" href="/img/favicon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="chalk-noise"></div>
+<a class="skip-link" href="#main">本文へ</a>
+
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="/"><span class="brand-mark">居</span><span>放課後の居残り<small>HOUKAGO INOKORI</small></span></a>
+    <nav class="nav-links">
+      <a href="/">ホーム</a>
+      <a href="/rules.html">ルール</a>
+      <a href="/characters.html">キャラ図鑑</a>
+      <a href="/history.html" class="active">歴史</a>
+      <a href="/ranking.html">ランキング</a>
+      <a href="/about.html">このゲームについて</a>
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="/play/"><span>▶</span><span class="long">今すぐ遊ぶ</span></a>
+      <button class="nav-toggle" aria-label="メニュー" aria-expanded="false">☰</button>
+    </div>
+  </div>
+  <nav class="mobile-nav">
+    <a href="/">ホーム</a>
+    <a href="/rules.html">ルール・遊び方</a>
+    <a href="/characters.html">キャラ図鑑</a>
+    <a href="/history.html" class="active">歴史</a>
+    <a href="/ranking.html">ランキング</a>
+    <a href="/about.html">このゲームについて</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="page-hero">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">ホーム</a> / 歴史</div>
+    <h1>「放課後の居残り」の歩み</h1>
+    <p class="text-dim" style="max-width:640px;margin-top:10px">最初は、攻撃がうまく当たらないという小さな不満を直すところから始まった。それから約1ヶ月半、このゲームは少しずつ、今の形に育っていった。</p>
+  </div>
+</section>
+
+<section>
+  <div class="container" style="max-width:760px">
+    <div class="timeline" id="timeline"></div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="container">
+    <div class="cta-band reveal">
+      <h2>この歴史の続きを、あなたも見に来ませんか。</h2>
+      <p class="text-dim" style="max-width:480px;margin:10px auto 26px">これからも「放課後の居残り」は増え続ける。今日のあなたが遊んだ記録も、いつかこの歴史の一部になる。</p>
+      <a class="btn btn-primary btn-lg" href="/play/">▶ 今すぐ遊ぶ(無料)</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h5>放課後の居残り</h5>
+        <p class="text-dim" style="max-width:280px">放課後の学校で、生徒が逃げて先生が捕まえる。ブラウザで遊べる3Dオンライン鬼ごっこ。インストール不要・無料。</p>
+      </div>
+      <div><h5>サイト</h5><ul>
+        <li><a href="/rules.html">ルール・遊び方</a></li>
+        <li><a href="/characters.html">キャラ図鑑</a></li>
+        <li><a href="/history.html">歴史</a></li>
+        <li><a href="/ranking.html">ランキング</a></li>
+      </ul></div>
+      <div><h5>ゲーム</h5><ul>
+        <li><a href="/play/">今すぐ遊ぶ</a></li>
+        <li><a href="/about.html">このゲームについて</a></li>
+      </ul></div>
+      <div><h5>制作者</h5><ul>
+        <li><span class="text-dim">下山しゅんり</span></li>
+        <li><a href="https://github.com/tanakatakeshi811-spec/houkago-inokori" target="_blank" rel="noopener">GitHub</a></li>
+      </ul></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> 下山しゅんり。個人制作のオリジナル作品です。</span>
+      <span>既存作品の名称・素材は使用していません。</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/history-data.js"></script>
+<script>
+  (function () {
+    var host = document.getElementById("timeline");
+    if (!host || typeof HISTORY === "undefined") return;
+    host.innerHTML = HISTORY.map(function (h, i) {
+      return '<div class="timeline-item reveal">' +
+        '<div class="timeline-date">' + h.date + '</div>' +
+        '<div class="timeline-card">' +
+        '<span class="timeline-tag" style="background:' + h.tagColor + '22;color:' + h.tagColor + '">' + h.tag + '</span>' +
+        '<h3>' + h.title + '</h3><p>' + h.body + '</p>' +
+        '</div></div>';
+    }).join("");
+  })();
+</script>
+<script src="/js/common.js"></script>
+</body>
+</html>
