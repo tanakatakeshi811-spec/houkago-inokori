@@ -163,6 +163,28 @@ canvas{display:block}
   display:none;z-index:6}
 #lockerHideUi.on{display:block}
 .selfcareBtn.hide{display:block;border-color:var(--ok);color:#bfe8cf}
+/* 骨：先生・生徒どちらも拾って使える「刺す」アイテム。持っている間・
+   相手が近い間だけ画面中央下寄りに専用ボタン(骨の拳画像)を出す。
+   刺し合い(連打の攻防)中はゲージも一緒に出す(2026-09-21追加) */
+#boneUi{position:fixed;left:50%;top:74%;transform:translate(-50%,-50%);
+  display:none;flex-direction:column;align-items:center;gap:8px;z-index:6}
+#boneUi.on{display:flex}
+#boneLabel{font-size:13px;color:var(--yellow);text-shadow:0 1px 4px #000;letter-spacing:.06em}
+/* 連打しやすいよう左右2個のボタンにする(2026-09-21、#carryHandsの
+   両手連打UIと同じ考え方) */
+#boneBtnRow{display:flex;gap:28px}
+.boneBtn{width:64px;height:64px;user-select:none;touch-action:none;
+  filter:drop-shadow(0 2px 8px #000c);transition:transform .08s,filter .08s}
+.boneBtn img{width:100%;height:100%;pointer-events:none;display:block;-webkit-user-drag:none}
+.boneBtn.press{transform:scale(0.86);filter:drop-shadow(0 0 12px #e8543fdd)}
+#boneGaugeWrap{position:fixed;left:50%;top:20%;transform:translateX(-50%);
+  width:260px;display:none;z-index:6;text-align:center}
+#boneGaugeWrap.on{display:block}
+#boneGaugeLabel{font-size:12px;color:var(--chalk);text-shadow:0 1px 4px #000;margin-bottom:4px}
+#boneGaugeBar{position:relative;width:100%;height:14px;background:#00000055;
+  border:1px solid #ffffff55;border-radius:7px;overflow:hidden}
+#boneGaugeFill{position:absolute;top:0;bottom:0;left:0;background:linear-gradient(90deg,#e8543f,#e8c547);width:50%}
+#boneGaugeMid{position:absolute;top:-3px;bottom:-3px;left:50%;width:2px;margin-left:-1px;background:#fff9}
 #stam{position:absolute;bottom:28%;left:50%;transform:translateX(-50%);
   width:132px;height:4px;background:#ffffff22;border-radius:2px;overflow:hidden}
 #stam i{display:block;height:100%;background:var(--chalk);width:100%}
@@ -787,6 +809,17 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <!-- ロッカーに隠れる専用ボタン(2026-09-18追加)。ロッカーの近くにいる間/
        隠れている間だけ画面中央下寄りに出る。PCはHキー、スマホはこのボタンをタップ -->
   <div id="lockerHideUi" class="pe"><div id="lockerHideBtn" class="selfcareBtn hide">ロッカーに隠れる（H）</div></div>
+  <div id="boneGaugeWrap" class="pe">
+    <div id="boneGaugeLabel"></div>
+    <div id="boneGaugeBar"><i id="boneGaugeFill"></i><div id="boneGaugeMid"></div></div>
+  </div>
+  <div id="boneUi" class="pe">
+    <div id="boneLabel"></div>
+    <div id="boneBtnRow">
+      <div id="boneBtnL" class="boneBtn"><img src="assets/bone_fist.png" alt="" draggable="false"></div>
+      <div id="boneBtnR" class="boneBtn"><img src="assets/bone_fist.png" alt="" draggable="false"></div>
+    </div>
+  </div>
   <div id="stam"><i></i></div>
   <div id="flAimGauge"><i></i></div>
   <div id="itemhud" class="pe">
@@ -2953,17 +2986,18 @@ function updArchiveWarps(dt){
 /* ---- 3. 停電：試合中ランダムで数十秒だけ発生。画面が暗くなる代わりに
    先生の索敵(心音の届く範囲)も一緒に縮む(blackoutMul()をterrorRadius()に
    掛けるだけ、hud()側で参照) ---- */
-let blackoutT=0, blackoutCd=45+Math.random()*60;
+/* 発生率を半分に(クールタイムを2倍に)、継続時間も固定5秒に短縮(2026-09-21) */
+let blackoutT=0, blackoutCd=90+Math.random()*120;
 function blackoutMul(){ return blackoutT>0?0.4:1; }
 function updBlackout(dt){
   if(blackoutT>0){
     blackoutT=Math.max(0,blackoutT-dt);
-    if(blackoutT<=0){ blackoutCd=70+Math.random()*100; toast('明かりが戻った'); }
+    if(blackoutT<=0){ blackoutCd=140+Math.random()*200; toast('明かりが戻った'); }
     return;
   }
   blackoutCd=Math.max(0,blackoutCd-dt);
   if(blackoutCd<=0){
-    blackoutT=16+Math.random()*14;
+    blackoutT=5;
     toast('停電が起きた…しばらく視界も先生の索敵も悪くなる');
     beep(80,0.6,'sawtooth',0.14); bigNoise(0.1,0.3);
   }
@@ -3199,6 +3233,348 @@ function updItemBoxes(dt){
       }
     }
   });
+}
+/* 骨の山：先生・生徒どちらも拾える「刺す」用アイテム。骨の山はクールタイム
+   無し・在庫無限で常に使える置物で、常時青くハイライトされる。近くで
+   骨ボタン(B/専用ボタン)を15回連打すると骨を1本ゲットでき、最大2本まで
+   持てる。骨を持っている間に相手の近くで同じボタンを押すと刺しかかり、
+   相手はボタンでかわすか、かわし損なうと連打の攻防(骨の取り合い)になる
+   (2026-09-21追加、2026-09-21改修：拾い方を接触即時から連打式に、所持数を
+   1→2に、山を無限在庫に変更) */
+const boneTex=new THREE.TextureLoader().load('assets/bone_pile.png');
+/* 骨を持っている間、頭に骨ペンが刺さって見える演出用テクスチャ
+   (2026-09-21追加。1本持っていれば1本、2本なら2本刺さる) */
+const bonePenTex=new THREE.TextureLoader().load('assets/bone_pen.png');
+function updBoneHeadMesh(e){
+  const head=e&&e.mesh&&e.mesh.userData&&e.mesh.userData.head;
+  if(!head) return;
+  const want=Math.max(0,Math.min(2,e.bone||0));
+  if(!e.bonePens){
+    e.bonePens=[0,1].map(function(){
+      const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:bonePenTex,transparent:true,depthTest:true}));
+      spr.scale.set(0.42,0.42*747/1084,1);
+      spr.visible=false;
+      head.add(spr);
+      return spr;
+    });
+  }
+  e.bonePens.forEach(function(spr,i){
+    spr.visible=i<want;
+    if(i<want){
+      spr.position.set(i===0?-0.13:0.13,0.42,0.1);
+      spr.rotation.z=i===0?0.2:-0.2;
+    }
+  });
+}
+const bonePiles=[];
+(function(){
+  /* itemBoxesで既に「walkableな床に近い」ことを確認済みの座標プールを
+     そのまま再利用し(3つ飛ばしで抜き出して重複を減らす)、ステージごとに
+     未知の座標を新規に検証する手間とリスクを避ける */
+  const all=[[14,20],[26,10],[40,22],
+    [64,14],[76,20],[88,10],
+    [105,20],[116,14],[127,20],
+    [144,14],[155,20],[166,10],
+    [183,20],[194,14],[205,20],
+    [222,14],[233,20],[244,10],
+    [261,20],[272,14],[283,20],
+    [300,14],[311,20],[322,10],
+    [339,20],[350,14],[361,20],
+    [378,14],[389,20],[400,10],
+    [417,20],[428,14],[439,20]];
+  const spots=all.filter(function(_,i){ return i%3===1; });
+  for(const sp of spots){
+    let best=null,bd=1e9;
+    for(const w of walkable){ const d=Math.abs(w[0]-sp[0])+Math.abs(w[1]-sp[1]);
+      if(d<bd){ bd=d; best=w; } }
+    if(!best||bd>4) continue;
+    const p=center(best[0],best[1]);
+    const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:boneTex,transparent:true}));
+    spr.scale.set(1.5,0.88,1);   /* bone_pile.pngの縦横比(632x371)に合わせた固定値 */
+    spr.position.set(p.x,0.5,p.z);
+    scene.add(spr);
+    /* 常時見える青いハイライト(在庫無限・いつでも使える目印)。星読み
+       (revealMap/revealPillars)と同じ「depthTest:false+高renderOrderで
+       壁を貫通して見せる」やり方を使い、足元のリングだけでなく高さ8mの
+       光の柱も立てて、壁の向こう・遠くからでも気づけるようにする
+       (2026-09-21追加) */
+    const glow=new THREE.Mesh(new THREE.RingGeometry(0.9,1.3,20),
+      new THREE.MeshBasicMaterial({color:0x4fb5ff,transparent:true,opacity:0.55,
+        side:THREE.DoubleSide,depthTest:false}));
+    glow.rotation.x=-Math.PI/2; glow.position.set(p.x,0.08,p.z); glow.renderOrder=985;
+    scene.add(glow);
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,8,10),
+      new THREE.MeshBasicMaterial({color:0x4fb5ff,transparent:true,opacity:0.4,depthTest:false}));
+    beam.position.set(p.x,4,p.z); beam.renderOrder=985;
+    scene.add(beam);
+    bonePiles.push({x:p.x,z:p.z,spr:spr,glow:glow,beam:beam});
+  }
+})();
+function updBonePiles(dt){
+  bonePiles.forEach(function(b){
+    b.spr.material.rotation+=dt*0.4;
+    const pulse=0.4+Math.abs(Math.sin(elapsed*2.4))*0.35;
+    b.glow.material.opacity=pulse;
+    b.glow.rotation.z+=dt*0.3;
+    b.beam.material.opacity=pulse*0.7;
+  });
+  updBoneHeadMesh(teacher);
+  if(netMode==='client') return;   /* 収集判定はホスト権威 */
+  const all=students.filter(function(s){ return s.state==='free'&&!s.hide; }).concat([teacher]);
+  for(const e of all){
+    if(e.duel){ e.boneMashN=0; continue; }
+    if((e.bone||0)>=2){ e.boneMashN=0; continue; }
+    const near=bonePiles.some(function(b){ return Math.hypot(e.x-b.x,e.z-b.z)<2.3; });
+    if(!near){ e.boneMashN=0; continue; }
+    const n=boneTapCount(e,dt,e===teacher?2.6:2.0);
+    if(n>0){
+      e.boneMashN=(e.boneMashN||0)+n;
+      if(e.boneMashN>=30){
+        e.boneMashN=0; e.bone=(e.bone||0)+1;
+        toast((e===teacher?'先生':e.name)+'が骨を1本手に入れた（'+e.bone+'/2）');
+        beep(560,0.18,'triangle',0.09);
+      }
+    }
+  }
+}
+/* ===== 骨の刺し合い ===== */
+const BONE_DODGE_WINDOW=0.85;
+let boneDuel=null;   // host権威: {student,teacherAtk,phase:'dodge'|'fight',t,gauge}
+/* meがteacher/students[x]どちらでも呼べる。リモート参加者はnetBoneTapN()、
+   AIは確率、ローカルの自分はinput.boneTapEdgeを1回分の入力として消費する
+   （trapCheck()の「isMe/リモート/AI」3分岐と同じ考え方） */
+function boneTapCount(e,dt,botRate){
+  if(e===me){
+    if(input.boneTapEdge){ input.boneTapEdge=false; return 1; }
+    return 0;
+  }
+  if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
+  return (Math.random()<dt*botRate)?1:0;
+}
+/* 攻防戦(ゲージの押し合い)専用のbot挙動：普段は毎フレーム確率で連打しつつ
+   (2026-09-21再修正：前回の「3秒に1回だけ」は誤りで、常時の連打自体は
+   維持したまま強さだけ70%落とす方が正しかった)、3回に1回はその3回分の
+   ゲージがまとめて追加され、実質6回分貯まる(1+1+4)。人間(ローカル/
+   リモート)側の挙動はboneTapCount()と同じ */
+function boneFightTapCount(e,dt,botRate){
+  if(e===me){
+    if(input.boneTapEdge){ input.boneTapEdge=false; return 1; }
+    return 0;
+  }
+  if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
+  if(Math.random()<dt*botRate){
+    e.boneBotHitN=(e.boneBotHitN||0)+1;
+    return (e.boneBotHitN%3===0)?4:1;
+  }
+  return 0;
+}
+function boneNearestTarget(t){
+  let best=null,bd=1e9;
+  for(const s of students){
+    if(s.state!=='free'||s.hide) continue;
+    const d=Math.hypot(s.x-t.x,s.z-t.z);
+    if(d<3.0&&d<bd){ bd=d; best=s; }
+  }
+  return best;
+}
+function boneSyncDuel(){
+  const bd=boneDuel; if(!bd) return;
+  bd.student.duel={role:bd.teacherAtk?'defender':'attacker',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
+  teacher.duel={role:bd.teacherAtk?'attacker':'defender',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
+}
+function boneDuelStart(s,teacherAtk){
+  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5};
+  s.state='duel'; s.path=[]; s.boneBotHitN=0; teacher.boneBotHitN=0;
+  boneSyncDuel();
+  toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
+  beep(300,0.2,'square',0.1);
+}
+/* 生徒を担いでいる先生を刺した時の専用処理：両手がふさがっていて避けようが
+   無いので、かわし・攻防戦を一切挟まず一方的に骨が刺さり必ずスタンする。
+   担がれていた生徒はその場に落ちてダウンする(掃除ロッカーの直撃と同じ
+   挙動、2026-09-21追加) */
+function boneDuelCarryingStun(s){
+  s.bone=Math.max(0,(s.bone||0)-1);
+  teacher.stun=Math.max(teacher.stun,6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+  const carried=teacher.carrying;
+  if(carried){
+    teacher.carrying=null;
+    carried.state='downed'; carried.downT=0; carried.mesh.visible=true;
+    carried.x=teacher.x; carried.z=teacher.z;
+  }
+  toast(s.name+'が担がれた仲間ごと先生を刺した！先生がよろけた');
+  beep(220,0.3,'sawtooth',0.12);
+}
+function boneDuelEnd(){
+  const bd=boneDuel; if(!bd) return;
+  const atkE=bd.teacherAtk?teacher:bd.student;
+  atkE.bone=Math.max(0,(atkE.bone||0)-1);
+  if(bd.student.state==='duel') bd.student.state='free';
+  bd.student.duel=null; teacher.duel=null;
+  boneDuel=null;
+}
+function boneDuelDodged(){
+  const bd=boneDuel; if(!bd) return;
+  toast((bd.teacherAtk?'先生':bd.student.name)+'の一撃を'+(bd.teacherAtk?bd.student.name:'先生')+'がかわした！');
+  beep(760,0.15,'triangle',0.1);
+  boneDuelEnd();
+}
+function boneDuelResolve(teacherWon){
+  const bd=boneDuel; if(!bd) return;
+  const s=bd.student;
+  if(teacherWon){
+    toast('刺し合いに先生が勝った！'+s.name+'に一撃');
+    if(s.state==='duel') s.state='free';
+    damage(s,1,false,teacher);
+  } else {
+    teacher.stun=Math.max(teacher.stun,6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+    toast(s.name+'が刺し合いに勝った！先生が6秒よろけた');
+    beep(220,0.3,'sawtooth',0.12);
+  }
+  boneDuelEnd();
+}
+/* 生徒が先生を刺す時、先生がかわし損なった場合の専用ペナルティ(2026-09-21追加)。
+   かわせた場合は(かわし逃げではなく)必ずそのまま連打の攻防戦に突入する
+   ―― こちらはboneDuel本体の分岐(dodgeフェーズ)側で処理する。
+   かわし損なった場合はここで、7秒スタン→(スタン解除後)5秒足90%減速→
+   20秒間クラス全員に位置がわかる、の3段階を順番に発生させる */
+function boneDuelTeacherFail(){
+  const bd=boneDuel; if(!bd) return;
+  const s=bd.student;
+  toast(s.name+'が先生を刺した！');
+  beep(200,0.3,'sawtooth',0.14);
+  teacher.stun=Math.max(teacher.stun,7); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+  teacher.boneFailStage=1; teacher.boneSlowT=0;
+  boneDuelEnd();
+}
+function updBoneFailPenalty(dt){
+  const t=teacher;
+  if(t.boneFailStage===1){
+    if(t.stun<=0){
+      t.boneFailStage=2; t.boneSlowT=5;
+      toast('先生の足が90%遅くなった（5秒）');
+    }
+  } else if(t.boneFailStage===2){
+    t.boneSlowT-=dt;
+    if(t.boneSlowT<=0){
+      t.boneSlowT=0; t.boneFailStage=0;
+      setAura(teacher,'reveal',20); teacher.revealT=Math.max(teacher.revealT||0,20);
+      toast('先生の位置が20秒間、生徒全員に見えるようになった');
+      beep(300,0.3,'sawtooth',0.12);
+    }
+  }
+}
+/* 生徒を担いでいる間は両手がふさがっているので、先生は骨で刺しかかれない
+   (2026-09-21：botが担いだままでも刺せてしまっていた不具合を修正)。
+   また、先生がスタン中は新しい刺し合いを一切始められない
+   (2026-09-21追加：スタン中にさらに刺されて二重にペナルティが入って
+   しまっていた不具合を修正) */
+function boneScanTrigger(dt){
+  if(teacher.stun>0) return;
+  if(teacher.bone>0&&!teacher.carrying){
+    const s=boneNearestTarget(teacher);
+    if(s){
+      const n=boneTapCount(teacher,dt,2.4);
+      if(n>0){ boneDuelStart(s,true); return; }
+    }
+  }
+  for(const s of students){
+    if(!(s.bone>0)||s.state!=='free'||s.hide) continue;
+    /* 先生が誰かを担いでいる間は距離500%増(3m→18m)で刺しやすくする
+       (2026-09-21追加、逃げ場の少ない担がれ中の仲間を助けやすくする狙い) */
+    const range=teacher.carrying?18.0:3.0;
+    if(Math.hypot(s.x-teacher.x,s.z-teacher.z)>range) continue;
+    const n=boneTapCount(s,dt,1.8);
+    if(n>0){
+      /* 先生が誰かを担いでいる間は両手がふさがっていて避けようが無いので、
+         駆け引き無しで一方的に骨が刺さり必ずスタンする(2026-09-21追加)。
+         担がれていた生徒もその場に落ちてダウンする(掃除ロッカーの直撃と
+         同じ「気絶時は担いでいた生徒を落とす」挙動を踏襲) */
+      if(teacher.carrying) boneDuelCarryingStun(s);
+      else boneDuelStart(s,false);
+      return;
+    }
+  }
+}
+function updBoneDuel(dt){
+  if(netMode==='client') return;   /* 判定は全てホスト権威 */
+  updBoneFailPenalty(dt);
+  const bd=boneDuel;
+  if(!bd){ boneScanTrigger(dt); return; }
+  const s=bd.student;
+  if(s.state!=='duel'||!students.includes(s)){ boneDuelEnd(); return; }
+  if(bd.phase==='dodge'){
+    bd.t-=dt;
+    /* 先生が刺される側(生徒が攻撃側)の場合だけ特別ルール：かわせても
+       逃げ切れず必ず連打の攻防戦になり、かわし損なうとboneDuelTeacherFail()の
+       重いペナルティが発生する。先生が刺す側(生徒が刺される側)は従来通り、
+       かわせればそのまま終わる */
+    const teacherIsDefender=!bd.teacherAtk;
+    const defender=teacherIsDefender?teacher:s;
+    const defRate=teacherIsDefender?2.2:2.6;
+    const n=boneTapCount(defender,dt,defRate);
+    if(n>0){
+      if(teacherIsDefender){
+        bd.phase='fight'; bd.gauge=22.5;
+        toast('先生がかわした！そのまま骨の取り合いに！');
+        boneSyncDuel();
+        return;
+      }
+      boneDuelDodged(); return;
+    }
+    if(bd.t<=0){
+      if(teacherIsDefender){ boneDuelTeacherFail(); return; }
+      bd.phase='fight'; bd.gauge=22.5; toast('骨の取り合い開始！連打！');
+    }
+    boneSyncDuel();
+    return;
+  }
+  const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
+  /* botの攻防戦(連打)の強さ：2倍→120%アップ(2.2倍、計4.4倍)まで上げた結果
+     強すぎたため70%落として1.32倍に→そこからさらに50%アップして1.98倍に
+     調整(2026-09-21再修正)。常時の連打頻度自体はboneFightTapCount()で
+     維持しつつ、3回に1回だけボーナスでゲージがまとめて増える */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3*1.5, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3*1.5;
+  const na=boneFightTapCount(atkE,dt,atkRate), nd=boneFightTapCount(defE,dt,defRate);
+  bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
+  boneSyncDuel();
+  if(bd.gauge>=45||bd.gauge<=0){
+    const attackerWonBattle=(bd.gauge>=45);
+    const teacherWon=attackerWonBattle?bd.teacherAtk:!bd.teacherAtk;
+    boneDuelResolve(teacherWon);
+  }
+}
+function updBoneUi(){
+  const e=me;
+  const d=e&&e.duel;
+  let show=false,label='',gaugeShow=false,gaugePct=0,gaugeLabel='';
+  if(d){
+    show=true; gaugeShow=(d.phase==='fight');
+    label=(d.phase==='dodge')?(d.role==='defender'?'かわせ！':'かわされるか…'):'連打！';
+    if(gaugeShow){
+      gaugePct=Math.max(0,Math.min(100,(d.gauge/45)*100));
+      gaugeLabel=(d.role==='attacker')?'押し切れ！':'押し返せ！';
+    }
+  } else if(e){
+    const nearPile=e.state!=='duel'&&!e.hide&&bonePiles.some(function(b){ return Math.hypot(e.x-b.x,e.z-b.z)<2.3; });
+    if(nearPile&&(e.bone||0)<2){
+      show=true; label='骨を集める（'+(e.bone||0)+'/2）'; gaugeShow=true;
+      gaugePct=Math.max(0,Math.min(100,((e.boneMashN||0)/30)*100));
+      gaugeLabel='連打！';
+    } else if(e.bone>0){
+      const near=(role==='teacher')
+        ? students.some(function(s){ return s.state==='free'&&!s.hide&&Math.hypot(s.x-e.x,s.z-e.z)<3.0; })
+        : (e.state==='free'&&!e.hide&&Math.hypot(e.x-teacher.x,e.z-teacher.z)<3.0);
+      if(near){ show=true; label='骨を刺す（残り'+e.bone+'）'; }
+    }
+  }
+  elBoneUi.classList.toggle('on',!!show);
+  elBoneLabel.textContent=label;
+  elBoneGaugeWrap.classList.toggle('on',!!gaugeShow);
+  if(gaugeShow){
+    elBoneGaugeFill.style.width=gaugePct+'%';
+    elBoneGaugeLabel.textContent=gaugeLabel;
+  }
 }
 /* 化学トラップ */
 const chemTraps=[];
@@ -6473,7 +6849,7 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
 
 function spawnAll(){
   /* 新要素8種：試合ごとに状態をリセットする(2026-09-13追加) */
-  blackoutT=0; blackoutCd=45+Math.random()*60;
+  blackoutT=0; blackoutCd=90+Math.random()*120;
   spookyCd=25+Math.random()*45;
   rumors=[]; rumorCd=0;
   labShareT=0; labShareCd=0;
@@ -6658,7 +7034,12 @@ const keys={}, input={mx:0,mz:0,run:false,act:false,actEdge:false,altEdge:false,
                       hideEdge:false,
                       /* エモート(踊り)。オンライン参加者はこの値を入力パケットに
                          乗せてホストに「このエモートを再生したい」と伝える */
-                      emoteEdge:-1,emoteStopEdge:false};
+                      emoteEdge:-1,emoteStopEdge:false,
+                      /* 骨：刺す/かわす/刺し合いの連打を全部兼ねる単発ボタン
+                         (2026-09-21追加)。押した瞬間だけtrueになり、
+                         その状況に応じてboneTapCount()側が一回分の入力として
+                         消費して自分でfalseに戻す */
+                      boneTapEdge:false};
 let camYaw=0,pitch=0;
 let sens=1.1,stkSens=1.0,deadZone=0.14,btnScale=1.0;
 let invert=false,holdRun=false,runToggle=false,autoCam=true,autoAct=true,leftHand=false;
@@ -6673,9 +7054,13 @@ addEventListener('keydown',function(e){
     if(e.code==='KeyV') input.stopEdge=true;
     if(e.code==='KeyC') input.itemHold=true;
     if(e.code==='KeyH') input.hideEdge=true;
-    /* G キーでエモート(踊り)メニューを開閉(2026-09-15) */
-    if(e.code==='KeyG'&&started&&!over) emoteMenuToggle();
+    /* T キーでエモート(踊り)メニューを開閉(2026-09-15、2026-09-21にGから
+       Tへ変更。Gは骨のボタンに明け渡した) */
+    if(e.code==='KeyT'&&started&&!over) emoteMenuToggle();
     if(e.code==='KeyF'||e.code==='KeyJ') input.mash=true;
+    /* 骨：取る・刺す・攻防戦の連打はG/Hキー(2026-09-21、Bキーから変更。
+       左右2個ボタンのUIに合わせて両手で交互に叩ける2キーにした) */
+    if(e.code==='KeyG'||e.code==='KeyH'||e.code==='KeyB') input.boneTapEdge=true;
     if(e.code==='Space'){ input.tap=true; e.preventDefault(); }
   }
   keys[e.code]=true;
@@ -6868,6 +7253,17 @@ bindBtn(document.getElementById('selfcareCancel'),function(){input.selfcareCance
 bindBtn(document.getElementById('lastReflexBtn'),function(){input.lastReflexEdge=true;},null);
 /* ロッカーに隠れる/出る：単発ボタン(2026-09-18追加、Hキーと同じ) */
 bindBtn(document.getElementById('lockerHideBtn'),function(){input.hideEdge=true;},null);
+/* 骨：刺す・かわす・連打を兼ねる単発ボタン(2026-09-21追加、Bキーと同じ)。
+   連打しやすいよう左右2個のボタンにして、どちらを押しても同じ
+   input.boneTapEdgeを立てる(2026-09-21改修、#carryHandsの両手連打UIと同じ) */
+const elBoneUi=document.getElementById('boneUi'),
+      elBoneBtnL=document.getElementById('boneBtnL'),elBoneBtnR=document.getElementById('boneBtnR'),
+      elBoneLabel=document.getElementById('boneLabel'),
+      elBoneGaugeWrap=document.getElementById('boneGaugeWrap'),
+      elBoneGaugeFill=document.getElementById('boneGaugeFill'),
+      elBoneGaugeLabel=document.getElementById('boneGaugeLabel');
+bindBtn(elBoneBtnL,function(){input.boneTapEdge=true;},null);
+bindBtn(elBoneBtnR,function(){input.boneTapEdge=true;},null);
 
 /* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
    CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
@@ -8797,6 +9193,13 @@ function checkEnd(){
   if(rest.length===0){
     const esc=students.filter(function(s){ return s.state==='escaped'; }).length;
     finish(esc>0?'生徒の勝ち':'先生の勝ち',esc);
+    return;
+  }
+  /* 残っている生徒が全員反省椅子に座っている状態なら、もう誰も助けに
+     行けないのでそこで即座に試合終了とする(2026-09-21追加。それまでは
+     各自の「居残り確定」タイマーが切れるまで待つ必要があった) */
+  if(rest.every(function(s){ return s.state==='seated'; })){
+    finish('先生の勝ち',0);
   }
 }
 
@@ -10712,7 +11115,7 @@ function aiTeacher(dt){
     if(t.atkWindow<=0&&t.blinkLeft<2){ t.stun=2.4; t.blinkLeft=2; t.abCd=KINDS.nurse.cd; } }
   if(t.rush2>0) return;
   if(updVault(t,dt)) return;
-  if(t.stun>0||t.wipe>0||t.dive>0){ t.aiCharge=0; t.charge=0; return; }
+  if(t.stun>0||t.wipe>0||t.dive>0||t.duel){ t.aiCharge=0; t.charge=0; return; }
   /* 溜め中は棒立ちで威嚇（生徒に見える） */
   if(t.aiCharge>0){
     t.aiCharge-=dt; t.charge=Math.min(1,t.charge+dt*1.15);
@@ -11888,7 +12291,7 @@ function tick(now){
   const mover=puppet||me;
   const canMove=(role==='teacher')?(teacher.stun<=0&&teacher.wipe<=0&&teacher.dive<=0&&
                 teacher.rush2<=0&&teacher.blink<=0&&teacher.pounce<=0&&teacher.leap<=0&&
-                teacher.dnLeap<=0&&teacher.dnBreak<=0&&(teacher.pdFinisherT||0)<=0)
+                teacher.dnLeap<=0&&teacher.dnBreak<=0&&(teacher.pdFinisherT||0)<=0&&!teacher.duel)
                 :(me.state==='free'&&!me.hide&&!me.trapped&&me.freeze<=0&&
                   !(me.drone>0)&&!(me.tackle>0)&&!me.crowActive&&!healFrozen(me));
 
@@ -12369,6 +12772,8 @@ function tick(now){
       netApplyStudentInput(s,netInputs[s.netSlot],dt);
     } else aiStudent(s,dt);
   }
+  updBoneDuel(dt);
+  updBoneUi();
   if(netMode==='host') netHostBroadcastSnapshot(dt);
 
   /* --- タイマー --- */
@@ -12532,6 +12937,7 @@ function tick(now){
     if(s.allyHealLock){ s.allyHealAge=(s.allyHealAge||0)+dt; if(s.allyHealAge>0.2) s.allyHealLock=false; }
     else s.allyHealAge=0;
     updItemMesh(s);
+    updBoneHeadMesh(s);
     /* 授業態度の悪化(sloppy)で治療速度を落とすデバフの持続時間だけ減っていく */
     if(s.healBoostT>0) s.healBoostT-=dt;
     /* 気配鋭敏(stridor)：負傷している生徒の位置が距離に関わらず常にわかる */
@@ -12719,6 +13125,7 @@ function tick(now){
      updItemUse()側で0.3秒ずつ立て直す方式(2026-09-11追加) */
   teacher.fanSlowT=Math.max(0,(teacher.fanSlowT||0)-dt);
   teacher.speed=teacher.base*(teacher.boost>0?1.5:1)*((teacher.slowT>0)?0.8:1)*
+    (teacher.boneSlowT>0?0.1:1)*
     (teacher.shadow>0?0.86:1)*(teacher.invis>0?1.35:1)*(teacher.wrath>0?1.1:1)*
     (teacher.crouch>0?0.82:1)*(1+(teacher.scentBonus||0))*(1+(teacher.blood||0))*
     (teacher.cloak>0?1.32:1)*(teacher.mistBoost||1)*
@@ -12879,6 +13286,7 @@ function tick(now){
   updWalls(dt);
   updTaskLocks(dt);
   updItemBoxes(dt);
+  updBonePiles(dt);
   /* 新要素8種(2026-09-13)のうち、host権威で毎フレーム進める6件
      (放送室ジャック・隠れロッカーは既存の各所に直接埋め込み済み) */
   updSciSwitches(dt);
@@ -13285,6 +13693,7 @@ let netDirtyPallets=[];       // host: 直近に状態が変わった板 [idx,st
 let netDirtyBoxes=[];         // host: 直近に中身が取られたアイテムボックスのidx
 let netSendT=0;               // host: スナップショット送信タイマー
 let netMashCount=0;           // client: 前回送信からの連打回数
+let netBoneTapCount=0;        // client: 前回送信からの骨ボタン連打回数
 let netLastSnap=null;         // client: 直近に受け取ったスナップショット
 let netPrevGateOpen=false;    // client: 門が開いた瞬間を検知する用
 let netSeenToastId=0;         // client: 既に表示したトーストのID
@@ -14721,6 +15130,11 @@ function netMashN(s){
   const inp=netInputs[s.netSlot]; if(!inp||!inp.mashN) return 0;
   const n=inp.mashN; inp.mashN=0; return n;
 }
+function netBoneTapN(s){
+  if(s.netSlot===undefined) return 0;
+  const inp=netInputs[s.netSlot]; if(!inp||!inp.boneTapN) return 0;
+  const n=inp.boneTapN; inp.boneTapN=0; return n;
+}
 function netApplyStudentInput(s,inp,dt){
   s.itemHoldInput=!!(inp&&inp.itemHold);
   /* 使いカラス/ハンディファンの個人入力(2026-09-11追加)。ラストスパートの
@@ -14851,7 +15265,10 @@ function netHostBroadcastSnapshot(dt){
       mnSealKind:teacher.mnSealKind||'', mnSealIdx:(teacher.mnSealIdx===undefined?-1:teacher.mnSealIdx),
       mnSealOn:!!(teacher.mnSealT>0),
       em:(teacher.em===undefined?-1:teacher.em),
-      emT:Math.round((teacher.emT||0)*100)/100 } },
+      emT:Math.round((teacher.emT||0)*100)/100,
+      /* 骨の刺し合い(2026-09-21追加)。duelはnullかプレーンオブジェクトのみで
+         循環参照を持たないので、そのままスナップショットに乗せて良い */
+      bone:teacher.bone||0, duel:teacher.duel||null } },
     /* 2vs8モード：2人目の先生は固有能力を使わないので同期する情報は最小限
        (座標・向き・運搬中かどうか)のみで足りる(2026-09-11) */
     tea2: teacher2?{ x:teacher2.x, z:teacher2.z, yaw:teacher2.yaw,
@@ -14888,7 +15305,8 @@ function netHostBroadcastSnapshot(dt){
         catfeetT:s.catfeetT||0, lastgaspT:s.lastgaspT||0,
         /* エモート(踊り)：どのエモートを何秒目まで再生しているか、の2つだけ
            配れば他の参加者の画面でも同じ振り付けが再現できる(2026-09-15) */
-        em:(s.em===undefined?-1:s.em), emT:Math.round((s.emT||0)*100)/100 } };
+        em:(s.em===undefined?-1:s.em), emT:Math.round((s.emT||0)*100)/100,
+        bone:s.bone||0, boneMashN:s.boneMashN||0, duel:s.duel||null } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -14897,6 +15315,10 @@ function netHostBroadcastSnapshot(dt){
   };
   if(netDirtyPallets.length){ snap.pal=netDirtyPallets; netDirtyPallets=[]; }
   if(netDirtyBoxes.length){ snap.box=netDirtyBoxes; netDirtyBoxes=[]; }
+  /* 青鬼先生の仲間(oniAllies)は今まで参加者側に一切配信されておらず、
+     オンライン対戦だと注射を打たれた生徒がそのまま消えるだけで青鬼が
+     見えない不具合があった(2026-09-21修正)。位置・向きだけ軽量に配る */
+  if(oniAllies.length) snap.oni=oniAllies.map(function(o){ return {x:o.x,z:o.z,yaw:o.yaw}; });
   netEvents=[];
   netBroadcast(snap);
 }
@@ -14919,8 +15341,29 @@ function netApplyBoxDirty(idx){
   const b=itemBoxes[idx]; if(!b) return;
   b.taken=true; b.g.visible=false;
 }
+/* 参加者(クライアント)側で見せるだけの青鬼の仲間モデル一覧。当たり判定は
+   ホスト側のoniAlliesが権威で持つので、こちらは位置・向きの見た目だけ
+   同期して再現する(2026-09-21追加、oniAllies同期不足の修正) */
+let netOniMeshes=[];
+function netApplyOni(list){
+  if(!list||!list.length){
+    if(netOniMeshes.length){ netOniMeshes.forEach(function(g){ scene.remove(g); }); netOniMeshes=[]; }
+    return;
+  }
+  while(netOniMeshes.length<list.length){
+    const g=person({uniform:0x2f5aa8,skin:0x4a78c8,hair:0x1c2a44,accent:0x1c3a70,
+      tall:true,body:'oni',hairStyle:'none',eye:0xffe14a});
+    scene.add(g); netOniMeshes.push(g);
+  }
+  while(netOniMeshes.length>list.length){ scene.remove(netOniMeshes.pop()); }
+  list.forEach(function(o,i){
+    const g=netOniMeshes[i];
+    g.position.set(o.x,0,o.z); g.rotation.y=o.yaw;
+  });
+}
 function netInterpolate(dt){
   const snap=netLastSnap; if(!snap) return;
+  netApplyOni(snap.oni);
   const rate=Math.min(1,dt*10);
   for(let i=0;i<students.length;i++){
     const s=students[i], tgt=snap.stu&&snap.stu[i]; if(!tgt) continue;
@@ -14928,6 +15371,7 @@ function netInterpolate(dt){
     s.grabber=(tgt.f.grabTea2&&teacher2)?teacher2:null;
     s.mesh.visible=!tgt.f.hide&&!tgt.f.crowActive;
     updItemMesh(s);
+    updBoneHeadMesh(s);
     /* 参加者(クライアント)側は自分でupdItemUse()を回さないため、
        懐中電灯ビームの見た目はホストのスナップショット(f.fl)に
        乗せてもらう簡易版(アドオン無しの基本射程13mで固定表示) */
@@ -15067,6 +15511,22 @@ function netClientTick(dt){
   elapsed+=dt; lookIdle+=dt;
   netInterpolate(dt);
   updPallets(dt);
+  updBonePiles(dt);
+  updBoneUi();
+
+  /* 反省椅子・脱落後の観戦(tick()側にしか無く、オンライン参加者は力尽きても
+     ずっと自分の遺体を見たまま動けなくなっていた不具合を修正、2026-09-21)。
+     ロジックはtick()の同名ブロックと同じ */
+  if(me.state==='seated'||me.state==='out'||me.state==='escaped'){
+    if(input.mash||input.altEdge){
+      const pool=[me].concat(students.filter(function(x){
+        return x!==me&&(x.state==='free'||x.state==='downed'); }));
+      if(pool.length>1){
+        specIdx=(specIdx+1)%pool.length; specTarget=pool[specIdx];
+        toast(specTarget===me?'観戦：自分の視点':'観戦：'+specTarget.name);
+      }
+    }
+  } else specTarget=null;
 
   let fx1=0,fz1=0;
   if(keys.KeyW) fz1+=1; if(keys.KeyS) fz1-=1;
@@ -15141,6 +15601,9 @@ function netClientTick(dt){
 
   netSendT-=dt;
   if(input.mash){ netMashCount++; }
+  /* 骨の刺し合いボタンは判定が全部ホスト側(updBoneDuel)にあるので、自分の
+     連打回数を数えて送るだけ(mashNと同じ方式、2026-09-21追加) */
+  if(input.boneTapEdge){ netBoneTapCount++; input.boneTapEdge=false; }
   if(netSendT<=0&&netHostConn&&netHostConn.open){
     netSendT=1/18;
     /* 使いカラスの操舵・減速、ハンディファンの狙う向き(カメラyaw)も個人入力
@@ -15151,7 +15614,7 @@ function netClientTick(dt){
       act:!!input.act, altEdge:!!input.altEdge, abEdge:!!input.abEdge, ab2Edge:!!input.ab2Edge,
       /* ロッカーに隠れる/出る専用キー(2026-09-18追加、hideEdge) */
       hideEdge:!!input.hideEdge,
-      itemHold:!!input.itemHold, mashN:netMashCount,
+      itemHold:!!input.itemHold, mashN:netMashCount, boneTapN:netBoneTapCount,
       crowTurn:ct, crowSlow:running, fanYaw:camYaw,
       /* 一ノ瀬「ラストスパート」の持続時間は個人設定なので、発動フラグと
          一緒に自分の現在値を毎回乗せておく。ホストが自分の代わりに
@@ -15166,7 +15629,7 @@ function netClientTick(dt){
          「これを再生したい」という要求を送るだけ(2026-09-15追加) */
       emote:(input.emoteEdge===undefined?-1:input.emoteEdge),
       emoteStop:!!input.emoteStopEdge});
-    netMashCount=0;
+    netMashCount=0; netBoneTapCount=0;
     input.emoteEdge=-1; input.emoteStopEdge=false;
   }
   input.actEdge=false; input.altEdge=false; input.abEdge=false; input.ab2Edge=false;
