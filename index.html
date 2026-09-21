@@ -3303,7 +3303,7 @@ function updBonePiles(dt){
     const n=boneTapCount(e,dt,e===teacher?2.6:2.0);
     if(n>0){
       e.boneMashN=(e.boneMashN||0)+n;
-      if(e.boneMashN>=15){
+      if(e.boneMashN>=30){
         e.boneMashN=0; e.bone=(e.bone||0)+1;
         toast((e===teacher?'先生':e.name)+'が骨を1本手に入れた（'+e.bone+'/2）');
         beep(560,0.18,'triangle',0.09);
@@ -3340,7 +3340,7 @@ function boneSyncDuel(){
   teacher.duel={role:bd.teacherAtk?'attacker':'defender',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
 }
 function boneDuelStart(s,teacherAtk){
-  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:15};
+  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5};
   s.state='duel'; s.path=[];
   boneSyncDuel();
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
@@ -3422,8 +3422,12 @@ function updBoneFailPenalty(dt){
   }
 }
 /* 生徒を担いでいる間は両手がふさがっているので、先生は骨で刺しかかれない
-   (2026-09-21：botが担いだままでも刺せてしまっていた不具合を修正) */
+   (2026-09-21：botが担いだままでも刺せてしまっていた不具合を修正)。
+   また、先生がスタン中は新しい刺し合いを一切始められない
+   (2026-09-21追加：スタン中にさらに刺されて二重にペナルティが入って
+   しまっていた不具合を修正) */
 function boneScanTrigger(dt){
+  if(teacher.stun>0) return;
   if(teacher.bone>0&&!teacher.carrying){
     const s=boneNearestTarget(teacher);
     if(s){
@@ -3433,7 +3437,10 @@ function boneScanTrigger(dt){
   }
   for(const s of students){
     if(!(s.bone>0)||s.state!=='free'||s.hide) continue;
-    if(Math.hypot(s.x-teacher.x,s.z-teacher.z)>3.0) continue;
+    /* 先生が誰かを担いでいる間は距離500%増(3m→18m)で刺しやすくする
+       (2026-09-21追加、逃げ場の少ない担がれ中の仲間を助けやすくする狙い) */
+    const range=teacher.carrying?18.0:3.0;
+    if(Math.hypot(s.x-teacher.x,s.z-teacher.z)>range) continue;
     const n=boneTapCount(s,dt,1.8);
     if(n>0){
       /* 先生が誰かを担いでいる間は両手がふさがっていて避けようが無いので、
@@ -3465,7 +3472,7 @@ function updBoneDuel(dt){
     const n=boneTapCount(defender,dt,defRate);
     if(n>0){
       if(teacherIsDefender){
-        bd.phase='fight'; bd.gauge=15;
+        bd.phase='fight'; bd.gauge=22.5;
         toast('先生がかわした！そのまま骨の取り合いに！');
         boneSyncDuel();
         return;
@@ -3474,19 +3481,19 @@ function updBoneDuel(dt){
     }
     if(bd.t<=0){
       if(teacherIsDefender){ boneDuelTeacherFail(); return; }
-      bd.phase='fight'; bd.gauge=15; toast('骨の取り合い開始！連打！');
+      bd.phase='fight'; bd.gauge=22.5; toast('骨の取り合い開始！連打！');
     }
     boneSyncDuel();
     return;
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
-  /* botの攻防戦(連打)の強さを2倍に引き上げ(2026-09-21) */
-  const atkRate=(bd.teacherAtk?3.2:2.8)*2, defRate=(bd.teacherAtk?3.0:3.0)*2;
+  /* botの攻防戦(連打)の強さを2倍→さらに120%アップ(2.2倍)に引き上げ(2026-09-21) */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*2*2.2, defRate=(bd.teacherAtk?3.0:3.0)*2*2.2;
   const na=boneTapCount(atkE,dt,atkRate), nd=boneTapCount(defE,dt,defRate);
-  bd.gauge=Math.max(0,Math.min(30,bd.gauge+na-nd));
+  bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
   boneSyncDuel();
-  if(bd.gauge>=30||bd.gauge<=0){
-    const attackerWonBattle=(bd.gauge>=30);
+  if(bd.gauge>=45||bd.gauge<=0){
+    const attackerWonBattle=(bd.gauge>=45);
     const teacherWon=attackerWonBattle?bd.teacherAtk:!bd.teacherAtk;
     boneDuelResolve(teacherWon);
   }
@@ -3499,14 +3506,14 @@ function updBoneUi(){
     show=true; gaugeShow=(d.phase==='fight');
     label=(d.phase==='dodge')?(d.role==='defender'?'かわせ！':'かわされるか…'):'連打！';
     if(gaugeShow){
-      gaugePct=Math.max(0,Math.min(100,(d.gauge/30)*100));
+      gaugePct=Math.max(0,Math.min(100,(d.gauge/45)*100));
       gaugeLabel=(d.role==='attacker')?'押し切れ！':'押し返せ！';
     }
   } else if(e){
     const nearPile=e.state!=='duel'&&!e.hide&&bonePiles.some(function(b){ return Math.hypot(e.x-b.x,e.z-b.z)<2.3; });
     if(nearPile&&(e.bone||0)<2){
       show=true; label='骨を集める（'+(e.bone||0)+'/2）'; gaugeShow=true;
-      gaugePct=Math.max(0,Math.min(100,((e.boneMashN||0)/15)*100));
+      gaugePct=Math.max(0,Math.min(100,((e.boneMashN||0)/30)*100));
       gaugeLabel='連打！';
     } else if(e.bone>0){
       const near=(role==='teacher')
