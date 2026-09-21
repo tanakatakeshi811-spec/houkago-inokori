@@ -3242,6 +3242,30 @@ function updItemBoxes(dt){
    (2026-09-21追加、2026-09-21改修：拾い方を接触即時から連打式に、所持数を
    1→2に、山を無限在庫に変更) */
 const boneTex=new THREE.TextureLoader().load('assets/bone_pile.png');
+/* 骨を持っている間、頭に骨ペンが刺さって見える演出用テクスチャ
+   (2026-09-21追加。1本持っていれば1本、2本なら2本刺さる) */
+const bonePenTex=new THREE.TextureLoader().load('assets/bone_pen.png');
+function updBoneHeadMesh(e){
+  const head=e&&e.mesh&&e.mesh.userData&&e.mesh.userData.head;
+  if(!head) return;
+  const want=Math.max(0,Math.min(2,e.bone||0));
+  if(!e.bonePens){
+    e.bonePens=[0,1].map(function(){
+      const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:bonePenTex,transparent:true,depthTest:true}));
+      spr.scale.set(0.42,0.42*747/1084,1);
+      spr.visible=false;
+      head.add(spr);
+      return spr;
+    });
+  }
+  e.bonePens.forEach(function(spr,i){
+    spr.visible=i<want;
+    if(i<want){
+      spr.position.set(i===0?-0.13:0.13,0.42,0.1);
+      spr.rotation.z=i===0?0.2:-0.2;
+    }
+  });
+}
 const bonePiles=[];
 (function(){
   /* itemBoxesで既に「walkableな床に近い」ことを確認済みの座標プールを
@@ -3294,6 +3318,7 @@ function updBonePiles(dt){
     b.glow.rotation.z+=dt*0.3;
     b.beam.material.opacity=pulse*0.7;
   });
+  updBoneHeadMesh(teacher);
   if(netMode==='client') return;   /* 収集判定はホスト権威 */
   const all=students.filter(function(s){ return s.state==='free'&&!s.hide; }).concat([teacher]);
   for(const e of all){
@@ -3326,6 +3351,20 @@ function boneTapCount(e,dt,botRate){
   if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
   return (Math.random()<dt*botRate)?1:0;
 }
+/* 攻防戦(ゲージの押し合い)専用のbot挙動：それまでの「毎フレーム確率で1回」
+   だと強すぎたため、3秒に1回だけまとめて3回分カウントする、という
+   一定リズムの断続的な入力に作り直した(2026-09-21)。人間(ローカル/
+   リモート)側の挙動はboneTapCount()と同じ */
+function boneFightTapCount(e,dt){
+  if(e===me){
+    if(input.boneTapEdge){ input.boneTapEdge=false; return 1; }
+    return 0;
+  }
+  if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
+  e.boneBotT=(e.boneBotT===undefined?3:e.boneBotT)-dt;
+  if(e.boneBotT<=0){ e.boneBotT=3; return 3; }
+  return 0;
+}
 function boneNearestTarget(t){
   let best=null,bd=1e9;
   for(const s of students){
@@ -3342,7 +3381,7 @@ function boneSyncDuel(){
 }
 function boneDuelStart(s,teacherAtk){
   boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5};
-  s.state='duel'; s.path=[];
+  s.state='duel'; s.path=[]; s.boneBotT=undefined; teacher.boneBotT=undefined;
   boneSyncDuel();
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
   beep(300,0.2,'square',0.1);
@@ -3489,8 +3528,9 @@ function updBoneDuel(dt){
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
   /* botの攻防戦(連打)の強さを2倍→さらに120%アップ(2.2倍)に引き上げ(2026-09-21) */
-  const atkRate=(bd.teacherAtk?3.2:2.8)*2*2.2, defRate=(bd.teacherAtk?3.0:3.0)*2*2.2;
-  const na=boneTapCount(atkE,dt,atkRate), nd=boneTapCount(defE,dt,defRate);
+  /* bot側は強すぎたので確率連打をやめ、3秒に1回まとめて3回分だけ入る
+     一定リズムに変更(2026-09-21) */
+  const na=boneFightTapCount(atkE,dt), nd=boneFightTapCount(defE,dt);
   bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
   boneSyncDuel();
   if(bd.gauge>=45||bd.gauge<=0){
@@ -9148,6 +9188,13 @@ function checkEnd(){
   if(rest.length===0){
     const esc=students.filter(function(s){ return s.state==='escaped'; }).length;
     finish(esc>0?'生徒の勝ち':'先生の勝ち',esc);
+    return;
+  }
+  /* 残っている生徒が全員反省椅子に座っている状態なら、もう誰も助けに
+     行けないのでそこで即座に試合終了とする(2026-09-21追加。それまでは
+     各自の「居残り確定」タイマーが切れるまで待つ必要があった) */
+  if(rest.every(function(s){ return s.state==='seated'; })){
+    finish('先生の勝ち',0);
   }
 }
 
@@ -12885,6 +12932,7 @@ function tick(now){
     if(s.allyHealLock){ s.allyHealAge=(s.allyHealAge||0)+dt; if(s.allyHealAge>0.2) s.allyHealLock=false; }
     else s.allyHealAge=0;
     updItemMesh(s);
+    updBoneHeadMesh(s);
     /* 授業態度の悪化(sloppy)で治療速度を落とすデバフの持続時間だけ減っていく */
     if(s.healBoostT>0) s.healBoostT-=dt;
     /* 気配鋭敏(stridor)：負傷している生徒の位置が距離に関わらず常にわかる */
@@ -15262,6 +15310,10 @@ function netHostBroadcastSnapshot(dt){
   };
   if(netDirtyPallets.length){ snap.pal=netDirtyPallets; netDirtyPallets=[]; }
   if(netDirtyBoxes.length){ snap.box=netDirtyBoxes; netDirtyBoxes=[]; }
+  /* 青鬼先生の仲間(oniAllies)は今まで参加者側に一切配信されておらず、
+     オンライン対戦だと注射を打たれた生徒がそのまま消えるだけで青鬼が
+     見えない不具合があった(2026-09-21修正)。位置・向きだけ軽量に配る */
+  if(oniAllies.length) snap.oni=oniAllies.map(function(o){ return {x:o.x,z:o.z,yaw:o.yaw}; });
   netEvents=[];
   netBroadcast(snap);
 }
@@ -15284,8 +15336,29 @@ function netApplyBoxDirty(idx){
   const b=itemBoxes[idx]; if(!b) return;
   b.taken=true; b.g.visible=false;
 }
+/* 参加者(クライアント)側で見せるだけの青鬼の仲間モデル一覧。当たり判定は
+   ホスト側のoniAlliesが権威で持つので、こちらは位置・向きの見た目だけ
+   同期して再現する(2026-09-21追加、oniAllies同期不足の修正) */
+let netOniMeshes=[];
+function netApplyOni(list){
+  if(!list||!list.length){
+    if(netOniMeshes.length){ netOniMeshes.forEach(function(g){ scene.remove(g); }); netOniMeshes=[]; }
+    return;
+  }
+  while(netOniMeshes.length<list.length){
+    const g=person({uniform:0x2f5aa8,skin:0x4a78c8,hair:0x1c2a44,accent:0x1c3a70,
+      tall:true,body:'oni',hairStyle:'none',eye:0xffe14a});
+    scene.add(g); netOniMeshes.push(g);
+  }
+  while(netOniMeshes.length>list.length){ scene.remove(netOniMeshes.pop()); }
+  list.forEach(function(o,i){
+    const g=netOniMeshes[i];
+    g.position.set(o.x,0,o.z); g.rotation.y=o.yaw;
+  });
+}
 function netInterpolate(dt){
   const snap=netLastSnap; if(!snap) return;
+  netApplyOni(snap.oni);
   const rate=Math.min(1,dt*10);
   for(let i=0;i<students.length;i++){
     const s=students[i], tgt=snap.stu&&snap.stu[i]; if(!tgt) continue;
@@ -15293,6 +15366,7 @@ function netInterpolate(dt){
     s.grabber=(tgt.f.grabTea2&&teacher2)?teacher2:null;
     s.mesh.visible=!tgt.f.hide&&!tgt.f.crowActive;
     updItemMesh(s);
+    updBoneHeadMesh(s);
     /* 参加者(クライアント)側は自分でupdItemUse()を回さないため、
        懐中電灯ビームの見た目はホストのスナップショット(f.fl)に
        乗せてもらう簡易版(アドオン無しの基本射程13mで固定表示) */
@@ -15434,6 +15508,20 @@ function netClientTick(dt){
   updPallets(dt);
   updBonePiles(dt);
   updBoneUi();
+
+  /* 反省椅子・脱落後の観戦(tick()側にしか無く、オンライン参加者は力尽きても
+     ずっと自分の遺体を見たまま動けなくなっていた不具合を修正、2026-09-21)。
+     ロジックはtick()の同名ブロックと同じ */
+  if(me.state==='seated'||me.state==='out'||me.state==='escaped'){
+    if(input.mash||input.altEdge){
+      const pool=[me].concat(students.filter(function(x){
+        return x!==me&&(x.state==='free'||x.state==='downed'); }));
+      if(pool.length>1){
+        specIdx=(specIdx+1)%pool.length; specTarget=pool[specIdx];
+        toast(specTarget===me?'観戦：自分の視点':'観戦：'+specTarget.name);
+      }
+    }
+  } else specTarget=null;
 
   let fx1=0,fz1=0;
   if(keys.KeyW) fz1+=1; if(keys.KeyS) fz1-=1;
