@@ -3351,18 +3351,21 @@ function boneTapCount(e,dt,botRate){
   if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
   return (Math.random()<dt*botRate)?1:0;
 }
-/* 攻防戦(ゲージの押し合い)専用のbot挙動：それまでの「毎フレーム確率で1回」
-   だと強すぎたため、3秒に1回だけまとめて3回分カウントする、という
-   一定リズムの断続的な入力に作り直した(2026-09-21)。人間(ローカル/
+/* 攻防戦(ゲージの押し合い)専用のbot挙動：普段は毎フレーム確率で連打しつつ
+   (2026-09-21再修正：前回の「3秒に1回だけ」は誤りで、常時の連打自体は
+   維持したまま強さだけ70%落とす方が正しかった)、3回に1回はその3回分の
+   ゲージがまとめて追加され、実質6回分貯まる(1+1+4)。人間(ローカル/
    リモート)側の挙動はboneTapCount()と同じ */
-function boneFightTapCount(e,dt){
+function boneFightTapCount(e,dt,botRate){
   if(e===me){
     if(input.boneTapEdge){ input.boneTapEdge=false; return 1; }
     return 0;
   }
   if(netMode==='host'&&e.netSlot!==undefined) return netBoneTapN(e);
-  e.boneBotT=(e.boneBotT===undefined?3:e.boneBotT)-dt;
-  if(e.boneBotT<=0){ e.boneBotT=3; return 3; }
+  if(Math.random()<dt*botRate){
+    e.boneBotHitN=(e.boneBotHitN||0)+1;
+    return (e.boneBotHitN%3===0)?4:1;
+  }
   return 0;
 }
 function boneNearestTarget(t){
@@ -3381,7 +3384,7 @@ function boneSyncDuel(){
 }
 function boneDuelStart(s,teacherAtk){
   boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5};
-  s.state='duel'; s.path=[]; s.boneBotT=undefined; teacher.boneBotT=undefined;
+  s.state='duel'; s.path=[]; s.boneBotHitN=0; teacher.boneBotHitN=0;
   boneSyncDuel();
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
   beep(300,0.2,'square',0.1);
@@ -3527,10 +3530,12 @@ function updBoneDuel(dt){
     return;
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
-  /* botの攻防戦(連打)の強さを2倍→さらに120%アップ(2.2倍)に引き上げ(2026-09-21) */
-  /* bot側は強すぎたので確率連打をやめ、3秒に1回まとめて3回分だけ入る
-     一定リズムに変更(2026-09-21) */
-  const na=boneFightTapCount(atkE,dt), nd=boneFightTapCount(defE,dt);
+  /* botの攻防戦(連打)の強さ：2倍→120%アップ(2.2倍、計4.4倍)まで上げた結果
+     強すぎたため、そこから70%落として1.32倍にした(2026-09-21再修正)。
+     常時の連打頻度自体はboneFightTapCount()で維持しつつ、3回に1回だけ
+     ボーナスでゲージがまとめて増える */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3;
+  const na=boneFightTapCount(atkE,dt,atkRate), nd=boneFightTapCount(defE,dt,defRate);
   bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
   boneSyncDuel();
   if(bd.gauge>=45||bd.gauge<=0){
