@@ -3340,6 +3340,22 @@ function boneDuelStart(s,teacherAtk){
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
   beep(300,0.2,'square',0.1);
 }
+/* 生徒を担いでいる先生を刺した時の専用処理：両手がふさがっていて避けようが
+   無いので、かわし・攻防戦を一切挟まず一方的に骨が刺さり必ずスタンする。
+   担がれていた生徒はその場に落ちてダウンする(掃除ロッカーの直撃と同じ
+   挙動、2026-09-21追加) */
+function boneDuelCarryingStun(s){
+  s.bone=Math.max(0,(s.bone||0)-1);
+  teacher.stun=Math.max(teacher.stun,6); teacher.path=[]; teacher.dash=0; teacher.charge=0;
+  const carried=teacher.carrying;
+  if(carried){
+    teacher.carrying=null;
+    carried.state='downed'; carried.downT=0; carried.mesh.visible=true;
+    carried.x=teacher.x; carried.z=teacher.z;
+  }
+  toast(s.name+'が担がれた仲間ごと先生を刺した！先生がよろけた');
+  beep(220,0.3,'sawtooth',0.12);
+}
 function boneDuelEnd(){
   const bd=boneDuel; if(!bd) return;
   const atkE=bd.teacherAtk?teacher:bd.student;
@@ -3399,8 +3415,10 @@ function updBoneFailPenalty(dt){
     }
   }
 }
+/* 生徒を担いでいる間は両手がふさがっているので、先生は骨で刺しかかれない
+   (2026-09-21：botが担いだままでも刺せてしまっていた不具合を修正) */
 function boneScanTrigger(dt){
-  if(teacher.bone>0){
+  if(teacher.bone>0&&!teacher.carrying){
     const s=boneNearestTarget(teacher);
     if(s){
       const n=boneTapCount(teacher,dt,2.4);
@@ -3411,7 +3429,15 @@ function boneScanTrigger(dt){
     if(!(s.bone>0)||s.state!=='free'||s.hide) continue;
     if(Math.hypot(s.x-teacher.x,s.z-teacher.z)>3.0) continue;
     const n=boneTapCount(s,dt,1.8);
-    if(n>0){ boneDuelStart(s,false); return; }
+    if(n>0){
+      /* 先生が誰かを担いでいる間は両手がふさがっていて避けようが無いので、
+         駆け引き無しで一方的に骨が刺さり必ずスタンする(2026-09-21追加)。
+         担がれていた生徒もその場に落ちてダウンする(掃除ロッカーの直撃と
+         同じ「気絶時は担いでいた生徒を落とす」挙動を踏襲) */
+      if(teacher.carrying) boneDuelCarryingStun(s);
+      else boneDuelStart(s,false);
+      return;
+    }
   }
 }
 function updBoneDuel(dt){
@@ -3448,7 +3474,8 @@ function updBoneDuel(dt){
     return;
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
-  const atkRate=bd.teacherAtk?3.2:2.8, defRate=bd.teacherAtk?3.0:3.0;
+  /* botの攻防戦(連打)の強さを2倍に引き上げ(2026-09-21) */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*2, defRate=(bd.teacherAtk?3.0:3.0)*2;
   const na=boneTapCount(atkE,dt,atkRate), nd=boneTapCount(defE,dt,defRate);
   bd.gauge=Math.max(0,Math.min(15,bd.gauge+na-nd));
   boneSyncDuel();
