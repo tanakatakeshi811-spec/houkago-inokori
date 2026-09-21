@@ -2986,17 +2986,18 @@ function updArchiveWarps(dt){
 /* ---- 3. 停電：試合中ランダムで数十秒だけ発生。画面が暗くなる代わりに
    先生の索敵(心音の届く範囲)も一緒に縮む(blackoutMul()をterrorRadius()に
    掛けるだけ、hud()側で参照) ---- */
-let blackoutT=0, blackoutCd=45+Math.random()*60;
+/* 発生率を半分に(クールタイムを2倍に)、継続時間も固定5秒に短縮(2026-09-21) */
+let blackoutT=0, blackoutCd=90+Math.random()*120;
 function blackoutMul(){ return blackoutT>0?0.4:1; }
 function updBlackout(dt){
   if(blackoutT>0){
     blackoutT=Math.max(0,blackoutT-dt);
-    if(blackoutT<=0){ blackoutCd=70+Math.random()*100; toast('明かりが戻った'); }
+    if(blackoutT<=0){ blackoutCd=140+Math.random()*200; toast('明かりが戻った'); }
     return;
   }
   blackoutCd=Math.max(0,blackoutCd-dt);
   if(blackoutCd<=0){
-    blackoutT=16+Math.random()*14;
+    blackoutT=5;
     toast('停電が起きた…しばらく視界も先生の索敵も悪くなる');
     beep(80,0.6,'sawtooth',0.14); bigNoise(0.1,0.3);
   }
@@ -6803,7 +6804,7 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
 
 function spawnAll(){
   /* 新要素8種：試合ごとに状態をリセットする(2026-09-13追加) */
-  blackoutT=0; blackoutCd=45+Math.random()*60;
+  blackoutT=0; blackoutCd=90+Math.random()*120;
   spookyCd=25+Math.random()*45;
   rumors=[]; rumorCd=0;
   labShareT=0; labShareCd=0;
@@ -7008,10 +7009,13 @@ addEventListener('keydown',function(e){
     if(e.code==='KeyV') input.stopEdge=true;
     if(e.code==='KeyC') input.itemHold=true;
     if(e.code==='KeyH') input.hideEdge=true;
-    /* G キーでエモート(踊り)メニューを開閉(2026-09-15) */
-    if(e.code==='KeyG'&&started&&!over) emoteMenuToggle();
+    /* T キーでエモート(踊り)メニューを開閉(2026-09-15、2026-09-21にGから
+       Tへ変更。Gは骨のボタンに明け渡した) */
+    if(e.code==='KeyT'&&started&&!over) emoteMenuToggle();
     if(e.code==='KeyF'||e.code==='KeyJ') input.mash=true;
-    if(e.code==='KeyB') input.boneTapEdge=true;
+    /* 骨：取る・刺す・攻防戦の連打はG/Hキー(2026-09-21、Bキーから変更。
+       左右2個ボタンのUIに合わせて両手で交互に叩ける2キーにした) */
+    if(e.code==='KeyG'||e.code==='KeyH'||e.code==='KeyB') input.boneTapEdge=true;
     if(e.code==='Space'){ input.tap=true; e.preventDefault(); }
   }
   keys[e.code]=true;
