@@ -167,13 +167,16 @@ canvas{display:block}
    相手が近い間だけ画面中央下寄りに専用ボタン(骨の拳画像)を出す。
    刺し合い(連打の攻防)中はゲージも一緒に出す(2026-09-21追加) */
 #boneUi{position:fixed;left:50%;top:74%;transform:translate(-50%,-50%);
-  display:none;flex-direction:column;align-items:center;gap:6px;z-index:6}
+  display:none;flex-direction:column;align-items:center;gap:8px;z-index:6}
 #boneUi.on{display:flex}
 #boneLabel{font-size:13px;color:var(--yellow);text-shadow:0 1px 4px #000;letter-spacing:.06em}
-#boneBtn{width:74px;height:74px;user-select:none;touch-action:none;
+/* 連打しやすいよう左右2個のボタンにする(2026-09-21、#carryHandsの
+   両手連打UIと同じ考え方) */
+#boneBtnRow{display:flex;gap:28px}
+.boneBtn{width:64px;height:64px;user-select:none;touch-action:none;
   filter:drop-shadow(0 2px 8px #000c);transition:transform .08s,filter .08s}
-#boneBtn img{width:100%;height:100%;pointer-events:none;display:block;-webkit-user-drag:none}
-#boneBtn.press{transform:scale(0.86);filter:drop-shadow(0 0 12px #e8543fdd)}
+.boneBtn img{width:100%;height:100%;pointer-events:none;display:block;-webkit-user-drag:none}
+.boneBtn.press{transform:scale(0.86);filter:drop-shadow(0 0 12px #e8543fdd)}
 #boneGaugeWrap{position:fixed;left:50%;top:20%;transform:translateX(-50%);
   width:260px;display:none;z-index:6;text-align:center}
 #boneGaugeWrap.on{display:block}
@@ -812,7 +815,10 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   </div>
   <div id="boneUi" class="pe">
     <div id="boneLabel"></div>
-    <div id="boneBtn"><img src="assets/bone_fist.png" alt="" draggable="false"></div>
+    <div id="boneBtnRow">
+      <div id="boneBtnL" class="boneBtn"><img src="assets/bone_fist.png" alt="" draggable="false"></div>
+      <div id="boneBtnR" class="boneBtn"><img src="assets/bone_fist.png" alt="" draggable="false"></div>
+    </div>
   </div>
   <div id="stam"><i></i></div>
   <div id="flAimGauge"><i></i></div>
@@ -3334,7 +3340,7 @@ function boneSyncDuel(){
   teacher.duel={role:bd.teacherAtk?'attacker':'defender',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
 }
 function boneDuelStart(s,teacherAtk){
-  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:7.5};
+  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:15};
   s.state='duel'; s.path=[];
   boneSyncDuel();
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
@@ -3459,7 +3465,7 @@ function updBoneDuel(dt){
     const n=boneTapCount(defender,dt,defRate);
     if(n>0){
       if(teacherIsDefender){
-        bd.phase='fight'; bd.gauge=7.5;
+        bd.phase='fight'; bd.gauge=15;
         toast('先生がかわした！そのまま骨の取り合いに！');
         boneSyncDuel();
         return;
@@ -3468,7 +3474,7 @@ function updBoneDuel(dt){
     }
     if(bd.t<=0){
       if(teacherIsDefender){ boneDuelTeacherFail(); return; }
-      bd.phase='fight'; bd.gauge=7.5; toast('骨の取り合い開始！連打！');
+      bd.phase='fight'; bd.gauge=15; toast('骨の取り合い開始！連打！');
     }
     boneSyncDuel();
     return;
@@ -3477,10 +3483,10 @@ function updBoneDuel(dt){
   /* botの攻防戦(連打)の強さを2倍に引き上げ(2026-09-21) */
   const atkRate=(bd.teacherAtk?3.2:2.8)*2, defRate=(bd.teacherAtk?3.0:3.0)*2;
   const na=boneTapCount(atkE,dt,atkRate), nd=boneTapCount(defE,dt,defRate);
-  bd.gauge=Math.max(0,Math.min(15,bd.gauge+na-nd));
+  bd.gauge=Math.max(0,Math.min(30,bd.gauge+na-nd));
   boneSyncDuel();
-  if(bd.gauge>=15||bd.gauge<=0){
-    const attackerWonBattle=(bd.gauge>=15);
+  if(bd.gauge>=30||bd.gauge<=0){
+    const attackerWonBattle=(bd.gauge>=30);
     const teacherWon=attackerWonBattle?bd.teacherAtk:!bd.teacherAtk;
     boneDuelResolve(teacherWon);
   }
@@ -3493,7 +3499,7 @@ function updBoneUi(){
     show=true; gaugeShow=(d.phase==='fight');
     label=(d.phase==='dodge')?(d.role==='defender'?'かわせ！':'かわされるか…'):'連打！';
     if(gaugeShow){
-      gaugePct=Math.max(0,Math.min(100,(d.gauge/15)*100));
+      gaugePct=Math.max(0,Math.min(100,(d.gauge/30)*100));
       gaugeLabel=(d.role==='attacker')?'押し切れ！':'押し返せ！';
     }
   } else if(e){
@@ -7191,13 +7197,17 @@ bindBtn(document.getElementById('selfcareCancel'),function(){input.selfcareCance
 bindBtn(document.getElementById('lastReflexBtn'),function(){input.lastReflexEdge=true;},null);
 /* ロッカーに隠れる/出る：単発ボタン(2026-09-18追加、Hキーと同じ) */
 bindBtn(document.getElementById('lockerHideBtn'),function(){input.hideEdge=true;},null);
-/* 骨：刺す・かわす・連打を兼ねる単発ボタン(2026-09-21追加、Bキーと同じ) */
-const elBoneUi=document.getElementById('boneUi'),elBoneBtn=document.getElementById('boneBtn'),
+/* 骨：刺す・かわす・連打を兼ねる単発ボタン(2026-09-21追加、Bキーと同じ)。
+   連打しやすいよう左右2個のボタンにして、どちらを押しても同じ
+   input.boneTapEdgeを立てる(2026-09-21改修、#carryHandsの両手連打UIと同じ) */
+const elBoneUi=document.getElementById('boneUi'),
+      elBoneBtnL=document.getElementById('boneBtnL'),elBoneBtnR=document.getElementById('boneBtnR'),
       elBoneLabel=document.getElementById('boneLabel'),
       elBoneGaugeWrap=document.getElementById('boneGaugeWrap'),
       elBoneGaugeFill=document.getElementById('boneGaugeFill'),
       elBoneGaugeLabel=document.getElementById('boneGaugeLabel');
-bindBtn(elBoneBtn,function(){input.boneTapEdge=true;},null);
+bindBtn(elBoneBtnL,function(){input.boneTapEdge=true;},null);
+bindBtn(elBoneBtnR,function(){input.boneTapEdge=true;},null);
 
 /* ダッシュ/板を倒す/乗り越えの大きめリングHUD。走る・跳び越えるはRUN絵文字と
    CLIMB絵文字がそのまま意味的にぴったりなのでアイコンとして使い、
