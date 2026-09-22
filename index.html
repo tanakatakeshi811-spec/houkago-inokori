@@ -3338,8 +3338,17 @@ function updBonePiles(dt){
   }
 }
 /* ===== 骨の刺し合い ===== */
-const BONE_DODGE_WINDOW=0.85;
-let boneDuel=null;   // host権威: {student,teacherAtk,phase:'dodge'|'fight',t,gauge}
+/* 2026-09-22変更：以前は「かわす側(defender)だけが0.85秒以内に1回反応
+   できるか」という単発の時間切れ判定で、刺す側(attacker)はこの局面で
+   一切入力できず結果を見ているだけだった(「かわされたら無理じゃん」という
+   指摘の原因)。今は「刺す/かわす、どちらも3回先に連打した方が勝ち」の
+   レース方式に変更したため、両者が実際に連打し合って3回に届くのに
+   十分な時間が要る。BONE_DODGE_WINDOWは通常のレース決着(bot同士でも
+   平均1〜2秒程度で決着する想定)を待つための保険のタイムアウトとして
+   4.5秒に延長した(万一どちらも3回に届かないまま切れた場合のみ、
+   従来通りの既定結果で決着させる) */
+const BONE_DODGE_WINDOW=4.5;
+let boneDuel=null;   // host権威: {student,teacherAtk,phase:'dodge'|'fight',t,gauge,tHits,sHits}
 /* meがteacher/students[x]どちらでも呼べる。リモート参加者はnetBoneTapN()、
    AIは確率、ローカルの自分はinput.boneTapEdgeを1回分の入力として消費する
    （trapCheck()の「isMe/リモート/AI」3分岐と同じ考え方） */
@@ -3379,11 +3388,15 @@ function boneNearestTarget(t){
 }
 function boneSyncDuel(){
   const bd=boneDuel; if(!bd) return;
-  bd.student.duel={role:bd.teacherAtk?'defender':'attacker',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
-  teacher.duel={role:bd.teacherAtk?'attacker':'defender',phase:bd.phase,t:Math.max(0,bd.t||0),gauge:bd.gauge};
+  /* dodgeフェーズ中は各自の連打回数(3回先取レース)、fightフェーズ中は
+     共有ゲージ(gauge)をUI側で使い分ける(2026-09-22、hits/rivalHitsを追加) */
+  bd.student.duel={role:bd.teacherAtk?'defender':'attacker',phase:bd.phase,t:Math.max(0,bd.t||0),
+    gauge:bd.gauge,hits:bd.sHits||0,rivalHits:bd.tHits||0};
+  teacher.duel={role:bd.teacherAtk?'attacker':'defender',phase:bd.phase,t:Math.max(0,bd.t||0),
+    gauge:bd.gauge,hits:bd.tHits||0,rivalHits:bd.sHits||0};
 }
 function boneDuelStart(s,teacherAtk){
-  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5};
+  boneDuel={student:s,teacherAtk:teacherAtk,phase:'dodge',t:BONE_DODGE_WINDOW,gauge:22.5,tHits:0,sHits:0};
   s.state='duel'; s.path=[]; s.boneBotHitN=0; teacher.boneBotHitN=0;
   boneSyncDuel();
   toast(teacherAtk?('先生が'+s.name+'に骨を突きつけた！'):(s.name+'が先生に骨を突きつけた！'));
@@ -3505,15 +3518,25 @@ function updBoneDuel(dt){
   if(s.state!=='duel'||!students.includes(s)){ boneDuelEnd(); return; }
   if(bd.phase==='dodge'){
     bd.t-=dt;
-    /* 先生が刺される側(生徒が攻撃側)の場合だけ特別ルール：かわせても
-       逃げ切れず必ず連打の攻防戦になり、かわし損なうとboneDuelTeacherFail()の
-       重いペナルティが発生する。先生が刺す側(生徒が刺される側)は従来通り、
-       かわせればそのまま終わる */
+    /* 2026-09-22変更：「かわす/刺す」を先に3回連打を決めた方が勝つレースに
+       変更(以前は守る側だけが単発で反応する方式で、攻める側はこの局面で
+       何も入力できず「かわされたら無理じゃん」という不満の原因だった)。
+       teacher/s両方が毎フレーム連打を試み、tHits/sHitsに積み上げる。
+       taps確率はboneTapCount()の既存レート(役割ではなく本人固有の値：
+       teacher=2.2、student=2.6)をそのまま流用し、人間(ローカル/リモート)は
+       従来通り実際のボタン入力がそのまま1回分になる。
+       先生が刺される側(生徒が攻撃側)の場合だけ従来からの特別ルールを維持：
+       先生が先に3回決めても完全には逃げ切れず、そのまま連打の攻防戦に
+       突入する。生徒が先に3回決めるとboneDuelTeacherFail()の重いペナルティ。
+       先生が刺す側(生徒が防御側)は従来通り、生徒が先に3回決めればそのまま
+       終わる(完全回避)。生徒が防げず先生が先に3回決めると攻防戦に突入し、
+       生徒には攻防戦というもう一段の挽回チャンスが残る(従来の挙動を踏襲)。 */
     const teacherIsDefender=!bd.teacherAtk;
-    const defender=teacherIsDefender?teacher:s;
-    const defRate=teacherIsDefender?2.2:2.6;
-    const n=boneTapCount(defender,dt,defRate);
-    if(n>0){
+    const tn=boneTapCount(teacher,dt,2.2), sn=boneTapCount(s,dt,2.6);
+    bd.tHits=(bd.tHits||0)+tn; bd.sHits=(bd.sHits||0)+sn;
+    const defenderHits=teacherIsDefender?bd.tHits:bd.sHits;
+    const attackerHits=teacherIsDefender?bd.sHits:bd.tHits;
+    if(defenderHits>=3){
       if(teacherIsDefender){
         bd.phase='fight'; bd.gauge=22.5;
         toast('先生がかわした！そのまま骨の取り合いに！');
@@ -3522,7 +3545,15 @@ function updBoneDuel(dt){
       }
       boneDuelDodged(); return;
     }
+    if(attackerHits>=3){
+      if(teacherIsDefender){ boneDuelTeacherFail(); return; }
+      bd.phase='fight'; bd.gauge=22.5; toast('骨の取り合い開始！連打！');
+      boneSyncDuel();
+      return;
+    }
     if(bd.t<=0){
+      /* 保険：どちらも3回に届かないまま制限時間切れになった場合のみ、
+         従来と同じ既定の結果で決着させる(通常のプレイでは起こらない想定) */
       if(teacherIsDefender){ boneDuelTeacherFail(); return; }
       bd.phase='fight'; bd.gauge=22.5; toast('骨の取り合い開始！連打！');
     }
@@ -3549,9 +3580,16 @@ function updBoneUi(){
   const d=e&&e.duel;
   let show=false,label='',gaugeShow=false,gaugePct=0,gaugeLabel='';
   if(d){
-    show=true; gaugeShow=(d.phase==='fight');
-    label=(d.phase==='dodge')?(d.role==='defender'?'かわせ！':'かわされるか…'):'連打！';
-    if(gaugeShow){
+    show=true; gaugeShow=true;
+    if(d.phase==='dodge'){
+      /* 2026-09-22変更：かわす/刺すが「先に3回連打」のレースになったので、
+         自分の連打回数(d.hits/3)をゲージとして表示する。単なる反応待ちでは
+         なくなったため、役割に関わらず「連打！」と煽る */
+      label='連打！'+(d.role==='defender'?'（かわせ！）':'（刺せ！）');
+      gaugePct=Math.max(0,Math.min(100,((d.hits||0)/3)*100));
+      gaugeLabel=(d.role==='defender'?'かわせ！':'刺せ！')+' 相手 '+(d.rivalHits||0)+'/3';
+    } else {
+      label='連打！';
       gaugePct=Math.max(0,Math.min(100,(d.gauge/45)*100));
       gaugeLabel=(d.role==='attacker')?'押し切れ！':'押し返せ！';
     }
@@ -6756,7 +6794,7 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     x:spawnPoint.x,z:spawnPoint.z,yaw:0,speed:DIFF.tSpeed*(SPD[kind]||1),
     base:DIFF.tSpeed*(SPD[kind]||1),path:[],pathT:0,
     carrying:null,swing:0,cool:0,lunge:0,patrol:null,alert:null,vault:0,stam:1,
-    vTo:null,vFrom:null,stun:0,wipe:0,abCd:0,charge:0,dash:0,breakT:0,
+    vTo:null,vFrom:null,stun:0,wipe:0,abCd:0,charge:0,dash:0,breakT:0,atkLockT:0,
     kindKey:kind,px:0,pz:0,dive:0,diveTo:null,boost:0,stealth:0,exh:false,ab2Cd:0,
     beastT:0,leap:0,leapCharge:0,presence:0,scentBonus:0,scentT:0,
     bladeCd:0,idleT:0,cloak:0,wheelOn:false,wheelStun:0,clownColor:0,clone2:null,
@@ -10150,6 +10188,10 @@ function swing(force){
   if(teacher.kindKey==='sakasa'&&teacher.saForm>0){ toast('この形態では攻撃できない'); return; }
   teacher.idleT=0; teacher.cloak=0;
   if(teacher.cool>0||teacher.stun>0||teacher.wipe>0||teacher.dive>0||teacher.phase>0) return;
+  /* 担いだ直後・何らかのスタンから回復した直後は、bot/プレイヤーどちらの
+     先生でも例外なく1秒間、攻撃できない(2026-09-22追加、teacher.atkLockTは
+     tick()内でスタン/担ぎ中→非担ぎ中への遷移を検知した時だけセットされる) */
+  if(teacher.atkLockT>0) return;
   if(teacher.kindKey==='nurse'&&teacher.atkWindow<=0){
     toast('突進の直後しか攻撃できない'); return;
   }
@@ -12248,6 +12290,12 @@ function tick(now){
     if(netMode==='client') evtClientTick(dt); else evtHostTick(dt); return; }
   if(netMode==='client'){ netClientTick(dt); return; }
   elapsed+=dt; lookIdle+=dt;
+  /* 攻撃ロック(2026-09-22追加)用に、このフレーム開始時点の先生の
+     スタン/担ぎ中状態を保存しておく。フレーム末尾でteacher.stunの
+     減衰後の値と比較し、「このフレームでちょうど0まで回復した」
+     「このフレームでちょうど担ぎ終わった」を検知する */
+  const _teacherStunWas=teacher.stun, _teacherCarryingWas=!!teacher.carrying;
+  const _t2StunWas=teacher2?teacher2.stun:0, _t2CarryingWas=!!(teacher2&&teacher2.carrying);
 
   /* 憑依 */
   if(possessT>0){
@@ -13040,8 +13088,10 @@ function tick(now){
       }
     }
   }
-  /* 2vs8モード：2人目の先生の基本攻撃(常にAIなのでrole判定は不要、2026-09-11) */
-  if(teacher2&&teacher2.cool<=0&&teacher2.stun<=0){
+  /* 2vs8モード：2人目の先生の基本攻撃(常にAIなのでrole判定は不要、2026-09-11)。
+     2人目もswing()を通らず直接hit()するので、攻撃ロック(2026-09-22追加)の
+     判定をここにも入れる(「bot・プレイヤーどちらの先生でも例外なく」) */
+  if(teacher2&&teacher2.cool<=0&&teacher2.stun<=0&&(teacher2.atkLockT||0)<=0){
     for(const s of students){
       if(s.state==='free'&&!s.hide&&Math.hypot(s.x-teacher2.x,s.z-teacher2.z)<2.1){
         teacher2.cool=1.0; teacher2.swing=1; hit(s,false,teacher2);
@@ -13061,6 +13111,21 @@ function tick(now){
   unstickAll();
   teacher.cool=Math.max(0,teacher.cool-dt);
   teacher.stun=Math.max(0,teacher.stun-dt);
+  /* 攻撃ロック(2026-09-22追加)：担いだ直後・スタンから回復した直後は
+     bot/プレイヤーどちらの先生でも例外なく1秒間攻撃できないようにする。
+     教師のスタンはこのフレームの色々な場所でMath.max(teacher.stun,X)により
+     何度も引き上げられ得るので、フレーム末尾の減衰(このすぐ上)が終わった
+     ここで初めて「本当にこのフレームで0まで回復したか」を確定できる */
+  if(_teacherStunWas>0&&teacher.stun<=0) teacher.atkLockT=Math.max(teacher.atkLockT||0,1.0);
+  if(_teacherCarryingWas&&!teacher.carrying) teacher.atkLockT=Math.max(teacher.atkLockT||0,1.0);
+  teacher.atkLockT=Math.max(0,(teacher.atkLockT||0)-dt);
+  /* 2vs8モードの2人目の先生も同じ扱いにする(stunの減衰はaiTeacher2()内で
+     既に済んでいるので、ここでは遷移の検知と時間切りだけを行う) */
+  if(teacher2){
+    if(_t2StunWas>0&&teacher2.stun<=0) teacher2.atkLockT=Math.max(teacher2.atkLockT||0,1.0);
+    if(_t2CarryingWas&&!teacher2.carrying) teacher2.atkLockT=Math.max(teacher2.atkLockT||0,1.0);
+    teacher2.atkLockT=Math.max(0,(teacher2.atkLockT||0)-dt);
+  }
   teacher.wipe=Math.max(0,teacher.wipe-dt);
   teacher.boost=Math.max(0,(teacher.boost||0)-dt);
   teacher.crawl=Math.max(0,(teacher.crawl||0)-dt);
