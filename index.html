@@ -3586,11 +3586,24 @@ function updBoneDuel(dt){
   }
   const atkE=bd.teacherAtk?teacher:s, defE=bd.teacherAtk?s:teacher;
   /* botの攻防戦(連打)の強さ：2倍→120%アップ(2.2倍、計4.4倍)まで上げた結果
-     強すぎたため70%落として1.32倍に→そこからさらに50%アップして1.98倍に
-     調整(2026-09-21再修正)。常時の連打頻度自体はboneFightTapCount()で
-     維持しつつ、3回に1回だけボーナスでゲージがまとめて増える */
-  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3*1.5, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3*1.5;
-  const na=boneFightTapCount(atkE,dt,atkRate), nd=boneFightTapCount(defE,dt,defRate);
+     強すぎたため70%落として1.32倍に→そこからさらに50%アップして1.98倍に→
+     そこからさらに50%落として0.99倍に調整(2026-09-22再修正)。常時の連打
+     頻度自体はboneFightTapCount()で維持しつつ、3回に1回だけボーナスで
+     ゲージがまとめて増える */
+  const atkRate=(bd.teacherAtk?3.2:2.8)*4.4*0.3*1.5*0.5, defRate=(bd.teacherAtk?3.0:3.0)*4.4*0.3*1.5*0.5;
+  /* 「踏ん張り」パーク(boilover)：攻防戦での生徒側の連打力(貢献度そのもの)が
+     +50%(パーク効果2つ目、2026-09-22追加)。人間操作/bot操作どちらの生徒でも
+     効くよう、taps回数の出力側に掛ける(bot専用のrate側だと人間には効かない
+     ため)。先生側の連打力には影響しない */
+  const atkBoiloverMul=(!bd.teacherAtk&&hasTrait(s,'boilover'))?perkScale(s,'boilover',1.5):1;
+  const defBoiloverMul=(bd.teacherAtk&&hasTrait(s,'boilover'))?perkScale(s,'boilover',1.5):1;
+  /* 先生用パーク「ほねほねマン」(2026-09-22追加、しゅんりさんの音声入力を
+     山田くん経由で解釈して実装。要確認：詳細は放課後の居残りナレッジ参照)：
+     骨の刺し合いの攻防戦での連打力が50%上がる。役割(攻/防どちらでも)問わず
+     先生側にだけ効く */
+  const atkHoneMul=(bd.teacherAtk&&hasTrait(teacher,'honehoneman'))?perkScale(teacher,'honehoneman',1.5):1;
+  const defHoneMul=(!bd.teacherAtk&&hasTrait(teacher,'honehoneman'))?perkScale(teacher,'honehoneman',1.5):1;
+  const na=boneFightTapCount(atkE,dt,atkRate)*atkBoiloverMul*atkHoneMul, nd=boneFightTapCount(defE,dt,defRate)*defBoiloverMul*defHoneMul;
   bd.gauge=Math.max(0,Math.min(45,bd.gauge+na-nd));
   boneSyncDuel();
   if(bd.gauge>=45||bd.gauge<=0){
@@ -6497,7 +6510,7 @@ function itemHasAddonFlag(s,field){
    形で実装し、一部は専用の小さなロジックを追加した(下の各所のtraitXxx参照)。 */
 const PERKS_STUDENT=[
  {key:'perseverance',name:'不屈の一念',desc:'試合に1回だけ、ダウンしてから4秒後に自力で起き上がれる'},
- {key:'boilover',    name:'踏ん張り',  desc:'先生に担がれている間、もがきゲージの溜まりが20%速い'},
+ {key:'boilover',    name:'踏ん張り',  desc:'先生に担がれている間、もがきゲージの溜まりが20%速い。さらに骨の刺し合いの攻防戦での連打力が50%上がる'},
  {key:'ironwill',    name:'隠密の足音',desc:'負傷している間、物音が伝わる範囲が大きく狭くなる'},
  {key:'pathfinder',  name:'非常口の勘',desc:'試合開始時、すべての出口の場所が8秒間見える'},
  {key:'hope',        name:'希望の残り火',desc:'出口が開いてから、自分の移動速度が8%上がる'},
@@ -6539,6 +6552,10 @@ const PERKS_TEACHER=[
  {key:'stridor',      name:'気配鋭敏',  desc:'負傷している生徒の位置が距離に関わらず常にわかる'},
  {key:'fireup',       name:'授業再開',  desc:'試合の経過時間が長いほど、攻撃後の隙が徐々に短くなる（最大15%）'},
  {key:'rancor',       name:'有終の美',  desc:'生存している生徒が残り1人になると、その生徒の速度が下がり、物音に気づける範囲も広がる'},
+ /* しゅんりさんの音声入力(山田くん経由)を元に実装。「骨の刺し合いの連打力+50%」
+    「板を破壊する速度+50%」の2つは確信度高、「窓の二個入れたり」は聞き取れず
+    未実装(2026-09-22追加、要しゅんりさん確認：詳細はナレッジ参照) */
+ {key:'honehoneman',  name:'ほねほねマン',desc:'骨の刺し合いの攻防戦での連打力が50%上がる。板を破壊する速度も50%速くなる'},
  /* 写真部顧問の専用パーク3種。装備すると試合開始時に生徒1人が「本命の被写体」に
     ランダム指定される(pdMuseIdx)。DBDの「オブセッション」の仕組みを参考にしたが、
     ロア・名称は一切引き継いでいない(2026-09-06追加、著作権配慮の詳細はナレッジ参照) */
@@ -11204,7 +11221,8 @@ function aiTeacher(dt){
   const blockP=pallets.filter(function(p){
     return p.state==='down'&&Math.hypot(p.x-t.x,p.z-t.z)<3.4; })[0];
   if(blockP&&(!t.path.length||Math.random()<0.5)){
-    if(breakPallet(blockP,dt)) t.path=[];
+    const botHoneBreakMul=hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1;
+    if(breakPallet(blockP,dt*botHoneBreakMul)) t.path=[];
     else { t.yaw=Math.atan2(blockP.x-t.x,blockP.z-t.z); return; }
   }
 
@@ -12594,8 +12612,10 @@ function tick(now){
       label=t.dnBreak>0?'噛み砕いている…':'噛み砕く（スタンの代償）'; hot=t.dnBreak<=0;
     } else if(dp&&!foe){
       label='蹴破る'; hot=true;
-      /* 写真部顧問：現像モード/決定的瞬間+20%、アドオンでさらに調整可 */
-      const bdt=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1);
+      /* 写真部顧問：現像モード/決定的瞬間+20%、アドオンでさらに調整可。
+         「ほねほねマン」パーク：板を破壊する速度+50%(キャラ種類問わず、2026-09-22追加) */
+      const honeBreakMul=hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1;
+      const bdt=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1)*honeBreakMul;
       if(input.act){ hp=dp.breakT/2.2; if(breakPallet(dp,bdt)) hp=0; }
       else if(!input.altHold) dp.breakT=Math.max(0,dp.breakT-dt*0.8);
     } else { label='定規を振る'; hot=t.cool<=0; }
@@ -12613,7 +12633,8 @@ function tick(now){
     }
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
       hp=Math.max(hp,dp.breakT/2.2);
-      const bdt2=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1);
+      const bdt2=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1)*
+        (hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1);
       if(breakPallet(dp,bdt2)) hp=0;
     } else if(input.altEdge) tryVault(teacher);
     if(!dp&&!input.act) { pallets.forEach(function(p){ if(p.state==='down') p.breakT=Math.max(0,p.breakT-dt*0.8); }); }
