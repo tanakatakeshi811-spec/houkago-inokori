@@ -1244,6 +1244,13 @@ window.addEventListener('error',function(e){
 <script>if(typeof THREE!=='undefined'&&!THREE.ShaderPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"><\/scr'+'ipt>');</script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script>if(typeof THREE!=='undefined'&&!THREE.UnrealBloomPass)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"><\/scr'+'ipt>');</script>
+<!-- 校長先生専用：既製glTFモデル(man.glb、[[HyoiGakuen]]と同じCC0素材)を読み込むための
+     ローダー。読み込めなくても他キャラには一切影響しない(校長先生は手続き生成の
+     procedural低ポリ見た目にフォールバックする)ので致命的ではない -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.GLTFLoader)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"><\/scr'+'ipt>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script>if(typeof THREE!=='undefined'&&!THREE.SkeletonUtils)document.write('<scr'+'ipt src="https://unpkg.com/three@0.128.0/examples/js/utils/SkeletonUtils.js"><\/scr'+'ipt>');</script>
 <script>
 "use strict";
 /* 担がれ中の両手連打UI(#carryHands)をスマホ/タッチ操作の時だけ出すための
@@ -4301,6 +4308,100 @@ function makeCrowModel(){
   g.userData.wingL=wingL; g.userData.wingR=wingR;
   return g;
 }
+/* ===== 校長先生専用：既製glTFモデル(man.glb)＋顔写真テクスチャ =====
+   このゲームの他キャラは全員person()の手続き生成(プリミティブ組み合わせ)だが、
+   校長先生だけは実写の顔写真を貼るため、別プロジェクト[[HyoiGakuen]]で使って
+   いるのと同じCC0モデル(Quaternius、出典はassets/CREDITS.md)を読み込んで
+   見た目に使う(2026-09-22)。当たり判定・攻撃・アニメーション制御などの
+   既存ロジックには一切触れず、teacher.mesh(=person()で作ったprocedural低ポリ
+   メッシュ、opt.hideBodyで非表示)の子として「見た目だけの飾り」を追加する
+   方式にしてある。読み込みが失敗/間に合わなくても、procedural低ポリの見た目
+   (顔は非表示のまま)にフォールバックするだけでゲームは壊れない */
+let PRINCIPAL_TEMPLATE=null, PRINCIPAL_TEMPLATE_PROMISE=null, PRINCIPAL_FACE_TEX=null;
+function preloadPrincipalModel(){
+  if(PRINCIPAL_TEMPLATE_PROMISE) return PRINCIPAL_TEMPLATE_PROMISE;
+  PRINCIPAL_TEMPLATE_PROMISE=new Promise(function(resolve){
+    if(typeof THREE==='undefined'||!THREE.GLTFLoader||!THREE.SkeletonUtils){ resolve(null); return; }
+    try{
+      new THREE.GLTFLoader().load('assets/models/man.glb',function(gltf){
+        PRINCIPAL_TEMPLATE=gltf; resolve(gltf);
+      },undefined,function(){ resolve(null); });
+    }catch(e){ resolve(null); }
+    try{
+      new THREE.TextureLoader().load('assets/principal_face.png',
+        function(tex){ tex.encoding=THREE.sRGBEncoding||tex.encoding; PRINCIPAL_FACE_TEX=tex; },
+        undefined,function(){});
+    }catch(e){}
+  });
+  return PRINCIPAL_TEMPLATE_PROMISE;
+}
+preloadPrincipalModel();
+/* teacher.mesh(procedural、hideBody済み)の子として、glTFモデル＋顔写真の
+   平面を追加する。まだモデルが読み込めていなければ何もせず戻り、
+   呼び出し元(updPrincipal)が毎フレーム再試行することで自然に反映される */
+function attachPrincipalVisual(t){
+  if(t.pcVisual||!PRINCIPAL_TEMPLATE||!t.mesh) return;
+  try{
+    const inner=THREE.SkeletonUtils.clone(PRINCIPAL_TEMPLATE.scene);
+    /* サイズをこのゲームのキャラ寸法(だいたい頭頂が headY+skull半径≒3.2)に
+       合わせる。モデルごとに原点・単位系がバラバラなので、[[物理サンドボックス]]や
+       HyoiGakuenのnormalizeToFloor()と同じ「実測Box3→スケール・接地位置を
+       自動算出」方式にする(マジックナンバーのハードコードを避ける) */
+    const box=new THREE.Box3().setFromObject(inner);
+    const size=new THREE.Vector3(); box.getSize(size);
+    const center=new THREE.Vector3(); box.getCenter(center);
+    const targetH=3.05;
+    const scale=size.y>0?targetH/size.y:1;
+    inner.scale.setScalar(scale);
+    inner.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
+    const wrap=new THREE.Group(); wrap.add(inner);
+    /* HyoiGakuenのTINT_MAPと同じ素材名(Shirt/Pants/Socks/Hair/Skin/Eyes)を
+       校長先生らしい濃紺スーツ配色に塗り替える(2026-09-22、参考画像2枚目に
+       寄せた最小限の色替え。モデル自体は改変しない) */
+    const PC_TINT={Shirt:0x1c2233,Pants:0x14171e,Socks:0x1a1a1a,Hair:0xd8d4cc};
+    inner.traverse(function(o){
+      if(!o.isMesh) return;
+      o.castShadow=true; o.receiveShadow=true;
+      const arr=Array.isArray(o.material)?o.material:[o.material];
+      const cloned=arr.map(function(m){
+        const nm=m.clone();
+        nm.metalness=0.05; nm.roughness=1.0;
+        if(PC_TINT[nm.name]!==undefined) nm.color.setHex(PC_TINT[nm.name]);
+        return nm;
+      });
+      o.material=Array.isArray(o.material)?cloned:cloned[0];
+    });
+    /* アニメーション：モデル同梱のIdle/Walkクリップをそのままクロスフェード再生
+       (HyoiGakuenのCLIP_ALIASES.maleと同じクリップ名) */
+    const mixer=new THREE.AnimationMixer(inner);
+    const idleClip=THREE.AnimationClip.findByName(PRINCIPAL_TEMPLATE.animations,'HumanArmature|Man_Idle');
+    const walkClip=THREE.AnimationClip.findByName(PRINCIPAL_TEMPLATE.animations,'HumanArmature|Man_Walk');
+    const actions={};
+    if(idleClip) actions.idle=mixer.clipAction(idleClip);
+    if(walkClip) actions.walk=mixer.clipAction(walkClip);
+    if(actions.idle) actions.idle.play();
+    wrap.userData={mixer:mixer,actions:actions,current:actions.idle||null};
+    /* 顔写真(グリーンバック写真をOpenCVで透過処理したもの)を、頭の正面に
+       貼るだけの平面。既存のスキン機能(#p_skinのcustomTex、体の前面に貼る
+       仕組み)と同じ「平面テクスチャを前面に貼る」考え方をそのまま流用した */
+    const faceMat=new THREE.MeshBasicMaterial({map:PRINCIPAL_FACE_TEX,transparent:true});
+    const aspect=(PRINCIPAL_FACE_TEX&&PRINCIPAL_FACE_TEX.image)?
+      (PRINCIPAL_FACE_TEX.image.width/PRINCIPAL_FACE_TEX.image.height):1.4;
+    const faceH=0.58, faceW=faceH*aspect;
+    const facePlane=new THREE.Mesh(new THREE.PlaneGeometry(faceW,faceH),faceMat);
+    /* 写真の下端には元々スーツの肩口も少し写っているので、首の継ぎ目
+       (glTFモデルの頭と胴の境目)に少しかぶせるように置くと自然に繋がる */
+    facePlane.position.set(0,targetH*0.845,0.175);
+    facePlane.renderOrder=6;
+    wrap.add(facePlane);
+    t.pcVisual=wrap;
+    t.mesh.add(wrap);
+    /* animateWalk(u,...)は e.mesh.userData を受け取るだけなので、mixer更新も
+       そこに乗せておく(2026-09-22)。他キャラのuserDataにはpcVisualが無いので
+       この追加分岐は校長先生にしか作用しない */
+    t.mesh.userData.pcVisual=wrap;
+  }catch(e){}
+}
 /* opt: uniform,hair,accent,tall,body,head,weapon,acc,modelType('dance'でダンスモデル、2026-09-15追加) */
 function person(opt){
   const g=new THREE.Group();
@@ -4322,6 +4423,11 @@ function person(opt){
      (エモート用、2026-09-15)。曲げていない状態の見た目は従来と同じ */
   const legL=limb(dark,0.32*S,1.05*S,0.32*S,-0.24*S,hipY,0,[0.52*S,0.53*S]);
   const legR=limb(dark,0.32*S,1.05*S,0.32*S, 0.24*S,hipY,0,[0.52*S,0.53*S]);
+  /* 校長先生専用：既製glTFモデル(man.glb)を見た目に使うため、procedural低ポリの
+     体パーツを描画だけ隠す(opt.hideBody、2026-09-22)。当たり判定・アニメーション・
+     武器の取り付け等の既存ロジックは今まで通りこのgroup構造をそのまま使い続ける
+     ので、見えなくなるだけで他の処理は一切変更不要 */
+  if(opt.hideBody){ legL.visible=false; legR.visible=false; }
   if(body!=='crawl'&&!floaty){
     g.add(legL); g.add(legR);
     [legL,legR].forEach(function(L0){
@@ -4411,15 +4517,19 @@ function person(opt){
   /* 胴 */
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.86*S,1.0*S,0.5*S),uni);
   torso.position.y=chest; g.add(torso);
+  torso.visible=!opt.hideBody;
   /* 肩と首でシルエットを丸く */
   [-1,1].forEach(function(sx){
     const sh2=new THREE.Mesh(new THREE.SphereGeometry(0.24*S,10,8),uni);
     sh2.position.set(sx*0.45*S,chest+0.44*S,0); g.add(sh2);
+    sh2.visible=!opt.hideBody;
   });
   const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.17*S,0.2*S,0.3*S,10),skin);
   neck.position.y=chest+0.66*S; g.add(neck);
+  neck.visible=!opt.hideBody;
   const waist=new THREE.Mesh(new THREE.CylinderGeometry(0.4*S,0.34*S,0.26*S,12),uni);
   waist.position.y=chest-0.56*S; g.add(waist);
+  waist.visible=!opt.hideBody;
   if(body==='anatomy'){
     bx(g,LM(0x8c2f2f),0.5*S,0.7*S,0.12*S,0,chest,0.27*S);
     bx(g,LM(0x2f6b8c),0.2*S,0.2*S,0.1*S,-0.18*S,chest+0.2*S,0.32*S);
@@ -4473,7 +4583,7 @@ function person(opt){
     bx(g,LM(opt.uniform),0.3*S,1.0*S,0.1*S,0,chest,0.3*S);
   }
   /* 襟 */
-  if(!floaty&&body!=='crawl'){
+  if(!floaty&&body!=='crawl'&&!opt.hideBody){
     const collar=new THREE.Mesh(new THREE.BoxGeometry(0.9*S,0.16*S,0.56*S),white);
     collar.position.y=chest+0.52*S; g.add(collar);
     /* 襟の折り返し */
@@ -4502,6 +4612,7 @@ function person(opt){
   const armL=limb(armMat,0.24*S,0.88*S,0.28*S,-0.56*S,chest+0.44*S,0,[0.44*S,0.44*S]);
   const armR=limb(armMat,0.24*S,0.88*S,0.28*S, 0.56*S,chest+0.44*S,0,[0.44*S,0.44*S]);
   g.add(armL); g.add(armR);
+  if(opt.hideBody){ armL.visible=false; armR.visible=false; }
   [armL,armR].forEach(function(A0){
     const A=A0.userData.lower||A0;   /* 手・袖口は手首の関節にぶら下げる */
     /* 手のひら＋指5本 */
@@ -4520,6 +4631,7 @@ function person(opt){
   });
   /* 頭 */
   const head=new THREE.Group(); head.position.y=headY; g.add(head);
+  if(opt.hideBody) head.visible=false;
   const headMat=(body==='anatomy')?LM(0xc98f86):((body==='animatronic')?LM(0xc9c24a):skin);
   const skull=new THREE.Mesh(new THREE.SphereGeometry(0.4*S,20,16),headMat);
   skull.castShadow=true; head.add(skull);
@@ -6194,6 +6306,15 @@ const CHAR_PROPS={
       sp(L,LM(e[1]),0.09*S,0,-1.0*S,0,8);
     });
     bx(g,LM(0x63c4b8),0.16*S,1.0*S,0.04*S,0,c.chest,0.27*S,0.0).rotation.z=0.55;
+  },
+  /* 校長先生｜杖(参考画像で右手に持っている木製ステッキ)。procedural低ポリの
+     体はhideBody:trueで隠れているが、CHAR_PROPSはgに直接追加されるので
+     hideBodyの影響を受けず、glTFモデルの手のあたりに独立して表示される
+     (2026-09-22、見た目の作り込みは最小限にとどめる方針のため単純な円柱+球のみ) */
+  principal:function(g,c){ const S=c.S;
+    const caneMat=LM(0x4a2f1c);
+    cy(g,caneMat,0.028*S,0.028*S,0.95*S,0.56*S,c.hipY-0.05*S,0.12*S,8);
+    sp(g,LM(0xc9a24a),0.055*S,0.56*S,c.hipY+0.42*S,0.12*S,8);
   }
 };
 /* スキン機能：プレイヤーが自由な位置・色で配置できる装飾アクセサリ
@@ -6659,7 +6780,14 @@ const LOOK={
      glTF/GLB配布が無くこのゲームの完全自前アニメ骨格(person())とも
      噛み合わないため、既存の他キャラと同じ手続き生成方式で作った */
   mane:{body:'human',hairStyle:'none',acc:'',weapon:'hand',accent:0xb8ae9a,
-        hair:0xcfc7b4,skin:0xcfc7b4,eye:0xb8ae9a}
+        hair:0xcfc7b4,skin:0xcfc7b4,eye:0xb8ae9a},
+  /* 校長先生：procedural低ポリの体はhideBody:trueで非表示にし、代わりに
+     既製glTFモデル(man.glb)+顔写真テクスチャを見た目に使う(2026-09-22)。
+     weaponは''のまま(hideBodyだと腕ごと隠れて見えないため持たせない)。
+     4形態を切り替えるが、見た目は「1つでいい」というしゅんりさんの指定
+     どおり形態ごとの見た目差し替えはしていない */
+  principal:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'',
+        accent:0x8a1f28,hair:0xd8d4cc,skin:0xd8c8c0,hideBody:true}
 };
 const SLOOK={
   work :{hairStyle:'long',acc:'',weapon:''},
@@ -6744,7 +6872,8 @@ const KINDS={
   mirror:{name:'にせもの', ability:'擬態／化け直し・正体を現す', color:0x6b1f2c, cd:8},
   sakasa:{name:'渡り廊下の逆さ女', ability:'壁走り／天井からの落下奇襲', color:0x2a2438, cd:3},
   doll:{name:'人形塚の番人', ability:'人形投げ／人形の視線', color:0x8a2f28, cd:9},
-  mane:{name:'モノマネキン', ability:'モノマネ（変身）', color:0xcfc7b4, cd:0.4}
+  mane:{name:'モノマネキン', ability:'モノマネ（変身）', color:0xcfc7b4, cd:0.4},
+  principal:{name:'校長先生', ability:'4形態切替（全校朝礼／校長室送還／校則違反検知／銅像設置）', color:0x1a1f2c, cd:0}
 };
 const TCH=[
  {key:'pe',  desc:'突進｜溜めた分だけ遠くへ飛び出し、通り道の生徒に1ダメージ'},
@@ -6787,7 +6916,8 @@ const TCH=[
  {key:'mirror',desc:'擬態形態｜試合開始時、生徒の誰かにそっくり化けている（速度も生徒並み・攻撃不可）。Q｜近くの別の生徒に化け直す／R｜3秒の無防備な変身を経て正体を現す（片道）。正体形態｜通常の先生と同じ攻撃力。Q（ホールド）｜自分そっくりの偽物を3体ばら撒く。生徒をダウンさせるたび侵食ゲージが貯まり、満ちると60秒「二重人格」になり近くの生徒に成り代わって紛れられる'},
  {key:'sakasa',desc:'床形態（3形態で一番遅い）｜通常攻撃可。Q｜壁走り形態（狼並みの速さ・気配減少・攻撃不可）に変身／壁走り中に天井の張り付き地点でQ｜天井形態（ホールドして待ち構え、真下を生徒が通ると自動で落下奇襲。外すと3秒動けない）。奇襲を3回決めると60秒「双子の逆さ女」になり、もう一体の逆さ女が同時出現する'},
  {key:'doll',desc:'人形投げ｜命中で数秒間 金縛り。人形は1個のみ、投げたら人形塚（槍箱と同じ地点）で補充。生徒を1人ダウンさせるか3分経過でレベル2（速度+8%・人形がブーメラン式に強化・R「人形の視線」で生徒の位置が見える）。さらに2人ダウン＋一定時間でレベル3（速度最大・Qが踏み込み範囲攻撃＝板も破壊できるに変化・人形の視線が常時発動）'},
- {key:'mane',desc:'モノマネ｜生徒を選んで変身。三人称・攻撃不可・心音が鳴らない。もう一度押すと解除（皮をはぎモノマネキンが出るモーションに2秒、周囲10m以内の生徒を2.2秒スタン。解除直後は0.5秒減速→0.4秒加速）／窓封鎖・板封鎖｜向いている先の窓か板が常にピンク色でハイライトされ、能力2でそこを10秒封鎖（モノマネ人形を設置、CD15秒）。対象がすでに倒れている板なら即座に完全破壊してモノマネ人形を設置し、その場にいた生徒の足を40%遅くする'}
+ {key:'mane',desc:'モノマネ｜生徒を選んで変身。三人称・攻撃不可・心音が鳴らない。もう一度押すと解除（皮をはぎモノマネキンが出るモーションに2秒、周囲10m以内の生徒を2.2秒スタン。解除直後は0.5秒減速→0.4秒加速）／窓封鎖・板封鎖｜向いている先の窓か板が常にピンク色でハイライトされ、能力2でそこを10秒封鎖（モノマネ人形を設置、CD15秒）。対象がすでに倒れている板なら即座に完全破壊してモノマネ人形を設置し、その場にいた生徒の足を40%遅くする'},
+ {key:'principal',desc:'能力2でいつでもクールタイム無しに4つの形態を切り替えられる怪人。全校朝礼形態｜Q長押しで説教を8秒間放送。全生徒が減速し数秒おきに金縛り、課題の進みもじわじわ後退する（椅子に座っている間はやり過ごせる）／特殊：校内放送｜近くの生徒の位置を数秒あぶり出す。校長室送還形態｜Qを溜めて離すと、視線が通っている一番近い生徒を校長室へ強制送還（連打で自力脱出可）／特殊：朝の校門指導｜自分が出口や椅子へ瞬間移動する。校則違反検知形態｜ダッシュ移動を続ける生徒に違反スタックが自動で溜まり、満タンで停学状態（ワンパン＋位置が常に見える）になる／特殊：立ち入り禁止区域｜自分の周りを一時的に立入禁止にし、入った生徒はベルで足止めされる。銅像設置形態｜Qで自分の銅像を設置（視界に入った生徒があぶり出される）／特殊：臨席｜設置した銅像と一瞬で位置を入れ替わる'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -6825,7 +6955,7 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
              dogman:1.02,shade:1.0,clock:0.97,ink:0.99,anima:1.0,dream:1.0,
              fallen:1.0,kok:1.0,jan:1.0,math:1.0,pe:1.0,model:1.0,hunt:1.0,
              garden:1.0,magnet:0.98,band:1.0,seitokai:1.0,chalk:1.0,darknode:1.0,photo:1.0,
-             mirror:1.0,sakasa:1.0,doll:0.98};
+             mirror:1.0,sakasa:1.0,doll:0.98,principal:0.97};
   /* スキン機能(2026-09-13)：先生役で自分が操作するteacherにだけ、選んだ
      スキン(色/形/装飾、自分の画面ならお絵かき/画像も)を上乗せする */
   let tOpt=Object.assign({uniform:K.color,hair:0x24201c,accent:0x8a2f28,tall:true},LK);
@@ -6880,6 +7010,13 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     mnForm:0,mnMimicIdx:-1,mnReveal:0,mnPostSlowT:0,mnPostFastT:0,
     mnSealKind:'',mnSealIdx:-1,mnSealT:0,mnHiliteKind:'',mnHiliteIdx:-1,
     mnDollMesh:null,
+    /* 校長先生(principal)専用フィールド(2026-09-22)。pcForm:0=全校朝礼/
+       1=校長室送還/2=校則違反検知/3=銅像設置(クールタイム無しでR一発切替)。
+       pcBroadcastT>0で全校朝礼が発動中。pcZoneは立ち入り禁止区域
+       {x,z,r,t}(nullで無効)。pcStatuesは銅像[{x,z,yaw,mesh}]の配列。
+       pcSubCdは特殊アクション(校内放送/朝の校門指導/立ち入り禁止区域指定/臨席)
+       共通のクールダウン。pcVisualは見た目(glTF)のグループ参照 */
+    pcForm:0,pcBroadcastT:0,pcZone:null,pcStatues:[],pcSubCd:0,pcVisual:null,
     /* エモート(踊り)。em=-1で再生していない状態(2026-09-15) */
     em:-1,emT:0};
   if(kind==='darknode'){
@@ -6922,6 +7059,13 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
     });
     t.mnMeshes=disguiseMeshes2; t.mnTrueMesh=trueMesh2;
     t.mnMimicIdx=-1; t.mnForm=0; t.mesh=trueMesh2; t.mesh.visible=true;
+  }
+  if(kind==='principal'){
+    /* glTFモデルがまだ読み込み中の場合はここでは何もしない。
+       updPrincipal(dt)が毎ホストフレーム再試行するので、読み込みが
+       間に合わなくてもゲーム開始をブロックしない(procedural低ポリの
+       見た目=顔は非表示のままのシルエットに自然にフォールバックする) */
+    attachPrincipalVisual(t);
   }
   return t;
 }
@@ -9849,6 +9993,218 @@ function mnSyncDoll(t){
   t.mnDollMesh.position.set(x,0,z);
 }
 function mnClearSeal(t){ t.mnSealKind=''; t.mnSealIdx=-1; t.mnSealT=0; }
+/* ===== 校長先生(principal)専用 =====（2026-09-22追加）
+   4形態(pcForm 0〜3)をRでクールタイム無しに切り替えられる怪人。Qは形態ごとの
+   メイン能力、「殴る等やる事が無い時のE」は形態ごとの特殊アクション
+   (pcSubAbility、共通クールダウンpcSubCd)。既存の仕組み(setAura/freeze/
+   slow・slowMul/trapped/noise)を最大限流用し、新規ロジックは最小限にした。
+   数値は「強すぎない」よう控えめな初期値にしてあるので、実プレイのフィード
+   バックで調整する前提 */
+function pcRoomSpot(){
+  if(chairs&&chairs.length){
+    const c=chairs[chairs.length-1];
+    return {x:c.x+1.4,z:c.z+1.4};
+  }
+  return {x:teacher.x,z:teacher.z};
+}
+function pcNearSafeChair(s){
+  return chairs.some(function(c){ return !c.taken&&Math.hypot(c.x-s.x,c.z-s.z)<1.6; });
+}
+function pcBroadcastActive(){ return !!(teacher&&teacher.kindKey==='principal'&&teacher.pcBroadcastT>0); }
+/* 校長室送還：Q(ホールド)で「見つめて」溜めた末に発動。視線が通っている
+   一番近い生徒を校長室へ強制送還し、math先生の床トラップと同じ
+   trapped(連打脱出)状態にする */
+function pcSendToRoom(){
+  const t=teacher;
+  t.abCd=10;
+  const tg=students.filter(function(s){ return s.state==='free'&&!s.hide&&
+    Math.hypot(s.x-t.x,s.z-t.z)<16&&los(t.x,t.z,s.x,s.z); })
+    .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+  if(!tg){ toast('送還できる生徒が見当たらない'); return; }
+  const p=pcRoomSpot();
+  tg.x=p.x; tg.z=p.z; tg.path=[]; unstick(tg);
+  tg.trapped=true; tg.trapMash=0; tg.trapAI=2.6;
+  setAura(tg,'reveal',1.2);
+  toast(tg.name+'を校長室へ送還した！');
+  beep(140,0.4,'sawtooth',0.16); bigNoise(0.25,0.85);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8),
+    new THREE.MeshBasicMaterial({color:0x6a3ad8,transparent:true,opacity:0.55}));
+  m.position.set(p.x,1.4,p.z); scene.add(m);
+  fxs.push({m:m,t:0,life:0.5,kind:'dust'});
+}
+/* 銅像設置：最大3体、超えたら古い順に消える。procedural低ポリのperson()を
+   ブロンズ色に塗り替えて流用するだけ(専用モデルは新規に作らない、見た目の
+   作り込みは最小限という方針) */
+function pcPlaceStatue(){
+  const t=teacher;
+  if(t.pcStatues.length>=3){
+    const old=t.pcStatues.shift();
+    scene.remove(old.mesh);
+  }
+  const m=person({body:'human',tall:true,hairStyle:'none',acc:'',weapon:'',
+    uniform:0x2a2a2a,accent:0x5a4a2a,hair:0x1a1a1a,skin:0x8a8a86});
+  m.traverse(function(o){
+    if(!o.isMesh||!o.material) return;
+    const arr=Array.isArray(o.material)?o.material:[o.material];
+    arr.forEach(function(mm){ if(mm.color) mm.color.multiplyScalar(0.6); });
+  });
+  m.position.set(t.x,0,t.z); m.rotation.y=t.yaw;
+  scene.add(m);
+  t.pcStatues.push({x:t.x,z:t.z,yaw:t.yaw,mesh:m});
+  t.abCd=6;
+  toast('銅像を設置した');
+  beep(180,0.3,'square',0.1);
+}
+/* 臨席：一番近い銅像と瞬時に位置を入れ替わる */
+function pcSwapStatue(){
+  const t=teacher;
+  if(!t.pcStatues.length){ toast('銅像がまだ無い'); return; }
+  const st=t.pcStatues.slice().sort(function(a,b){
+    return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
+  const ox=t.x,oz=t.z;
+  t.x=st.x; t.z=st.z; t.path=[]; unstick(t);
+  st.x=ox; st.z=oz; st.mesh.position.set(ox,0,oz);
+  t.pcSubCd=8;
+  toast('銅像と一瞬で入れ替わった');
+  beep(520,0.22,'sine',0.12);
+}
+/* 立ち入り禁止区域：自分の周りに一時的なイエローテープの円を指定する。
+   最大1つ(新しく指定すると前のものは消える)。入った生徒はベルで足止め */
+function pcDesignateZone(){
+  const t=teacher;
+  if(t.pcZone&&t.pcZone.mesh) scene.remove(t.pcZone.mesh);
+  const r=6.5;
+  const ring=new THREE.Mesh(new THREE.RingGeometry(r-0.35,r,28),
+    new THREE.MeshBasicMaterial({color:0xffd54a,transparent:true,opacity:0.55,
+      side:THREE.DoubleSide,depthTest:false}));
+  ring.rotation.x=-Math.PI/2; ring.position.set(t.x,0.15,t.z); ring.renderOrder=5;
+  scene.add(ring);
+  t.pcZone={x:t.x,z:t.z,r:r,t:20,mesh:ring};
+  t.pcSubCd=18;
+  toast('この周辺を立ち入り禁止にした');
+  beep(700,0.3,'square',0.1);
+}
+/* 朝の校門指導：自分がマップの出口や椅子へ瞬時に移動する。コウモリ形態の
+   ワープ(dnStartWarp)と同じ「瞬間移動＋緑の光の演出」を踏襲した簡易版
+   (専用の行き先選択パネルは新設せず、少し離れた候補からランダムに選ぶ
+   だけの簡略化。見た目の作り込みより機能を優先する方針のため) */
+function pcGateJump(){
+  const t=teacher;
+  const opts=(exits||[]).map(function(e){ return {x:e.x,z:e.z}; })
+    .concat((chairs||[]).map(function(c){ return {x:c.x,z:c.z}; }));
+  if(!opts.length){ toast('移動先が見当たらない'); return; }
+  opts.sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); });
+  const pick=opts[Math.min(opts.length-1,1+((Math.random()*3)|0))];
+  t.x=pick.x; t.z=pick.z; t.path=[]; unstick(t);
+  t.pcSubCd=6;
+  toast('校門指導へ瞬時に移動した');
+  beep(520,0.2,'sine',0.1); beep(260,0.3,'triangle',0.08);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8),
+    new THREE.MeshBasicMaterial({color:0x35ff6a,transparent:true,opacity:0.55}));
+  m.position.set(pick.x,1.4,pick.z); scene.add(m);
+  fxs.push({m:m,t:0,life:0.4,kind:'dust'});
+}
+function pcBroadcastPing(){
+  const t=teacher;
+  let n=0;
+  students.forEach(function(s){
+    if(s.state==='free'&&!s.hide){ setAura(s,'reveal',3.0); n++; }
+  });
+  t.pcSubCd=16;
+  toast(n?'校内放送で気配を探った':'校内放送（反応なし）');
+  beep(760,0.3,'sine',0.12);
+}
+function pcSubAbility(){
+  const t=teacher;
+  if(t.pcForm===0) pcBroadcastPing();
+  else if(t.pcForm===1) pcGateJump();
+  else if(t.pcForm===2) pcDesignateZone();
+  else pcSwapStatue();
+}
+function updPrincipal(dt){
+  const t=teacher;
+  if(t.kindKey!=='principal') return;
+  /* glTFモデルの読み込みが試合開始時点でまだ終わっていなければ、読み込みが
+     終わり次第この毎フレーム呼び出しの中で自然に反映される */
+  if(!t.pcVisual) attachPrincipalVisual(t);
+  t.pcSubCd=Math.max(0,(t.pcSubCd||0)-dt);
+  /* 全校朝礼(form0のメイン)：持続時間の減衰・3秒おきの金縛りパルス・
+     進行中の課題のじわじわとした後退 */
+  if(t.pcBroadcastT>0){
+    t.pcBroadcastT=Math.max(0,t.pcBroadcastT-dt);
+    t.pcPulseT=(t.pcPulseT===undefined?0:t.pcPulseT)-dt;
+    if(t.pcPulseT<=0){
+      t.pcPulseT=3.0;
+      let frozen=0;
+      students.forEach(function(s){
+        if(s.state==='free'&&!s.hide&&!pcNearSafeChair(s)){ s.freeze=Math.max(s.freeze||0,1.0); frozen++; }
+      });
+      if(frozen) beep(70,0.3,'sawtooth',0.14);
+    }
+    tasks.forEach(function(d){ if(d.prog>0) d.prog=Math.max(0,d.prog-dt*0.01); });
+  }
+  /* 校則違反検知(form2のメイン)：ダッシュ移動(実測の移動速度が基準の115%を
+     超えた状態)を続ける生徒に違反スタックが溜まる。専用のpx/pzで自前追跡
+     (この関数自身が毎フレーム呼ばれる前提の単純な差分検知) */
+  if(t.pcForm===2){
+    students.forEach(function(s){
+      if(s.state!=='free'||s.hide){ s.pcPrevX=s.x; s.pcPrevZ=s.z; return; }
+      const px=(s.pcPrevX===undefined?s.x:s.pcPrevX), pz=(s.pcPrevZ===undefined?s.z:s.pcPrevZ);
+      const dist=Math.hypot(s.x-px,s.z-pz);
+      const running=dt>0&&(dist/dt)>(s.base*1.15);
+      s.pcViolation=running?Math.min(100,(s.pcViolation||0)+dt*13):Math.max(0,(s.pcViolation||0)-dt*7);
+      if(s.pcViolation>=100&&!s.pcExpelled){
+        s.pcExpelled=true; s.pcExpelledT=22;
+        toast(s.name+'が校則違反で停学状態に！');
+        beep(90,0.4,'square',0.16);
+      }
+      s.pcPrevX=s.x; s.pcPrevZ=s.z;
+    });
+  }
+  /* 停学状態(pcExpelled)は形態を切り替えても続く（生徒側の状態のため）。
+     位置を常時あぶり出しつつ、時間切れで自然に解除する安全弁付き */
+  students.forEach(function(s){
+    if(!s.pcExpelled) return;
+    setAura(s,'reveal',0.6);
+    s.pcExpelledT=(s.pcExpelledT===undefined?22:s.pcExpelledT)-dt;
+    if(s.pcExpelledT<=0){ s.pcExpelled=false; s.pcViolation=0; }
+  });
+  /* 立ち入り禁止区域(form2の特殊)：置いた後は形態を切り替えても持続する */
+  if(t.pcZone){
+    t.pcZone.t-=dt;
+    if(t.pcZone.t<=0){ scene.remove(t.pcZone.mesh); t.pcZone=null; }
+    else{
+      students.forEach(function(s){
+        if(s.state!=='free'||s.hide) return;
+        const inside=Math.hypot(s.x-t.pcZone.x,s.z-t.pcZone.z)<t.pcZone.r;
+        if(inside&&!s.pcZoneWas){
+          s.freeze=Math.max(s.freeze||0,1.2);
+          noise(s.x,s.z,14);
+          beep(1500,0.25,'square',0.12);
+          toast(s.name+'が立ち入り禁止区域のベルを鳴らした');
+        }
+        if(inside){ s.slow=Math.max(s.slow||0,0.6); s.slowMul=Math.min(s.slowMul===undefined?1:s.slowMul,0.78); }
+        s.pcZoneWas=inside;
+      });
+    }
+  }
+  /* 銅像設置(form3の特殊)：視界に入った生徒をあぶり出す。形態を切り替えても
+     設置済みの銅像は残り続ける(効果も継続) */
+  if(t.pcStatues.length){
+    t.pcStatues.forEach(function(st){
+      students.forEach(function(s){
+        if(s.state!=='free'||s.hide) return;
+        const dx=s.x-st.x,dz=s.z-st.z,d=Math.hypot(dx,dz);
+        if(d>14) return;
+        const ang=Math.atan2(dx,dz);
+        const diff=Math.abs(((ang-st.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+        if(diff>1.15) return;
+        if(!los(st.x,st.z,s.x,s.z)) return;
+        setAura(s,'reveal',0.6);
+      });
+    });
+  }
+}
 function updMane(dt){
   const t=teacher;
   if(t.kindKey!=='mane'){
@@ -10286,7 +10642,9 @@ function swingHits(force){
       if(diff>=A) continue;
       if(!los(teacher.x,teacher.z,s.x,s.z)) continue;
     }
-    hit(s,teacher.oneshot>0); landed=true;
+    /* 校則違反検知(校長先生form2)：停学状態(pcExpelled)の生徒はワンパン扱い
+       (2026-09-22追加、既存の force/heavy 引数に1項追加するだけの軽い変更) */
+    hit(s,(teacher.oneshot>0)||!!s.pcExpelled); landed=true;
     if(teacher.kindKey==='chalk') chalkDust(s.x,s.z);
   }
   return landed;
@@ -10393,8 +10751,10 @@ const AB2={
   hanako:'ノックの数当て', kuchisake:'質問', radio:'校内放送ジャック',
   model:'', pe:'', math:'', jan:'', teke:'', garden:'', magnet:'', band:'',
   oni:'', ripper:'', dogman:'', nurse:'', wolf:'', pool:'', sewing:'',
-  mirror:'正体を現す', sakasa:'', doll:'人形の視線', mane:'窓封鎖・板封鎖'
+  mirror:'正体を現す', sakasa:'', doll:'人形の視線', mane:'窓封鎖・板封鎖',
+  principal:'形態切替（クールタイム無し）'
 };
+const PC_FORM_NAMES=['全校朝礼','校長室送還','校則違反検知','銅像設置'];
 function useAbility2(){
   const t=teacher;
   if(t.stun>0||t.wipe>0||t.dive>0) return;
@@ -10578,6 +10938,14 @@ function useAbility2(){
     }
     toast(DN_FORM_NAMES[t.dnForm]+'に変身した');
     beep(t.dnForm===1?260:(t.dnForm===2?760:420),0.3,'sawtooth',0.12);
+  } else if(k==='principal'){
+    /* 校長先生：しゅんりさんの指定どおりクールタイム無しで即座に切り替わる。
+       見た目(pcVisual)は1つのまま変えない。充電中だった能力1は必ずリセット
+       して、形態を跨いだ暴発を防ぐ(ダークノードと同じ考え方) */
+    t.pcForm=(t.pcForm+1)%4;
+    t.charge=0;
+    toast(PC_FORM_NAMES[t.pcForm]+'に切り替えた');
+    beep(300+t.pcForm*140,0.22,'square',0.1);
   } else if(k==='photo'){
     /* ゲージが満タン(5)なら「決定的瞬間」の発動モーションへ、そうでなければ
        暗室⇔現像モードの通常切り替え(3秒CD、アドオンで短縮可) */
@@ -11329,6 +11697,12 @@ function aiTeacher(dt){
            （望遠観察・焼き付け・記念撮影はプレイヤー専用、ダークノードのAI
            制限と同じ考え方） */
         t.pdMode=1; t.pdSwitchCd=3.0;
+      }
+      else if(t.kindKey==='principal'&&t.pcForm!==2){
+        /* AIは校則違反検知形態に固定（通常攻撃がそのまま使える形態のため）。
+           他3形態のQ/E特殊アクションは今回プレイヤー専用（ダークノードと同じ
+           「AIはキャラの全機能を使わない」方針） */
+        t.pcForm=2; t.charge=0;
       }
       else if((t.kindKey==='hanako'||t.kindKey==='pool')&&d>18&&t.dive<=0) useAbility();
       else if(t.kindKey==='hanako'&&t.ab2Cd<=0&&d<16&&Math.random()<0.02) useAbility2();
@@ -12146,6 +12520,24 @@ function hud(dt){
    「片方だけ直して片方に反映し忘れる」重複バグを防ぐ(2026-09-11)。
    戻り値は頭の上下ブレ量(br)。呼び出し側で頭の姿勢(通常/負傷/相手を見る等)に使う */
 function animateWalk(u,moved,dt){
+  /* 校長先生専用：procedural低ポリの脚/腕は非表示(hideBody)なので回転させても
+     見た目に影響しないが、代わりに乗せてあるglTFモデルのIdle/Walkクリップを
+     ここで一緒にcrossfade再生する(2026-09-22)。他キャラはu.pcVisualが無いので
+     この分岐には入らない */
+  if(u.pcVisual){
+    const pv=u.pcVisual.userData;
+    if(pv&&pv.mixer){
+      const moving=moved>0.001;
+      const target=moving?pv.actions.walk:pv.actions.idle;
+      if(target&&pv.current!==target){
+        target.reset().fadeIn(0.2).play();
+        if(pv.current) pv.current.fadeOut(0.2);
+        pv.current=target;
+      }
+      if(pv.current) pv.current.timeScale=moving?Math.min(2.2,1+moved*14):1;
+      pv.mixer.update(dt);
+    }
+  }
   u.phase+=moved*1.5;
   /* 振り幅を滑らかに補間して、動き出し・止まり際のカクつきを無くす */
   const walkTarget=Math.min(1,moved*24);
@@ -12593,8 +12985,44 @@ function tick(now){
       abLabel=(t.mnForm===0)?(t.mnReveal>0?'解除中…':'モノマネ変身'):'変身解除';
       abDim=t.mnReveal>0;
       if(input.abEdge) useAbility();
+    } else if(t.kindKey==='principal'){
+      /* 校長先生：能力1(Q)の中身は今の形態(pcForm)によって完全に別物になる。
+         形態切替そのものはR(useAbility2)がクールタイム無しで担う */
+      if(t.pcForm===0){
+        /* 全校朝礼：タップで8秒間発動(ホールド不要)。発動中の二重発動は防ぐ */
+        abLabel=(t.pcBroadcastT>0)?'全校朝礼 実施中…':'全校朝礼';
+        abHot=(t.abCd<=0&&t.pcBroadcastT<=0); abDim=!abHot;
+        hp=(t.pcBroadcastT>0)?(t.pcBroadcastT/8):0;
+        if(input.abEdge&&t.abCd<=0&&t.pcBroadcastT<=0){
+          t.pcBroadcastT=8; t.abCd=20;
+          toast('全校朝礼を始めた…');
+          beep(90,0.6,'sawtooth',0.16); bigNoise(0.3,0.9);
+        }
+      } else if(t.pcForm===1){
+        /* 校長室送還：Qホールドで「見つめる」を溜め、離すと視線が通っている
+           一番近い生徒を校長室へ強制送還する */
+        abLabel='校長室送還';
+        if(input.abHold&&t.abCd<=0&&t.stun<=0&&t.wipe<=0){
+          t.charge=Math.min(1,t.charge+dt*1.0); hp=t.charge;
+          abLabel=(t.charge>=1)?'送還（離して発動）':'見つめる '+Math.round(t.charge*100)+'%';
+        } else if(t.charge>=0.3){ pcSendToRoom(); t.charge=0; }
+        else t.charge=0;
+      } else if(t.pcForm===2){
+        /* 校則違反検知：メイン効果は自動検知(updPrincipal側で毎フレーム判定)
+           なので、Qには押せる操作が無い(情報表示のみ) */
+        abLabel='校則違反を自動検知中'; abDim=true; abHot=false;
+      } else {
+        /* 銅像設置：タップで今いる場所に銅像を1体設置(最大3体、古いものから消える) */
+        abLabel=(t.pcStatues.length>=3)?'銅像設置（上限3体・古い順に消える）':'銅像設置';
+        abHot=t.abCd<=0;
+        if(input.abEdge&&t.abCd<=0) pcPlaceStatue();
+      }
     } else if(input.abEdge) useAbility();
     if(input.ab2Edge&&AB2[t.kindKey]) useAbility2();
+    /* 校長先生の特殊アクション(校内放送／朝の校門指導／立ち入り禁止区域／臨席)は
+       専用の3個目のボタンを新設せず、「殴る・運ぶ等やる事が無い時だけEが
+       能力2の代役になる」既存の仕組み(このすぐ下)を流用し、Rが形態切替
+       専用になっている分だけ代役先をpcSubAbility()に差し替える形にした */
 
     const dp=pallets.filter(function(p){
       return p.state==='down'&&Math.hypot(p.x-t.x,p.z-t.z)<4.4; })[0];
@@ -12628,7 +13056,8 @@ function tick(now){
     if(input.actEdge){
       /* ダークノードは攻撃ボタンが常に通常攻撃（人間=引っ掻き／狼=噛みつきの
          溜め開始）専用。能力の代役にはしない（能力1/能力2は専用ボタンのみ） */
-      if(nothingToDo&&AB2[t.kindKey]&&t.ab2Cd<=0&&t.kindKey!=='darknode') useAbility2();
+      if(t.kindKey==='principal'&&nothingToDo&&t.pcSubCd<=0) pcSubAbility();
+      else if(nothingToDo&&AB2[t.kindKey]&&t.ab2Cd<=0&&t.kindKey!=='darknode'&&t.kindKey!=='principal') useAbility2();
       else if(!dp||foe) doAction();
     }
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
@@ -13016,6 +13445,9 @@ function tick(now){
             (s.lastgaspT>0?perkScale(s,'lastgasp',1.4):1)*
             /* ダンスデモ由来の新生徒2人ぶんの速度効果(2026-09-15) */
             ((s.stepT||0)>0?1.2:1)*(cheerOn()?1.06:1)*
+            /* 校長先生「全校朝礼」中の減速（パイプ椅子の近くにいる間は免除、
+               2026-09-22追加。数値は控えめ(-18%)にしてある） */
+            (pcBroadcastActive()&&!pcNearSafeChair(s)?0.82:1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
@@ -13191,6 +13623,7 @@ function tick(now){
   updSakasa(dt);
   updDoll(dt);
   updMane(dt);
+  updPrincipal(dt);
   /* 巻き戻し用の位置履歴 */
   teacher.histT=(teacher.histT||0)+dt;
   if(teacher.histT>0.25){
@@ -15358,6 +15791,7 @@ function netHostBroadcastSnapshot(dt){
       miss:teacher.miss, crawl:teacher.crawl, oneshot:teacher.oneshot, blend:teacher.blend,
       invis:teacher.invis, cloak:teacher.cloak, wheelOn:teacher.wheelOn, shadow:teacher.shadow,
       blind:teacher.blind, kindKey:teacher.kindKey, dnForm:teacher.dnForm||0,
+      pcForm:teacher.pcForm||0, pcBroadcastOn:!!(teacher.pcBroadcastT>0),
       dnLeap:teacher.dnLeap||0, dnLeapMax:teacher.dnLeapMax||0.35, dnBreak:teacher.dnBreak||0,
       carrying: teacher.carrying?netStuIdx(teacher.carrying):-1,
       pdMode:teacher.pdMode||0, pdAwakeT:teacher.pdAwakeT||0, pdAwakeCastT:teacher.pdAwakeCastT||0,
@@ -17303,6 +17737,10 @@ function softReset(keepNet){
   if(teacher&&teacher.mnMeshes) teacher.mnMeshes.forEach(function(m){ scene.remove(m); });
   if(teacher&&teacher.mnDollMesh) scene.remove(teacher.mnDollMesh);
   if(typeof mnHiliteMesh!=='undefined') mnHiliteMesh.visible=false;
+  /* 校長先生：銅像・立ち入り禁止区域の目印メッシュはteacher.meshの子ではなく
+     scene直下に置いているので、ここで個別に片付ける(2026-09-22) */
+  if(teacher&&teacher.pcStatues) teacher.pcStatues.forEach(function(st){ scene.remove(st.mesh); });
+  if(teacher&&teacher.pcZone&&teacher.pcZone.mesh) scene.remove(teacher.pcZone.mesh);
   students=[]; teacher=null; teacher2=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
   chemTraps.forEach(function(c){ scene.remove(c.m); }); chemTraps.length=0;
