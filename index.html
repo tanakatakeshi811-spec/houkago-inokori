@@ -4101,6 +4101,43 @@ function scyl2(g,mat,rt,rb,h,x,y,z){
   const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,12),mat);
   m.rotation.x=Math.PI/2; m.position.set(x,y,z); g.add(m); return m;
 }
+/* ===== 武器「カッターナイフ」(knife.glb)=====
+   [[HyoiGakuen]](憑愛学園)で既に使っているのと同じCC0モデル(Quaternius製、
+   出典は「Dagger」、assets/CREDITS.md参照)を先生役の「武器の見た目」選択肢
+   (#wepsel、weaponPick)に追加する(2026-09-22)。man.glb(校長先生)と同じく
+   THREE.GLTFLoaderで別読み込みし、読み込みが間に合っていなければ簡易
+   プリミティブへフォールバックする(makeWeapon側で分岐、ゲームが壊れない) */
+let KNIFE_TEMPLATE=null, KNIFE_TEMPLATE_PROMISE=null;
+function preloadKnifeModel(){
+  if(KNIFE_TEMPLATE_PROMISE) return KNIFE_TEMPLATE_PROMISE;
+  KNIFE_TEMPLATE_PROMISE=new Promise(function(resolve){
+    if(typeof THREE==='undefined'||!THREE.GLTFLoader){ resolve(null); return; }
+    try{
+      new THREE.GLTFLoader().load('assets/models/knife.glb',function(gltf){
+        KNIFE_TEMPLATE=gltf; resolve(gltf);
+      },undefined,function(){ resolve(null); });
+    }catch(e){ resolve(null); }
+  });
+  return KNIFE_TEMPLATE_PROMISE;
+}
+preloadKnifeModel();
+/* knife.glbを手持ちサイズに正規化して複製したGroupを返す。モデルごとに
+   向き・原点がバラバラなので「一番長い辺を基準に一様スケール→中心(xyz全部)
+   を原点に揃える」方式(HyoiGakuenのnormalizeCentered()と同じ考え方)。
+   まだ読み込みが終わっていなければnullを返す(呼び出し側でフォールバック) */
+function makeKnifeModel(targetLen){
+  if(!KNIFE_TEMPLATE) return null;
+  const inner=KNIFE_TEMPLATE.scene.clone(true);
+  const box=new THREE.Box3().setFromObject(inner);
+  const size=new THREE.Vector3(); box.getSize(size);
+  const center=new THREE.Vector3(); box.getCenter(center);
+  const maxDim=Math.max(size.x,size.y,size.z);
+  const scale=maxDim>0?targetLen/maxDim:1;
+  inner.scale.setScalar(scale);
+  inner.position.set(-center.x*scale,-center.y*scale,-center.z*scale);
+  const wrap=new THREE.Group(); wrap.add(inner);
+  return wrap;
+}
 function makeWeapon(kind,S){
   const g=new THREE.Group();
   const wood=LM(0x8a6440), steel=LM(0xc6ccd2), dark=LM(0x24272b);
@@ -4318,6 +4355,16 @@ function makeWeapon(kind,S){
     bx(g,LM(0x24272b),0.15*S,0.15*S,0.9*S,0,0,0.35*S);
     bx(g,LM(0xc9a24a),0.55*S,0.1*S,0.14*S,0,0,0.82*S);
     bx(g,LM(0x8a2f28),0.16*S,0.16*S,0.16*S,0,0,-0.1*S);
+  } else if(kind==='knife'){
+    /* カッターナイフ(2026-09-22追加、依頼1)。既製glTFモデル(knife.glb)を
+       makeKnifeModel()で正規化して使う。読み込みが間に合っていなければ
+       簡易プリミティブ(刃+柄)へフォールバックする */
+    const model=makeKnifeModel(0.95*S);
+    if(model){ model.position.set(0,0,0.55*S); g.add(model); }
+    else{
+      bx(g,steel,0.14*S,0.05*S,0.5*S,0,0,0.75*S);
+      bx(g,dark,0.15*S,0.15*S,0.45*S,0,0,0.22*S);
+    }
   }
   return g;
 }
@@ -6661,7 +6708,8 @@ const WEAPONS=[
  {k:'eraser',  n:'黒板消し'},
  {k:'bonewand',n:'骨の杖'},
  {k:'drill',   n:'電動ドリル'},
- {k:'umbrella',n:'傘'}
+ {k:'umbrella',n:'傘'},
+ {k:'knife',   n:'カッターナイフ'}
 ];
 let weaponPick='';
 
@@ -7061,7 +7109,7 @@ const TCH=[
  {key:'sakasa',desc:'床形態（3形態で一番遅い）｜通常攻撃可。Q｜壁走り形態（狼並みの速さ・気配減少・攻撃不可）に変身／壁走り中に天井の張り付き地点でQ｜天井形態（ホールドして待ち構え、真下を生徒が通ると自動で落下奇襲。外すと3秒動けない）。奇襲を3回決めると60秒「双子の逆さ女」になり、もう一体の逆さ女が同時出現する'},
  {key:'doll',desc:'人形投げ｜命中で数秒間 金縛り。人形は1個のみ、投げたら人形塚（槍箱と同じ地点）で補充。生徒を1人ダウンさせるか3分経過でレベル2（速度+8%・人形がブーメラン式に強化・R「人形の視線」で生徒の位置が見える）。さらに2人ダウン＋一定時間でレベル3（速度最大・Qが踏み込み範囲攻撃＝板も破壊できるに変化・人形の視線が常時発動）'},
  {key:'mane',desc:'モノマネ｜生徒を選んで変身。三人称・攻撃不可・心音が鳴らない。もう一度押すと解除（皮をはぎモノマネキンが出るモーションに2秒、周囲10m以内の生徒を2.2秒スタン。解除直後は0.5秒減速→0.4秒加速）／窓封鎖・板封鎖｜向いている先の窓か板が常にピンク色でハイライトされ、能力2でそこを10秒封鎖（モノマネ人形を設置、CD15秒）。対象がすでに倒れている板なら即座に完全破壊してモノマネ人形を設置し、その場にいた生徒の足を40%遅くする'},
- {key:'principal',desc:'能力2でいつでもクールタイム無しに4つの形態を切り替えられる怪人。全校朝礼形態｜Q長押しで説教を8秒間放送。全生徒が減速し数秒おきに金縛り、課題の進みもじわじわ後退する（椅子に座っている間はやり過ごせる）／特殊：校内放送｜近くの生徒の位置を数秒あぶり出す。校長室送還形態｜Qを溜めて離すと、視線が通っている一番近い生徒を校長室へ強制送還（連打で自力脱出可）／特殊：朝の校門指導｜自分が出口や椅子へ瞬間移動する。校則違反検知形態｜ダッシュ移動を続ける生徒に違反スタックが自動で溜まり、満タンで停学状態（ワンパン＋位置が常に見える）になる／特殊：立ち入り禁止区域｜自分の周りを一時的に立入禁止にし、入った生徒はベルで足止めされる。銅像設置形態｜Qで自分の銅像を設置（視界に入った生徒があぶり出される）／特殊：臨席｜設置した銅像と一瞬で位置を入れ替わる'}
+ {key:'principal',desc:'能力2でいつでもクールタイム無しに4つの形態を切り替えられる怪人。全校朝礼形態｜Q長押しで説教を8秒間放送。全生徒が減速し数秒おきに金縛り、課題の進みもじわじわ後退する（椅子に座っている間はやり過ごせる）／特殊：校内放送｜近くの生徒の位置を数秒あぶり出す。校長室送還形態｜Qを溜めて離すと、視線が通っている一番近い生徒を校長室へ強制送還（連打で自力脱出可）／特殊：朝の校門指導｜自分が出口や椅子へ瞬間移動する。校則違反検知形態｜ダッシュ移動を続ける生徒に違反スタックが自動で溜まり、満タンで停学状態（ワンパン＋位置が常に見える）になる／特殊：立ち入り禁止区域｜自分の周りを一時的に立入禁止にし、入った生徒はベルで足止めされる。銅像設置形態｜Qで自分の銅像を設置（最大3体）。半径15m以内に生徒が5秒間居続けると位置があぶり出され、さらに12秒で0.5ダメージ、以後5秒→2.5秒→1.25秒…とダメージ間隔が半分ずつ縮んでいく（範囲を出ると進行はリセット、受けたダメージは戻らない）／特殊：臨席｜設置した銅像と一瞬で位置を入れ替わる'}
 ];
 let rosterPick=[0,1,2,3];
 let curStage='school';
@@ -10194,12 +10242,47 @@ function mnClearSeal(t){ t.mnSealKind=''; t.mnSealIdx=-1; t.mnSealT=0; }
    4つの数値を、このPC_CD_FAST 1箇所を触るだけで統一的に管理できるように
    まとめた) */
 const PC_CD_FAST=1.0;
-function pcRoomSpot(){
-  if(chairs&&chairs.length){
-    const c=chairs[chairs.length-1];
-    return {x:c.x+1.4,z:c.z+1.4};
+/* 校長室：依頼10(2026-09-22続報)で1箇所固定→3箇所に増やした。ステージごとの
+   座標を新しく手打ちで持つのではなく、既存のchairs(そのステージの反省椅子、
+   applyStage()で既にステージ別にフィルタ済み)から「なるべく互いに離れた
+   3つ」を貪欲法(farthest-point sampling)で選ぶ方式にした。どのステージでも
+   マジックナンバーの座標追加なしに自動成立し、副次的に3箇所へ分散する
+   ことで「校長室がどこにあるか分からない」不満の緩和にもなる */
+let pcRoomSpotsCache=null, pcRoomSpotsStage=null;
+function pcRoomSpots(){
+  if(pcRoomSpotsCache&&pcRoomSpotsStage===curStage) return pcRoomSpotsCache;
+  const pts=(chairs&&chairs.length)?chairs.map(function(c){ return {x:c.x+1.4,z:c.z+1.4}; }):[];
+  let out;
+  if(!pts.length){
+    out=[{x:teacher.x,z:teacher.z},{x:teacher.x,z:teacher.z},{x:teacher.x,z:teacher.z}];
+  } else {
+    out=[pts[pts.length-1]];
+    while(out.length<3&&out.length<pts.length){
+      let best=null,bestD=-1;
+      pts.forEach(function(p){
+        if(out.indexOf(p)!==-1) return;
+        let d=Infinity;
+        out.forEach(function(o){ d=Math.min(d,Math.hypot(p.x-o.x,p.z-o.z)); });
+        if(d>bestD){ bestD=d; best=p; }
+      });
+      if(best) out.push(best); else break;
+    }
+    while(out.length<3) out.push(out[out.length-1]);
   }
-  return {x:teacher.x,z:teacher.z};
+  pcRoomSpotsCache=out; pcRoomSpotsStage=curStage;
+  return out;
+}
+/* 引数なし＝1つ目(従来呼び出し互換)。refX/refZを渡すと3箇所のうち一番近い
+   ものを返す(自己ワープの狙い先など「今いる場所から一番近い校長室」用) */
+function pcRoomSpot(refX,refZ){
+  const spots=pcRoomSpots();
+  if(refX===undefined) return spots[0];
+  let best=spots[0],bestD=Infinity;
+  spots.forEach(function(p){
+    const d=Math.hypot(p.x-refX,p.z-refZ);
+    if(d<bestD){ bestD=d; best=p; }
+  });
+  return best;
 }
 function pcNearSafeChair(s){
   return chairs.some(function(c){ return !c.taken&&Math.hypot(c.x-s.x,c.z-s.z)<1.6; });
@@ -10255,8 +10338,13 @@ function pcSendToRoom(){
     Math.hypot(s.x-t.x,s.z-t.z)<16&&los(t.x,t.z,s.x,s.z); })
     .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
   if(!tg){ toast('送還できる生徒が見当たらない'); return; }
-  const p=pcRoomSpot();
+  /* 依頼10(2026-09-22続報)：校長室が3箇所に増えたため、送還先は「校長先生
+     (自分)から一番近い1箇所」を選ぶ(送還後に自分も向かいやすい)。どの
+     校長室に送還したかはtg.pcRoomPosとして生徒側に記録し、オーラ可視化
+     (下のupdPrincipal内)がその生徒専用の校長室を見るようにする */
+  const p=pcRoomSpot(t.x,t.z);
   tg.x=p.x; tg.z=p.z; tg.path=[]; unstick(tg);
+  tg.pcRoomPos={x:p.x,z:p.z};
   /* 依頼2：送還されてから15秒間は連打しても抜け出せない強制拘束
      (trapLockTがtrapCheck側で連打受付をブロックする、2026-09-22続報)。
      依頼3：pcRoomTrappedは「校長室に捕まっている」ことを示す専用フラグ
@@ -10373,17 +10461,24 @@ function updPrincipal(dt){
      ゲーム全体の既存アーキテクチャの制約、詳細はナレッジ参照) */
   const pcRoomOccupants=students.filter(function(s){ return s.pcRoomTrapped&&s.state==='free'; });
   if(pcRoomOccupants.length){
-    pcRoomOccupants.forEach(function(s){ setAura(s,'reveal',0.6); });
-    const rpv=pcRoomSpot();
-    if(Math.hypot(t.x-rpv.x,t.z-rpv.z)<6) setAura(t,'reveal',0.6);
+    pcRoomOccupants.forEach(function(s){
+      setAura(s,'reveal',0.6);
+      /* 依頼10(2026-09-22続報)：校長室が3箇所になったため、送還時に記録した
+         その生徒専用のpcRoomPos(送還先)との距離で判定する(pcRoomSpot()を
+         引数なしで呼ぶと1箇所目しか見られず、他の校長室にいる場合に
+         誤判定するため) */
+      const rp=s.pcRoomPos||pcRoomSpot();
+      if(Math.hypot(t.x-rp.x,t.z-rp.z)<6) setAura(t,'reveal',0.6);
+    });
   }
   /* 依頼1(2026-09-22続報)：視点(照準)を校長室の方向へ5秒間合わせ続けると、
      校長先生自身がそこへ瞬時にワープできる(「校長室がどこにあるか分からない」
      への対策)。朝の校門指導(pcGateJump、出口/椅子へ)とは別の新設ルートで、
      pcFormに関係なく常時使える。ローカルでプレイしている本人(role==='teacher')
-     の入力でのみ動く(botは対象外) */
+     の入力でのみ動く(botは対象外)。依頼10(2026-09-22続報)：3箇所のうち
+     「今いる場所から一番近い校長室」を毎フレーム狙い先にする */
   if(role==='teacher'&&t.stun<=0&&t.wipe<=0&&t.dive<=0){
-    const rp2=pcRoomSpot();
+    const rp2=pcRoomSpot(t.x,t.z);
     const ddx=rp2.x-t.x,ddz=rp2.z-t.z,ddist=Math.hypot(ddx,ddz);
     let aimed=ddist<3;
     if(!aimed){
@@ -10465,20 +10560,42 @@ function updPrincipal(dt){
       });
     }
   }
-  /* 銅像設置(form3の特殊)：視界に入った生徒をあぶり出す。形態を切り替えても
-     設置済みの銅像は残り続ける(効果も継続) */
+  /* 銅像設置(form3の特殊、2026-09-22続報で仕様変更)：旧仕様「視界に入ったら
+     即オーラ可視化」を、「銅像を中心に半径15m(360度・視界は問わない、単純な
+     距離判定)に生徒が継続して居ると、5秒でオーラ可視化→そこから12秒で
+     最初の0.5ダメージ→以後5秒→2.5秒→1.25秒…とダメージ間隔がどんどん半分
+     ずつ縮む(粘るほど危険)」方式に置き換えた。範囲を一度でも抜けると
+     s.pcGazeT(継続秒数)・s.pcGazeRevealed(可視化済みか)・s.pcGazeNextT
+     (次にダメージが入るpcGazeTの値)・s.pcGazeInterval(次の間隔)を全て即0/
+     未設定に戻す(進行は最初からやり直し)。ただし既に入った0.5ダメージ
+     (s.dmg)自体は戻らない(damage()を素通しで呼ぶだけなので当然)。
+     形態を切り替えても設置済みの銅像・生徒ごとの進行は残り続ける */
   if(t.pcStatues.length){
-    t.pcStatues.forEach(function(st){
-      students.forEach(function(s){
-        if(s.state!=='free'||s.hide) return;
-        const dx=s.x-st.x,dz=s.z-st.z,d=Math.hypot(dx,dz);
-        if(d>14) return;
-        const ang=Math.atan2(dx,dz);
-        const diff=Math.abs(((ang-st.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
-        if(diff>1.15) return;
-        if(!los(st.x,st.z,s.x,s.z)) return;
-        setAura(s,'reveal',0.6);
-      });
+    students.forEach(function(s){
+      if(s.state!=='free'||s.hide) return;
+      let inRange=false;
+      for(let i=0;i<t.pcStatues.length;i++){
+        const st=t.pcStatues[i];
+        if(Math.hypot(s.x-st.x,s.z-st.z)<=15){ inRange=true; break; }
+      }
+      if(!inRange){
+        s.pcGazeT=0; s.pcGazeRevealed=false; s.pcGazeNextT=undefined; s.pcGazeInterval=undefined;
+        return;
+      }
+      s.pcGazeT=(s.pcGazeT||0)+dt;
+      if(!s.pcGazeRevealed&&s.pcGazeT>=5){
+        s.pcGazeRevealed=true;
+        s.pcGazeNextT=5+12;   /* 依頼どおりの数値をそのまま実装(5秒後、さらに12秒で最初のダメージ) */
+        s.pcGazeInterval=5;   /* 以後の間隔は5→2.5→1.25→…と半分ずつ縮む */
+      }
+      if(!s.pcGazeRevealed) return;
+      setAura(s,'reveal',0.6);
+      while(s.pcGazeNextT!==undefined&&s.pcGazeT>=s.pcGazeNextT){
+        damage(s,0.5,false,teacher);
+        if(s.state!=='free') break;   /* ダウン等で対象から外れたら多重発火をやめる */
+        s.pcGazeNextT+=s.pcGazeInterval;
+        s.pcGazeInterval/=2;
+      }
     });
   }
 }
