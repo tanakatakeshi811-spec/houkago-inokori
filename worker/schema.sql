@@ -34,12 +34,19 @@ CREATE INDEX IF NOT EXISTS idx_match_results_player ON match_results(player_id);
 -- 簡易クリーンアップ方式。name/iconはplayersテーブルの投稿時点の値を
 -- そのままコピーして持つ＝あとでプロフィール名を変えても過去の投稿の
 -- 表示名は変わらない、match_resultsと同じ「非正規化して残す」方針）
+-- 2026-09-22 IP BAN機能の実運用のため追加。ip TEXTは接続元IP
+-- (cf-connecting-ip)の記録用。取得できなかった場合はNULL。既存の本番DBには
+-- 既に投稿が入っているため、別途
+-- `ALTER TABLE board_posts ADD COLUMN ip TEXT;` を1回だけ実行して追いついている
+-- (このカラム追加より前の投稿はip=NULLのまま。管理画面側で「IP不明」表示にする)。
+-- 新規に作る環境ではこのCREATE TABLEで最初からip込みで作られる。
 CREATE TABLE IF NOT EXISTS board_posts (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id   TEXT NOT NULL,
   name        TEXT NOT NULL DEFAULT '名無し',
   icon        TEXT NOT NULL DEFAULT '👤',
   text        TEXT NOT NULL,
+  ip          TEXT,
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_board_posts_created ON board_posts(created_at);

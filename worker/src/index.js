@@ -20,6 +20,7 @@
      /api/link/create      … 掲示板連携用の6桁コード発行(POST、ゲーム本体のタイトル画面から)
      /api/link/redeem      … 6桁コードをplayer_idに交換(POST、掲示板側での連携完了、1回で失効)
      /api/admin/*          … 管理者用モデレーションAPI(2026-09-22追加、詳細は下の管理者セクション参照)
+     /api/admin/board/posts … 管理者専用の投稿一覧(IP込み、2026-09-22追加。/api/board/listと違いIPを含む。一般公開してはいけない)
      /health, /          … 生存確認
 
    ランキングについて: クライアント(ブラウザ)が試合結果を自己申告する方式なので
@@ -451,8 +452,8 @@ async function handleBoardPost(request, env) {
   }
 
   await env.DB.prepare(
-    'INSERT INTO board_posts (player_id, name, icon, text, created_at) VALUES (?,?,?,?,?)'
-  ).bind(playerId, name, icon, text, now).run();
+    'INSERT INTO board_posts (player_id, name, icon, text, ip, created_at) VALUES (?,?,?,?,?,?)'
+  ).bind(playerId, name, icon, text, clientIp || null, now).run();
 
   await cleanupOldPosts(env, now);
   return jsonRes({ ok: true });
@@ -671,6 +672,21 @@ async function handleAdminBoardBansList(request, env) {
   });
 }
 
+/* 管理者専用の投稿一覧(IP込み、2026-09-22追加): 一般公開の/api/board/listは
+   誰でも呼べるためIPを絶対に含めない(プライバシー上重要)。管理者が
+   「誰のIPが何なのか」を見てワンクリックでIP BANできるように、x-admin-token
+   で保護された別エンドポイントとしてここだけIPを返す。過去(ipカラム追加より
+   前)の投稿はip=NULLのまま返るので、管理画面側で「IP不明」表示にする。 */
+async function handleAdminBoardPosts(request, env) {
+  const now = Date.now();
+  await cleanupOldPosts(env, now);
+  const rs = await env.DB.prepare(
+    `SELECT id, player_id as playerId, name, icon, text, ip, created_at as createdAt
+     FROM board_posts WHERE created_at >= ? ORDER BY created_at DESC LIMIT 200`
+  ).bind(now - BOARD_WINDOW_MS).all();
+  return jsonRes({ ok: true, posts: rs.results || [], now, windowMs: BOARD_WINDOW_MS });
+}
+
 async function handleAdminBoardDeletePost(request, env) {
   let body;
   try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
@@ -759,6 +775,7 @@ export default {
     if (url.pathname.startsWith('/api/admin/')) {
       if (!checkAdminToken(request, env)) return adminAuthFail();
       try {
+        if (url.pathname === '/api/admin/board/posts' && request.method === 'GET') return await handleAdminBoardPosts(request, env);
         if (url.pathname === '/api/admin/board/ban' && request.method === 'POST') return await handleAdminBoardBan(request, env);
         if (url.pathname === '/api/admin/board/ban-ip' && request.method === 'POST') return await handleAdminBoardBanIp(request, env);
         if (url.pathname === '/api/admin/board/unban' && request.method === 'POST') return await handleAdminBoardUnban(request, env);
