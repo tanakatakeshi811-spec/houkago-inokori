@@ -3685,6 +3685,19 @@ function updBoneUi(){
 }
 /* 化学トラップ */
 const chemTraps=[];
+/* 泥団子（田中太郎）：痕跡(mudTrail)と破裂エリア(mudAreas)はグローバル、
+   本体の状態(モード・体積)は生徒オブジェクト(s.mudMode等)に直接持たせる。
+   体積(0〜1)＝耐久値も兼ねる単一の値として扱う(仕様の「体積」と「耐久値」を
+   同じ数値に統合。0になった時だけ回転しながら消滅させる、2026-09-23) */
+const mudTrail=[], mudAreas=[];
+const MUD_VOLCAP=1.0, MUD_MODE_THRESH=0.35, MUD_GROW_PER_M=0.022,
+  MUD_ROLL_COST=0.003, MUD_HOLD_COST=0.0014, MUD_GEN_COST=0.10,
+  MUD_TRAIL_LIFE=5, MUD_TRAIL_GRIME_PS=8, MUD_TRAIL_STEP=0.5,
+  MUD_AREA_LIFE=10, MUD_AREA_GRIME_PS=18, MUD_AREA_SLOW_DUR=1.5, MUD_AREA_SLOW_AMT=0.55,
+  MUD_GRIME_CAP=100, MUD_GRIME_STUN=2.6, MUD_GRIME_LOCK=10, MUD_GRIME_IDLE_DECAY=8, MUD_GRIME_DECAY_PS=15,
+  MUD_TEACHER_BREAK_LOSS=0.6, MUD_STUDENT_BUMP_MUL=0.3, MUD_STUDENT_BUMP_MIN=0.05,
+  MUD_LAUNCH_SPEED=15, MUD_LAUNCH_RANGE=13, MUD_KNOCK_THRESH=0.5, MUD_KNOCK_DIST=3.0,
+  MUD_VAULT_LOSS=0.15, MUD_MODEA_SPD=1.032, MUD_MODEA_TURNLERP=5, MUD_NORMAL_TURNLERP=13;
 /* 宿題トラップ */
 const traps=[];
 /* 落ちているアイテム */
@@ -6702,7 +6715,15 @@ const STU=[
  {name:'黛 ひなぎく',short:'ひな',uniform:0x3d2a4e,hair:0xc9a33f,perk:'cheer',
   ptxt:'声援｜自分が先生に追われている間、仲間全員の足が6%速くなる',
   skill:'hitouch',sname:'ハイタッチ',cd:18,
-  stxt:'4m以内の仲間とハイタッチ。お互いの固有スキルのクールダウンが5秒縮み、3秒間 足が20%速くなる'}
+  stxt:'4m以内の仲間とハイタッチ。お互いの固有スキルのクールダウンが5秒縮み、3秒間 足が20%速くなる'},
+ /* 相棒のハムスターと一緒に泥団子を転がす牽制・補助タイプ(2026-09-23追加)。
+    固有スキルはクールタイムが無い代わりにスタミナを直接消費する特殊枠で、
+    cd:0＋uses未指定(無制限)にして「毎回押しっぱなしで使える」既存の
+    大河「フルスイング」等と同じ仕組みに乗せている */
+ {name:'田中太郎',short:'太郎',uniform:0x7a5a34,hair:0x2a2018,perk:'mud',
+  ptxt:'虚言｜他の生徒と共同で課題を進めていると、スキルチェックの発動間隔が縮む(自分にも押し損ないの危険が増える)',
+  skill:'mudball',sname:'泥団子',cd:0,
+  stxt:'E｜スタミナを消費して泥団子を出す(以後は押すたびに玉転がし⇔玉乗りを切替、クールタイム無し)。R｜押し出して先生にぶつける'}
 ];
 const WEAPONS=[
  {k:'',        n:'キャラ標準'},
@@ -8265,6 +8286,15 @@ function updVault(e,dt){
     }
     /* 久我 颯「ステップワーク」：乗り越えた直後だけ足が速くなる(2026-09-15) */
     if(e.kind==='student'&&e.perk==='bstep') e.stepT=2.5;
+    /* 田中太郎「玉乗り」：泥団子に乗ったまま板・窓を越えるたびに体積が削れる
+       (無限成長ループの防止、2026-09-23)。このゲームには高所からの落下という
+       別の移動システムが無いため、仕様にある「高所からの落下」は板・窓の
+       乗り越えと同じこの一箇所にまとめて対応させている */
+    if(e.kind==='student'&&e.perk==='mud'&&e.mudMode===3){
+      e.mudVol=Math.max(0,(e.mudVol||0)-MUD_VAULT_LOSS*MUD_VOLCAP);
+      if(e.mudVol<=0) mudTriggerVanish(e); else mudUpdateMeshScale(e);
+      if(e===me) toast('泥団子がすり減った');
+    }
   }
   return true;
 }
@@ -8489,6 +8519,10 @@ function scEnd(res){
   scActive=false; elSkill.classList.remove('on');
   const t=scTarget; scTarget=null;
   scNext=DIFF.checkGap[0]+Math.random()*(DIFF.checkGap[1]-DIFF.checkGap[0]);
+  /* 田中太郎「虚言」：共同作業中(机に2人以上、うち1人がperk==='mud')は
+     スキルチェックの間隔を縮めて発動頻度を上げる(2026-09-23、+50%の
+     「発動確率」を、このゲームの固定ゲージ間隔方式に近似変換したもの) */
+  if(t&&mudCoopBoost(t)) scNext/=1.5;
   if(!t) return;
   if(res==='great'){ t.prog=Math.min(1,t.prog+0.07); stats.perfect++;
     beep(1046,0.14,'triangle',0.1); toast('パーフェクト'); vib(20); }
@@ -8877,7 +8911,7 @@ function noiseR(s,r){
   return r;
 }
 const SAB2={ medic:'鎮痛剤', chem:'煙幕', tank:'風紀粛清', ghost:'粉爆弾',
-  sound:'偽の悲鳴', tome:'足止め（護符消費）' };
+  sound:'偽の悲鳴', tome:'足止め（護符消費）', mud:'泥団子を押し出す' };
 function useStudentSkill2(s){
   if(s.lock>0){ toast('スキルが封じられている'); return; }
   if(s.ab2Cd>0) return;
@@ -8920,6 +8954,8 @@ function useStudentSkill2(s){
     });
     if(s===me) toast('しおりを投げつけて足止め！（1.5秒）');
     beep(240,0.3,'square',0.13); vib([30,40,50]);
+  } else if(k==='mud'){
+    mudLaunch(s);
   }
 }
 function dropPowderBomb(s,charge){
@@ -9267,6 +9303,31 @@ function useStudentSkill(s,netDurOverride){
       if(s===me||target===me) toast(target===s?'自分に身代わり札をかけた（次の1発を無効化）':(target.name+'に身代わり札をかけた'));
       beep(500,0.25,'triangle',0.1);
     }
+  } else if(s.skill==='mudball'){
+    /* 田中太郎「泥団子」：クールタイム無しの代わりにスタミナを直接消費する。
+       E｜無い時は生成、ある時はモード循環(玉転がし→玉乗り→通常)。
+       押し出し(R)はSAB2側のuseStudentSkill2→mudLaunch()で処理する */
+    if(s.mudMode===5){ if(s===me) toast('泥団子が崩れている最中'); return; }
+    if(!s.mudMode){
+      if((s.stam||0)<0.12){ if(s===me) toast('スタミナが足りない'); return; }
+      s.stam=Math.max(0,s.stam-MUD_GEN_COST);
+      s.mudMode=1; s.mudVol=0.06; s.mudPX=s.x; s.mudPZ=s.z; s.mudTrailAcc=0; s.mudBumpCd=0;
+      mudUpdateMeshScale(s);
+      if(s===me) toast('泥団子を作った');
+      beep(180,0.22,'sine',0.1);
+    } else if(s.mudMode===1||s.mudMode===2){
+      if((s.mudVol||0)<MUD_MODE_THRESH){
+        if(s===me) toast('もっと大きくしないと特殊移動モードは使えない');
+        return;
+      }
+      s.mudMode=(s.mudMode===1)?2:3;
+      if(s===me) toast(s.mudMode===2?'玉転がしモード：速いが曲がりにくい':'玉乗りモード：攻撃を泥団子が肉盾になる');
+      beep(420,0.16,'triangle',0.1);
+    } else if(s.mudMode===3){
+      s.mudMode=1;
+      if(s===me) toast('泥団子から降りた');
+      beep(300,0.13,'triangle',0.09);
+    }
   }
 }
 /* ドローン */
@@ -9283,6 +9344,254 @@ const droneObj={x:0,z:0,m:null};
     new THREE.MeshBasicMaterial({color:0xff3b2e})); led.position.set(0,-0.2,0.35); g.add(led);
   g.visible=false; scene.add(g); droneObj.m=g;
 })();
+/* ===== 泥団子（田中太郎） =====
+   s.mudMode: 0=無し, 1=持っている(玉転がし前の通常携行), 2=玉転がし(モードA),
+   3=玉乗り(モードB), 4=押し出して飛んでいる最中, 5=消滅演出中
+   s.mudVol: 体積(0〜1)＝耐久値を兼ねる */
+function mudEnsureMesh(s){
+  if(s.mudMesh) return s.mudMesh;
+  const g=new THREE.Group();
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),LM(0x5a4326));
+  ball.scale.setScalar(0.3); g.add(ball); g.userData.ball=ball;
+  scene.add(g); s.mudMesh=g; return g;
+}
+function mudMeshRadius(vol){ return 0.32+Math.min(1,Math.max(0,vol||0))*0.95; }
+function mudUpdateMeshScale(s){
+  const g=mudEnsureMesh(s);
+  const r=mudMeshRadius(s.mudVol);
+  g.userData.ball.scale.setScalar(r);
+  g.position.set(s.mudX===undefined?s.x:s.mudX, r*0.9, s.mudZ===undefined?s.z:s.mudZ);
+}
+function mudAddTrailPoint(x,z){
+  const m=new THREE.Mesh(new THREE.CircleGeometry(0.55,10),
+    new THREE.MeshBasicMaterial({color:0x4a3620,transparent:true,opacity:0.55,depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(x,0.03,z); scene.add(m);
+  mudTrail.push({x:x,z:z,t:MUD_TRAIL_LIFE,m:m});
+}
+/* 破裂エリアを作る。押し出し命中・先生の攻撃で割れた時の両方から呼ぶ */
+function mudAddArea(x,z,r){
+  const m=new THREE.Mesh(new THREE.CircleGeometry(r,16),
+    new THREE.MeshBasicMaterial({color:0x6b4a2a,transparent:true,opacity:0.4,depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(x,0.04,z); scene.add(m);
+  mudAreas.push({x:x,z:z,r:r,t:MUD_AREA_LIFE,m:m});
+  const pop=new THREE.Mesh(new THREE.SphereGeometry(r*0.85,12,8),
+    new THREE.MeshBasicMaterial({color:0x8a6a3f,transparent:true,opacity:0.5}));
+  pop.position.set(x,1.0,z); scene.add(pop);
+  fxs.push({m:pop,t:0,life:0.9,kind:'dust'});
+  beep(160,0.3,'sawtooth',0.14); bigNoise(0.2,0.7);
+}
+/* 汚れ値の加算。100に達したらハムスターの奇襲でスタン、10秒間は増加しない
+   (2026-09-23：トリガー後はゲージを0に戻す設計にした。理由はナレッジ参照) */
+function mudAddGrime(t,amt){
+  if(!t||amt<=0) return;
+  if((t.mudGrimeLockT||0)>0) return;
+  t.mudGrime=Math.min(MUD_GRIME_CAP,(t.mudGrime||0)+amt);
+  t.mudGrimeIdleT=0;
+  if(t.mudGrime>=MUD_GRIME_CAP){
+    t.mudGrime=0; t.mudGrimeLockT=MUD_GRIME_LOCK;
+    t.stun=Math.max(t.stun||0,MUD_GRIME_STUN); t.path=[]; t.dash=0; t.charge=0;
+    toast('ハムスターの奇襲！先生がスタンした');
+    beep(220,0.3,'square',0.15); setTimeout(function(){ beep(140,0.3,'square',0.13); },140);
+    vib([30,50,30]);
+  }
+}
+/* 汚れ値のロックアウト・減衰(8秒増加無しで毎秒15減少)・送風的な減速タイマーの
+   後始末をまとめて処理する。teacher/teacher2どちらにも同じものを渡せる */
+function updMudGrime(t,dt){
+  if(!t) return;
+  t.mudGrimeLockT=Math.max(0,(t.mudGrimeLockT||0)-dt);
+  if((t.mudGrime||0)>0){
+    t.mudGrimeIdleT=(t.mudGrimeIdleT||0)+dt;
+    if(t.mudGrimeIdleT>MUD_GRIME_IDLE_DECAY)
+      t.mudGrime=Math.max(0,t.mudGrime-MUD_GRIME_DECAY_PS*dt);
+  }
+  t.mudSlowT=Math.max(0,(t.mudSlowT||0)-dt);
+}
+/* 耐久値(体積)が尽きた時の消滅演出。回転しながら縮んで消える */
+function mudTriggerVanish(s){
+  if(s.mudMode===5) return;
+  s.mudMode=5; s.mudVanishT=1.0;
+}
+function mudHitTeacherWithLaunch(s,t){
+  const vol=s.mudVol||0;
+  const grime=30+Math.min(1,vol)*20;
+  mudAddGrime(t,grime);
+  mudAddArea(s.mudX,s.mudZ,2.0+2.2*vol);
+  if(vol>=MUD_KNOCK_THRESH){
+    const dx=t.x-s.mudX,dz=t.z-s.mudZ,d=Math.hypot(dx,dz)||1;
+    const nx=t.x+dx/d*MUD_KNOCK_DIST, nz=t.z+dz/d*MUD_KNOCK_DIST;
+    if(!blocked(nx,nz,BODY)){ t.x=nx; t.z=nz; }
+    t.stun=Math.max(t.stun||0,1.4); t.path=[]; t.dash=0; t.charge=0;
+    if(s===me) toast('泥団子が直撃！ノックバック！');
+    else if(t===teacher||t===teacher2) toast(s.name+'の泥団子でノックバック！');
+  } else if(s===me) toast('泥団子が直撃！');
+  beep(150,0.25,'square',0.14); vib([30,40,30]);
+}
+/* R｜押し出す。玉乗り中(mode3)は自分が乗っている物を撃ち出せないので不可 */
+function mudLaunch(s){
+  if(!s.mudMode||s.mudMode===3||s.mudMode===4||s.mudMode===5){
+    if(s===me) toast(s.mudMode===3?'玉乗り中は押し出せない':'泥団子がない');
+    return;
+  }
+  if((s.mudVol||0)<=0) return;
+  s.mudMode=4;
+  s.mudVX=Math.sin(s.yaw)*MUD_LAUNCH_SPEED; s.mudVZ=Math.cos(s.yaw)*MUD_LAUNCH_SPEED;
+  s.mudLaunchDist=0;
+  if(s===me) toast('泥団子を押し出した！');
+  beep(140,0.2,'square',0.12); vib(20);
+}
+/* 他の生徒が大きな泥団子にぶつかって割る判定(小さくなるだけで消滅しない) */
+function mudCheckStudentBump(s){
+  s.mudBumpCd=Math.max(0,(s.mudBumpCd||0)-1/60);
+  if((s.mudVol||0)<0.5||s.mudBumpCd>0) return;
+  const bumper=students.filter(function(o){ return o!==s&&o.state==='free'&&!o.hide&&
+    Math.hypot(o.x-s.mudX,o.z-s.mudZ)<1.15; })[0];
+  if(!bumper) return;
+  s.mudVol=Math.max(MUD_STUDENT_BUMP_MIN,s.mudVol*MUD_STUDENT_BUMP_MUL);
+  s.mudBumpCd=2.0;
+  if(s===me||bumper===me) toast(bumper.name+'が泥団子にぶつかって小さくなった');
+  beep(200,0.18,'triangle',0.11);
+  mudUpdateMeshScale(s);
+}
+/* ホスト権威の毎フレーム更新。移動距離に応じたスタミナ消費・成長・痕跡・
+   押し出し中の当たり判定・消滅演出を一括で処理する(perk==='mud'の生徒のみ) */
+function updMudBall(s,dt){
+  if(s.perk!=='mud') return;
+  if(!s.mudMode) return;
+  if(s.mudMode===5){
+    s.mudVanishT-=dt;
+    const g=mudEnsureMesh(s);
+    const k=Math.max(0,s.mudVanishT);
+    g.userData.ball.scale.setScalar(Math.max(0.02,mudMeshRadius(s.mudVol||0.15)*k));
+    g.rotation.y+=dt*14; g.rotation.x+=dt*9;
+    if(s.mudVanishT<=0){ scene.remove(g); s.mudMesh=null; s.mudMode=0; s.mudVol=0; }
+    return;
+  }
+  if(s.state!=='free'||s.hide){ if(s.mudMesh) s.mudMesh.visible=false; return; }
+  mudEnsureMesh(s).visible=true;
+  if(s.mudMode===4){
+    s.mudX=(s.mudX===undefined?s.x:s.mudX)+s.mudVX*dt;
+    s.mudZ=(s.mudZ===undefined?s.z:s.mudZ)+s.mudVZ*dt;
+    s.mudLaunchDist=(s.mudLaunchDist||0)+Math.hypot(s.mudVX,s.mudVZ)*dt;
+    mudUpdateMeshScale(s);
+    let popped=false;
+    const tl=tileOf(s.mudX,s.mudZ);
+    if(solid(tl[0],tl[1])){
+      mudAddArea(s.mudX,s.mudZ,2.0+2.2*(s.mudVol||0)); popped=true;
+    } else if(teacher&&Math.hypot(teacher.x-s.mudX,teacher.z-s.mudZ)<1.4){
+      mudHitTeacherWithLaunch(s,teacher); popped=true;
+    } else if(teacher2&&Math.hypot(teacher2.x-s.mudX,teacher2.z-s.mudZ)<1.4){
+      mudHitTeacherWithLaunch(s,teacher2); popped=true;
+    } else {
+      for(const o of students){
+        if(o===s||o.state!=='free'||o.hide) continue;
+        if(Math.hypot(o.x-s.mudX,o.z-s.mudZ)<1.2){
+          mudAddArea(s.mudX,s.mudZ,2.0+2.2*(s.mudVol||0)); popped=true; break;
+        }
+      }
+    }
+    if(!popped&&s.mudLaunchDist>MUD_LAUNCH_RANGE){
+      mudAddArea(s.mudX,s.mudZ,2.0+2.2*(s.mudVol||0)); popped=true;
+    }
+    if(popped){ scene.remove(s.mudMesh); s.mudMesh=null; s.mudMode=0; s.mudVol=0; }
+    return;
+  }
+  /* 1=通常携行/2=玉転がし/3=玉乗り。玉乗りは真下、それ以外は少し前に置く */
+  if(s.mudMode===3){ s.mudX=s.x; s.mudZ=s.z; }
+  else { s.mudX=s.x+Math.sin(s.yaw)*1.1; s.mudZ=s.z+Math.cos(s.yaw)*1.1; }
+  const px=(s.mudPX===undefined)?s.x:s.mudPX, pz=(s.mudPZ===undefined)?s.z:s.mudPZ;
+  const dist=Math.hypot(s.x-px,s.z-pz);
+  s.mudPX=s.x; s.mudPZ=s.z;
+  if(dist>0.0005){
+    if(s.mudMode===3) s.stam=Math.max(0,(s.stam||0)-dist*MUD_HOLD_COST);
+    else {
+      s.stam=Math.max(0,(s.stam||0)-dist*MUD_ROLL_COST);
+      s.mudVol=Math.min(MUD_VOLCAP,(s.mudVol||0)+dist*MUD_GROW_PER_M);
+    }
+    s.mudTrailAcc=(s.mudTrailAcc||0)+dist;
+    if(s.mudTrailAcc>=MUD_TRAIL_STEP){ s.mudTrailAcc=0; mudAddTrailPoint(s.mudX,s.mudZ); }
+    if((s.stam||0)<=0){
+      if(s===me) toast('スタミナ切れで泥団子を手放した');
+      mudTriggerVanish(s); return;
+    }
+  }
+  mudUpdateMeshScale(s);
+  mudCheckStudentBump(s);
+}
+/* 痕跡・破裂エリアの寿命管理と、乗っている先生への汚れ値/減速の付与。
+   teacher/teacher2どちらも対象にする(2vs8モード対応) */
+function updMudWorld(dt){
+  for(let i=mudTrail.length-1;i>=0;i--){
+    const p=mudTrail[i]; p.t-=dt;
+    if(p.t<=0){ scene.remove(p.m); mudTrail.splice(i,1); continue; }
+    if(p.m&&p.m.material) p.m.material.opacity=0.55*Math.min(1,p.t/1.2);
+    [teacher,teacher2].forEach(function(t){
+      if(t&&Math.hypot(t.x-p.x,t.z-p.z)<1.3) mudAddGrime(t,MUD_TRAIL_GRIME_PS*dt);
+    });
+  }
+  for(let i=mudAreas.length-1;i>=0;i--){
+    const a=mudAreas[i]; a.t-=dt;
+    if(a.t<=0){ scene.remove(a.m); mudAreas.splice(i,1); continue; }
+    if(a.m&&a.m.material) a.m.material.opacity=0.4*Math.min(1,a.t/2);
+    [teacher,teacher2].forEach(function(t){
+      if(!t) return;
+      if(Math.hypot(t.x-a.x,t.z-a.z)<a.r){
+        mudAddGrime(t,MUD_AREA_GRIME_PS*dt);
+        t.mudSlowT=MUD_AREA_SLOW_DUR; t.mudSlowAmt=MUD_AREA_SLOW_AMT;
+      }
+    });
+  }
+  updMudGrime(teacher,dt); updMudGrime(teacher2,dt);
+}
+/* 課題の共同作業ボーナス「虚言」：2人以上で同じ机を進めていて、その中に
+   perk==='mud'の生徒がいれば、スキルチェックの間隔を縮める(発動確率アップの近似) */
+function mudCoopBoost(t){
+  if(!t) return false;
+  const workers=students.filter(function(o){ return o.state==='free'&&!o.hide&&
+    Math.hypot(o.x-t.x,o.z-t.z)<4.4; });
+  if(workers.length<2) return false;
+  return workers.some(function(o){ return o.perk==='mud'; });
+}
+/* オンライン参加者(クライアント)側の簡易表示。stamや成長ロジックは持たず、
+   ホストから同期されたs.mudMode/s.mudVolを見て見た目だけ再現する */
+function mudClientVisual(s){
+  if(s.perk!=='mud') return;
+  if(!s.mudMode||s.mudMode===5){ if(s.mudMesh) s.mudMesh.visible=false; return; }
+  const mesh=mudEnsureMesh(s);
+  mesh.visible=(s.state==='free'&&!s.hide);
+  if(s.mudMode===3){ s.mudX=s.x; s.mudZ=s.z; }
+  else { s.mudX=s.x+Math.sin(s.yaw)*1.1; s.mudZ=s.z+Math.cos(s.yaw)*1.1; }
+  mudUpdateMeshScale(s);
+}
+/* 相棒のハムスター。当たり判定には一切関与しない見た目専用の同行演出で、
+   host/クライアントどちらの描画ループからも安全に呼べる(x/z/yaw/stateだけ見る) */
+function makeHamster(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8),LM(0xb5834f));
+  body.scale.set(1,0.85,1.25); body.position.y=0.22; g.add(body);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.14,10,8),LM(0xc79a63));
+  head.position.set(0,0.27,0.22); g.add(head);
+  const earGeo=new THREE.SphereGeometry(0.05,8,6);
+  const earL=new THREE.Mesh(earGeo,LM(0xe8c9a0)); earL.position.set(-0.08,0.35,0.24); g.add(earL);
+  const earR=new THREE.Mesh(earGeo,LM(0xe8c9a0)); earR.position.set(0.08,0.35,0.24); g.add(earR);
+  scene.add(g);
+  return g;
+}
+function updHamster(s,dt){
+  if(s.perk!=='mud') return;
+  if(!s.hamsterG) s.hamsterG=makeHamster();
+  const g=s.hamsterG;
+  if(s.state!=='free'||s.hide){ g.visible=false; return; }
+  g.visible=true;
+  s.hamsterBob=(s.hamsterBob||0)+dt*6;
+  const off=0.7;
+  const tx=s.x-Math.sin(s.yaw)*off, tz=s.z-Math.cos(s.yaw)*off;
+  const lerp=Math.min(1,dt*8);
+  g.position.x+=(tx-g.position.x)*lerp;
+  g.position.z+=(tz-g.position.z)*lerp;
+  g.position.y=Math.abs(Math.sin(s.hamsterBob))*0.12;
+  g.rotation.y=s.yaw+Math.PI;
+}
 function updChem(dt){
   for(let i=chemTraps.length-1;i>=0;i--){
     const c=chemTraps[i]; c.t+=dt;
@@ -9550,6 +9859,20 @@ function damage(s,amt,heavy,attacker){
   attacker=attacker||teacher;
   if(s.state!=='free'||s.hide) return false;
   if(s===me&&adminGod) return false;   /* 管理者モード：無敵 */
+  /* 田中太郎の泥団子：持っている間(携行/玉転がし/玉乗りいずれも)は、
+     先生の通常攻撃・一部スキルより先に泥団子へ命中する(肉盾)。
+     このゲームの攻撃硬直なし大ダメージ攻撃(heavy引数)もdamage()という
+     単一の関数を必ず通る作りになっているため、区別せずまとめて泥団子側で
+     受け止められる(2026-09-23) */
+  if(s.mudMode>=1&&s.mudMode<=3&&(s.mudVol||0)>0){
+    s.mudVol=Math.max(0,s.mudVol-MUD_TEACHER_BREAK_LOSS*MUD_VOLCAP);
+    mudAddArea(s.mudX,s.mudZ,2.0+2.2*Math.min(1,s.mudVol+MUD_TEACHER_BREAK_LOSS));
+    mudAddGrime(attacker,35);
+    toast(s.name+'の泥団子が身代わりになった！');
+    beep(170,0.25,'sawtooth',0.13);
+    if(s.mudVol<=0) mudTriggerVanish(s); else mudUpdateMeshScale(s);
+    return false;
+  }
   if(s.tomeShield){
     s.tomeShield=false;
     toast(s.name+'の護符が身代わりになった！');
@@ -12365,6 +12688,13 @@ function aiStudent(s,dt){
       return x!==s&&x.state==='free'&&Math.hypot(x.x-s.x,x.z-s.z)<12; })) useStudentSkill(s);
     else if(s.skill==='hitouch'&&Math.random()<0.03&&students.some(function(x){
       return x!==s&&x.state==='free'&&!x.hide&&Math.hypot(x.x-s.x,x.z-s.z)<4; })) useStudentSkill(s);
+    /* 田中太郎のBOT運用(2026-09-23)：クールタイムが無い技なのでこの
+       if(s.abCd<=0)の外側判定とは相性がよい。追われていない時に泥団子を
+       作り、大きくなったらたまに玉転がしへ切り替える程度の簡易AI */
+    else if(s.skill==='mudball'){
+      if(!s.mudMode&&(s.stam||0)>0.5&&td>10&&Math.random()<0.01) useStudentSkill(s);
+      else if(s.mudMode>=1&&s.mudMode<=2&&(s.mudVol||0)>=MUD_MODE_THRESH&&Math.random()<0.006) useStudentSkill(s);
+    }
   }
   if(td>=18) s.chased=0;
   /* BOT(AI操作の生徒)も懐中電灯を持てる/使えるように(2026-09-08追加)。
@@ -13270,7 +13600,8 @@ function tick(now){
       if(teacher.crawl>0) me.yaw=angLerp(me.yaw,viewYaw,Math.min(1,dt*0.9));
       else me.yaw=viewYaw;
     }
-    else me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*13));
+    /* 田中太郎「玉転がし」中は泥団子が重く方向転換が鈍る(2026-09-23) */
+    else me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*(me.mudMode===2?MUD_MODEA_TURNLERP:MUD_NORMAL_TURNLERP)));
   } else {
     me.stam=Math.min(1,(me.stam||0)+dt*(me.exh?0.16:0.24));
     if(me.exh&&me.stam>0.65) me.exh=false;
@@ -13907,6 +14238,11 @@ function tick(now){
             /* 校長先生「全校朝礼」中の減速（パイプ椅子の近くにいる間は免除、
                2026-09-22追加。数値は控えめ(-18%)にしてある） */
             (pcBroadcastActive()&&!pcNearSafeChair(s)?0.82:1)*
+            /* 田中太郎「玉転がし(モードA)」：このゲームの生徒の基礎速度(6.4)に
+               対し、参考にした資料と同じ比率(3.8→3.92 ≒ +3.2%)で上乗せする
+               (2026-09-23)。玉乗り(モードB)は「通常速度に固定」＝ここでは
+               特別な増減を掛けない(=素の速度のまま)という解釈で実装 */
+            (s.mudMode===2?MUD_MODEA_SPD:1)*
             (s===me?adminSpeedMul:1);   /* 管理者モード：移動速度倍率 */
     if(s.hurt&&s.state==='free'&&!s.hide){
       s.dropT=(s.dropT||0)+dt;
@@ -13915,6 +14251,8 @@ function tick(now){
     }
     updItemUse(s,dt);
     updSelfcare(s,dt);
+    updMudBall(s,dt);
+    updHamster(s,dt);
     /* 仲間の手当て中ロック(allyHealLock)の安全弁：studentAct()が呼ばれない
        フレームが続くと解除し忘れる恐れがあるため、0.2秒リフレッシュされないと
        自動的に解除する(2026-09-12) */
@@ -14132,6 +14470,9 @@ function tick(now){
     (teacher.crouch>0?0.82:1)*(1+(teacher.scentBonus||0))*(1+(teacher.blood||0))*
     (teacher.cloak>0?1.32:1)*(teacher.mistBoost||1)*
     (teacher.fanSlowT>0?(1-(0.1+(teacher.fanSlowAmt||0))):1)*
+    /* 田中太郎の泥団子・破裂エリア：1.5秒間55%減速(fanSlowTと同じ
+       「タイマー+可変量」方式、2026-09-23) */
+    (teacher.mudSlowT>0?(1-(teacher.mudSlowAmt||0)):1)*
     (teacher.wheelOn?1.9:1)*(teacher.kindKey==='clown'?1.08:1)*
     (teacher.beastT>0?1.18:1)*
     (inWater(teacher.x,teacher.z)?0.7:1)*
@@ -14282,6 +14623,7 @@ function tick(now){
   updChat(dt);
   updDecoys(dt);
   updChem(dt);
+  updMudWorld(dt);
   updKnocks(dt);
   updPallets(dt);
   updDrops(dt);
@@ -16169,7 +16511,7 @@ function netApplyStudentInput(s,inp,dt){
       if(s.exh&&s.stam>0.65) s.exh=false;
     }
     move(s,inp.dx*sp,inp.dz*sp,dt);
-    s.yaw=angLerp(s.yaw,Math.atan2(inp.dx,inp.dz),Math.min(1,dt*13));
+    s.yaw=angLerp(s.yaw,Math.atan2(inp.dx,inp.dz),Math.min(1,dt*(s.mudMode===2?MUD_MODEA_TURNLERP:MUD_NORMAL_TURNLERP)));
   } else {
     s.stam=Math.min(1,(s.stam||0)+dt*(s.exh?0.16:0.24));
     if(s.exh&&s.stam>0.65) s.exh=false;
@@ -16311,7 +16653,12 @@ function netHostBroadcastSnapshot(dt){
         /* エモート(踊り)：どのエモートを何秒目まで再生しているか、の2つだけ
            配れば他の参加者の画面でも同じ振り付けが再現できる(2026-09-15) */
         em:(s.em===undefined?-1:s.em), emT:Math.round((s.emT||0)*100)/100,
-        bone:s.bone||0, boneMashN:s.boneMashN||0, duel:s.duel||null } };
+        bone:s.bone||0, boneMashN:s.boneMashN||0, duel:s.duel||null,
+        /* 田中太郎の泥団子：見た目の再現に必要な最小限(モードと体積)だけ
+           同期する。痕跡・破裂エリアは演出のみのスコープ外(2026-09-23、
+           既存のmrDecoys等と同じ「戦闘に影響しない演出はスコープを絞る」
+           方針を踏襲) */
+        mudMode:s.mudMode||0, mudVol:Math.round((s.mudVol||0)*100)/100 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
@@ -16568,7 +16915,7 @@ function netClientTick(dt){
     else { me.stam=Math.min(1,me.stam+dt*(me.exh?0.16:0.22)*(me.perk==='cook'?1.6:1)*(hasTrait(me,'secondwind')?perkScale(me,'secondwind',1.4):1));
       if(me.exh&&me.stam>0.65) me.exh=false; }
     move(me,dx*sp,dz*sp,dt);
-    me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*13));
+    me.yaw=angLerp(me.yaw,Math.atan2(dx,dz),Math.min(1,dt*(me.mudMode===2?MUD_MODEA_TURNLERP:MUD_NORMAL_TURNLERP)));
   } else {
     me.stam=Math.min(1,(me.stam||0)+dt*(me.exh?0.16:0.24));
     if(me.exh&&me.stam>0.65) me.exh=false;
@@ -16702,6 +17049,11 @@ function netClientTick(dt){
       continue;
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw; e.mesh.rotation.z=0;
+    /* 田中太郎：参加者(クライアント)側は泥団子の成長シミュレーションは
+       行わず、ホストから同期されたmudMode/mudVolを見た目だけ再現する。
+       ハムスターは当たり判定が無い純粋な演出なのでhost/クライアント
+       共通で毎フレーム動かして良い(2026-09-23) */
+    if(e.kind==='student'){ mudClientVisual(e); updHamster(e,dt); }
     /* エモート中（参加者側はホストから来た em/emT をそのまま再生するだけ） */
     if(updEmoteAnim(e,dt,moved,false)) continue;
     if(e.knockT>0){
@@ -18212,6 +18564,14 @@ function softReset(keepNet){
      scene直下に置いているので、ここで個別に片付ける(2026-09-22) */
   if(teacher&&teacher.pcStatues) teacher.pcStatues.forEach(function(st){ scene.remove(st.mesh); });
   if(teacher&&teacher.pcZone&&teacher.pcZone.mesh) scene.remove(teacher.pcZone.mesh);
+  /* 田中太郎：泥団子本体・相棒ハムスターはplayers側のe.meshループでは
+     消えないので個別に片付ける(2026-09-23) */
+  students.forEach(function(s){
+    if(s.mudMesh){ scene.remove(s.mudMesh); s.mudMesh=null; }
+    if(s.hamsterG){ scene.remove(s.hamsterG); s.hamsterG=null; }
+  });
+  mudTrail.forEach(function(p){ scene.remove(p.m); }); mudTrail.length=0;
+  mudAreas.forEach(function(a){ scene.remove(a.m); }); mudAreas.length=0;
   students=[]; teacher=null; teacher2=null; players=[]; me=null;
   shots.forEach(function(sh){ scene.remove(sh.m); }); shots.length=0;
   chemTraps.forEach(function(c){ scene.remove(c.m); }); chemTraps.length=0;
