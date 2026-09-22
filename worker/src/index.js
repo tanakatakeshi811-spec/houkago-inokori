@@ -19,6 +19,7 @@
      /api/board/unsave     … 保存した投稿の削除(POST、本人のものだけ)
      /api/link/create      … 掲示板連携用の6桁コード発行(POST、ゲーム本体のタイトル画面から)
      /api/link/redeem      … 6桁コードをplayer_idに交換(POST、掲示板側での連携完了、1回で失効)
+     /api/admin/*          … 管理者用モデレーションAPI(2026-09-22追加、詳細は下の管理者セクション参照)
      /health, /          … 生存確認
 
    ランキングについて: クライアント(ブラウザ)が試合結果を自己申告する方式なので
@@ -41,7 +42,7 @@
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
-  'access-control-allow-headers': 'content-type',
+  'access-control-allow-headers': 'content-type,x-admin-token',
 };
 
 /* ---- Lobby: 部屋の登録・在籍確認・公開検索 ----
@@ -406,6 +407,26 @@ async function handleBoardPost(request, env) {
   if (!text) return jsonRes({ ok: false, error: 'empty text' }, 400);
   const now = Date.now();
 
+  /* 投稿禁止(荒らし対策、2026-09-22追加): board_bansに有効な行があれば拒否。
+     当初は管理者がD1へ直接INSERT/UPDATEする緊急運用だったが、同日中に
+     下の管理者APIエリアへ専用の管理UIを追加し、以後はそちら経由で行われる。 */
+  const ban = await env.DB.prepare('SELECT until, permanent, reason FROM board_bans WHERE player_id=?').bind(playerId).first();
+  if (ban && (ban.permanent || ban.until > now)) {
+    return jsonRes({ ok: false, error: 'banned', untilMs: ban.permanent ? null : ban.until, permanent: !!ban.permanent, reason: ban.reason || '' }, 403);
+  }
+
+  /* IP BAN(2026-09-22追加): player_idはlocalStorageを消せば無限に再発行できて
+     しまうため、player_id単位のBANだけでは同じ人が新しいIDで戻ってくるのを
+     防げない。接続元IP(Cloudflareが検証済みで付与するcf-connecting-ip、
+     クライアントからは偽装できない)単位でも拒否できるようにする。 */
+  const clientIp = request.headers.get('cf-connecting-ip') || '';
+  if (clientIp) {
+    const ipBan = await env.DB.prepare('SELECT until, permanent, reason FROM ip_bans WHERE ip=?').bind(clientIp).first();
+    if (ipBan && (ipBan.permanent || ipBan.until > now)) {
+      return jsonRes({ ok: false, error: 'ip_banned', untilMs: ipBan.permanent ? null : ipBan.until, permanent: !!ipBan.permanent, reason: ipBan.reason || '' }, 403);
+    }
+  }
+
   /* 連投防止(サーバー側で強制): この人の一番新しい投稿からまだ3秒経ってなければ弾く */
   const last = await env.DB.prepare(
     'SELECT created_at FROM board_posts WHERE player_id=? ORDER BY created_at DESC LIMIT 1'
@@ -560,6 +581,126 @@ async function handleLinkRedeem(request, env) {
   return jsonRes({ ok: true, playerId: row.playerId });
 }
 
+/* ---- 管理者用モデレーションAPI(2026-09-22追加) ----
+   背景: 掲示板荒らし(1人が名前を変えながら暴言を連投)が実際に発生し、
+   コーディネーターがD1へ直接SQLを打つ緊急対応(board_bansへの手動INSERT・
+   board_postsのtext書き換え)をした。今回はそれを「しゅんりさんが自分で
+   ボタン操作でできる」管理画面に置き換える。
+
+   認証について(最重要): 管理UI自体はゲーム本体の「隠し管理者(デバッグ)
+   モード」と違い、公式サイト側にページ(admin.html)を新設する形にした。
+   ただしそのUIはBAN・アカウント削除という「他人のデータに影響する操作」
+   を行うため、UIの存在(パスワード入力欄が出るかどうか)だけを根拠に
+   実行を許可するのは危険。よって実際に操作を実行するのは必ずこの
+   Worker側であり、リクエストのヘッダー(x-admin-token)に載った値を
+   env.ADMIN_TOKEN(wrangler secretで設定する秘密値、ソースコードには
+   一切書かない)と比較してから実行する。トークン未設定・不一致は
+   401で即拒否し、DBには一切触れない。 */
+function checkAdminToken(request, env) {
+  const token = request.headers.get('x-admin-token') || '';
+  return !!(env.ADMIN_TOKEN && token && token === env.ADMIN_TOKEN);
+}
+
+function adminAuthFail() {
+  return jsonRes({ ok: false, error: 'unauthorized' }, 401);
+}
+
+const PERMANENT_UNTIL = 9999999999999; // 表示・判定用の便宜上の遠い未来値(実際の可否はpermanentフラグで見る)
+const DELETED_TEXT = 'このコメントは管理者により消されました'; // 2026-09-22の手動対応と表記を統一
+
+function computeUntil(body) {
+  if (body && body.permanent) return { until: PERMANENT_UNTIL, permanent: 1 };
+  const minutes = Math.max(1, Math.min(60 * 24 * 365, parseInt((body && body.minutes), 10) || 60));
+  return { until: Date.now() + minutes * 60000, permanent: 0 };
+}
+
+async function handleAdminBoardBan(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const reason = String((body && body.reason) || '').trim().slice(0, 200);
+  const { until, permanent } = computeUntil(body);
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO board_bans (player_id, until, permanent, reason, created_at) VALUES (?,?,?,?,?)
+     ON CONFLICT(player_id) DO UPDATE SET until=excluded.until, permanent=excluded.permanent, reason=excluded.reason, created_at=excluded.created_at`
+  ).bind(playerId, until, permanent, reason, now).run();
+  return jsonRes({ ok: true, playerId, until: permanent ? null : until, permanent: !!permanent });
+}
+
+async function handleAdminBoardBanIp(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const ip = String((body && body.ip) || '').trim().slice(0, 64);
+  if (!ip) return jsonRes({ ok: false, error: 'invalid ip' }, 400);
+  const reason = String((body && body.reason) || '').trim().slice(0, 200);
+  const { until, permanent } = computeUntil(body);
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO ip_bans (ip, until, permanent, reason, created_at) VALUES (?,?,?,?,?)
+     ON CONFLICT(ip) DO UPDATE SET until=excluded.until, permanent=excluded.permanent, reason=excluded.reason, created_at=excluded.created_at`
+  ).bind(ip, until, permanent, reason, now).run();
+  return jsonRes({ ok: true, ip, until: permanent ? null : until, permanent: !!permanent });
+}
+
+async function handleAdminBoardUnban(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  const ip = String((body && body.ip) || '').trim().slice(0, 64);
+  if (!playerId && !ip) return jsonRes({ ok: false, error: 'playerId or ip required' }, 400);
+  if (playerId) await env.DB.prepare('DELETE FROM board_bans WHERE player_id=?').bind(playerId).run();
+  if (ip) await env.DB.prepare('DELETE FROM ip_bans WHERE ip=?').bind(ip).run();
+  return jsonRes({ ok: true });
+}
+
+async function handleAdminBoardBansList(request, env) {
+  const now = Date.now();
+  const playerBans = await env.DB.prepare(
+    'SELECT player_id as playerId, until, permanent, reason, created_at as createdAt FROM board_bans ORDER BY created_at DESC LIMIT 200'
+  ).all();
+  const ipBans = await env.DB.prepare(
+    'SELECT ip, until, permanent, reason, created_at as createdAt FROM ip_bans ORDER BY created_at DESC LIMIT 200'
+  ).all();
+  return jsonRes({
+    ok: true,
+    now,
+    playerBans: (playerBans.results || []).filter((b) => b.permanent || b.until > now),
+    ipBans: (ipBans.results || []).filter((b) => b.permanent || b.until > now),
+  });
+}
+
+async function handleAdminBoardDeletePost(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const id = parseInt((body && body.id), 10);
+  if (!Number.isFinite(id)) return jsonRes({ ok: false, error: 'invalid id' }, 400);
+  const res = await env.DB.prepare('UPDATE board_posts SET text=? WHERE id=?').bind(DELETED_TEXT, id).run();
+  const changed = (res.meta && res.meta.changes) || 0;
+  return jsonRes({ ok: changed > 0 });
+}
+
+/* アカウント削除の範囲(判断内容): players行(ランキング集計値・プロフィール)は
+   完全に削除。board_posts(掲示板投稿)は「消されました」表記に置き換え
+   (投稿削除と同じ表記に統一、行自体は残す＝一覧の並びやIDがズレない)。
+   board_saves(本人専用の保存リスト)は本人しか見られない個人データなので
+   丸ごと削除。match_results(試合の生ログ)は履歴・不正調査用のログという
+   位置づけで元から個人が閲覧するUIが存在しないため、監査目的で残す
+   (ランキング表示自体はplayers行の削除により即座に消える)。 */
+async function handleAdminAccountDelete(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM players WHERE player_id=?').bind(playerId),
+    env.DB.prepare('UPDATE board_posts SET text=? WHERE player_id=? AND text<>?').bind(DELETED_TEXT, playerId, DELETED_TEXT),
+    env.DB.prepare('DELETE FROM board_saves WHERE owner_player_id=?').bind(playerId),
+  ]);
+  return jsonRes({ ok: true });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -614,6 +755,20 @@ export default {
     if (url.pathname === '/api/link/redeem' && request.method === 'POST') {
       try { return await handleLinkRedeem(request, env); }
       catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname.startsWith('/api/admin/')) {
+      if (!checkAdminToken(request, env)) return adminAuthFail();
+      try {
+        if (url.pathname === '/api/admin/board/ban' && request.method === 'POST') return await handleAdminBoardBan(request, env);
+        if (url.pathname === '/api/admin/board/ban-ip' && request.method === 'POST') return await handleAdminBoardBanIp(request, env);
+        if (url.pathname === '/api/admin/board/unban' && request.method === 'POST') return await handleAdminBoardUnban(request, env);
+        if (url.pathname === '/api/admin/board/bans' && request.method === 'GET') return await handleAdminBoardBansList(request, env);
+        if (url.pathname === '/api/admin/board/delete-post' && request.method === 'POST') return await handleAdminBoardDeletePost(request, env);
+        if (url.pathname === '/api/admin/account/delete' && request.method === 'POST') return await handleAdminAccountDelete(request, env);
+      } catch (e) {
+        return jsonRes({ ok: false, error: 'server error' }, 500);
+      }
+      return new Response('not found', { status: 404, headers: CORS });
     }
     return new Response('not found', { status: 404, headers: CORS });
   },

@@ -73,3 +73,28 @@ CREATE TABLE IF NOT EXISTS link_codes (
   used_at     INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_link_codes_expires ON link_codes(expires_at);
+
+-- 2026-09-22 掲示板荒らし対応: 緊急対応として本番D1へ手動でboard_bansを
+-- 作成した(このIF NOT EXISTSはその時点の定義。permanentカラムは後日の
+-- 管理者用モデレーション機能で追加したため、既存の本番DBには
+-- 別途 `ALTER TABLE board_bans ADD COLUMN permanent INTEGER NOT NULL DEFAULT 0;`
+-- を1回だけ実行して追いついている。新規に作る環境ではこのCREATE TABLEで
+-- 最初からpermanent込みで作られる)
+CREATE TABLE IF NOT EXISTS board_bans (
+  player_id   TEXT PRIMARY KEY,
+  until       INTEGER NOT NULL,
+  permanent   INTEGER NOT NULL DEFAULT 0,
+  reason      TEXT,
+  created_at  INTEGER NOT NULL
+);
+
+-- 2026-09-22 管理者用モデレーション機能で追加: 接続元IP(cf-connecting-ip)
+-- 単位のBAN。player_idはlocalStorageを消せば再発行できてしまうため、
+-- 「同じ人が新しいIDで戻ってくる」のを防ぐための実質的な抑止力。
+CREATE TABLE IF NOT EXISTS ip_bans (
+  ip          TEXT PRIMARY KEY,
+  until       INTEGER NOT NULL,
+  permanent   INTEGER NOT NULL DEFAULT 0,
+  reason      TEXT,
+  created_at  INTEGER NOT NULL
+);
