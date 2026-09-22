@@ -27,3 +27,34 @@ CREATE TABLE IF NOT EXISTS match_results (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_match_results_player ON match_results(player_id);
+
+-- 2026-09-22 掲示板機能で追加
+-- board_posts: 全体掲示板の投稿。作成から1時間経ったものはlist取得APIの
+-- 呼び出しのたびに間引き削除される（Cron Triggerは使わず、アクセスのたびの
+-- 簡易クリーンアップ方式。name/iconはplayersテーブルの投稿時点の値を
+-- そのままコピーして持つ＝あとでプロフィール名を変えても過去の投稿の
+-- 表示名は変わらない、match_resultsと同じ「非正規化して残す」方針）
+CREATE TABLE IF NOT EXISTS board_posts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '名無し',
+  icon        TEXT NOT NULL DEFAULT '👤',
+  text        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_board_posts_created ON board_posts(created_at);
+CREATE INDEX IF NOT EXISTS idx_board_posts_player_created ON board_posts(player_id, created_at);
+
+-- board_saves: 「保存」した投稿のコピー。元のboard_postsの行が1時間で
+-- 消えても、保存した本人だけはここから独立していつでも読める・消せる。
+CREATE TABLE IF NOT EXISTS board_saves (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_player_id TEXT NOT NULL,
+  source_post_id  INTEGER,
+  name            TEXT NOT NULL,
+  icon            TEXT NOT NULL,
+  text            TEXT NOT NULL,
+  posted_at       INTEGER NOT NULL,
+  saved_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_board_saves_owner ON board_saves(owner_player_id, saved_at DESC);

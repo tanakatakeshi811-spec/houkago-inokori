@@ -11,12 +11,30 @@
      /list               … 公開部屋一覧のHTTP版(デバッグ・保険用、GET)
      /api/match-result   … 試合結果の送信(POST、D1に記録)
      /api/leaderboard    … ランキング一覧の取得(GET、D1から集計値を読むだけ)
+     /api/profile/update … 名前・アイコンの更新(POST、公式サイト掲示板からのプロフィール編集用)
+     /api/board/post      … 掲示板への投稿(POST、3秒連投防止をサーバー側で強制)
+     /api/board/list       … 直近1時間の投稿一覧取得(GET、呼ばれるたび1時間より古い行も間引き削除)
+     /api/board/save       … 投稿を自分専用に保存(POST、元の投稿が消えても残るコピー)
+     /api/board/saved      … 自分が保存した投稿一覧の取得(GET)
+     /api/board/unsave     … 保存した投稿の削除(POST、本人のものだけ)
      /health, /          … 生存確認
 
    ランキングについて: クライアント(ブラウザ)が試合結果を自己申告する方式なので
    技術的には偽装が可能。今回のスコープでは「試合進行そのものをサーバー側で
    検証する」ような本格的な不正対策は行わず、明らかに異常な値(1リクエストで
-   複数勝利を主張する等)だけを弾く簡易バリデーションに留める。 */
+   複数勝利を主張する等)だけを弾く簡易バリデーションに留める。
+
+   掲示板の「連携」について: ゲーム本体(houkago-inokori)と公式サイト
+   (houkago-inokori-web)はどちらもGitHub Pagesのユーザーサイト
+   (tanakatakeshi811-spec.github.io)配下のプロジェクトページであり、
+   パスが違うだけで同一オリジンのためlocalStorageを共有する。よって
+   ゲーム側が起動時に発行するhi_pid_v1は、公式サイト側のJSからも
+   そのままlocalStorage.getItem('hi_pid_v1')で読める。つまりplayer_id
+   (=PID)の所持そのものがランキングの自己申告方式と同じ強度の「本人性」
+   でしかなく、なりすまし対策としては弱い(誰でもゲームを1回読み込めば
+   新しいPIDを無限に取得できる)。連投防止・1時間リセットはあくまで
+   「荒れた内容が残り続けない」ための構造的対策であり、悪意ある大量投稿
+   そのものを完全には防げない点に注意。 */
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -338,6 +356,145 @@ async function handleLeaderboard(request, env) {
   return jsonRes({ ok: true, players: rs.results || [] });
 }
 
+/* ---- プロフィール更新: 公式サイト(掲示板)側から名前・アイコンを編集できるようにする ----
+   playersテーブルに集計値と同じ行で持たせる(試合を1回もしていない新規player_idでも
+   ここでレコードを作る＝掲示板に初めて来た人でも名前を設定できる)。
+   ランキングのplayer.nameも自動的にこの値を参照する形になる。 */
+function isValidPid(s) { return typeof s === 'string' && /^[0-9]{4,32}$/.test(s); }
+
+async function handleProfileUpdate(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const name = String((body && body.name) || '').trim().slice(0, 20) || '名無し';
+  const icon = String((body && body.icon) || '').trim().slice(0, 8) || '👤';
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO players (player_id, name, icon, updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(player_id) DO UPDATE SET name=excluded.name, icon=excluded.icon, updated_at=excluded.updated_at`
+  ).bind(playerId, name, icon, now).run();
+  return jsonRes({ ok: true, name, icon });
+}
+
+/* ---- 掲示板 ----
+   スレッドなし・全員が同じ場所に時系列で書き込む1本の掲示板。
+   荒らし対策として ①同一player_idは直前の投稿から3秒間は次を投稿できない
+   (この関数内でサーバー側に強制、クライアント側の制御だけに頼らない)、
+   ②投稿から1時間経つとlistが返さなくなる＋アクセスの都度、実際にD1からも
+   間引き削除する(Cron Triggerは使わず「呼ばれた時についでに掃除する」方式)。
+   名前・アイコンは投稿の瞬間のplayersテーブルの値をそのままコピーして残す
+   (後でプロフィール名を変えても過去の投稿の表示名は変わらない)。 */
+const BOARD_WINDOW_MS = 60 * 60 * 1000;   // 1時間
+const BOARD_COOLDOWN_MS = 3000;           // 連投防止3秒
+const BOARD_TEXT_MAX = 200;
+const BOARD_SAVE_LIMIT = 300;             // 1人あたりの保存上限(D1肥大化・荒らし対策)
+
+async function cleanupOldPosts(env, now) {
+  try { await env.DB.prepare('DELETE FROM board_posts WHERE created_at < ?').bind(now - BOARD_WINDOW_MS).run(); }
+  catch (e) { /* 掃除の失敗で投稿・閲覧自体は止めない */ }
+}
+
+async function handleBoardPost(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const text = String((body && body.text) || '').trim().slice(0, BOARD_TEXT_MAX);
+  if (!text) return jsonRes({ ok: false, error: 'empty text' }, 400);
+  const now = Date.now();
+
+  /* 連投防止(サーバー側で強制): この人の一番新しい投稿からまだ3秒経ってなければ弾く */
+  const last = await env.DB.prepare(
+    'SELECT created_at FROM board_posts WHERE player_id=? ORDER BY created_at DESC LIMIT 1'
+  ).bind(playerId).first();
+  if (last && now - last.created_at < BOARD_COOLDOWN_MS) {
+    return jsonRes({ ok: false, error: 'too_fast', waitMs: BOARD_COOLDOWN_MS - (now - last.created_at) }, 429);
+  }
+
+  /* 表示名・アイコンはplayersテーブル(プロフィール)の値を正とする。
+     まだ一度もプロフィールを設定していない新規player_idなら、リクエストに
+     入っている値(無ければデフォルト)で新規に作ってしまう */
+  let prof = await env.DB.prepare('SELECT name, icon FROM players WHERE player_id=?').bind(playerId).first();
+  let name, icon;
+  if (prof) {
+    name = prof.name; icon = prof.icon;
+  } else {
+    name = String((body && body.name) || '').trim().slice(0, 20) || ('生徒' + playerId.slice(-4));
+    icon = String((body && body.icon) || '').trim().slice(0, 8) || '👤';
+    await env.DB.prepare(
+      `INSERT INTO players (player_id, name, icon, updated_at) VALUES (?,?,?,?) ON CONFLICT(player_id) DO NOTHING`
+    ).bind(playerId, name, icon, now).run();
+  }
+
+  await env.DB.prepare(
+    'INSERT INTO board_posts (player_id, name, icon, text, created_at) VALUES (?,?,?,?,?)'
+  ).bind(playerId, name, icon, text, now).run();
+
+  await cleanupOldPosts(env, now);
+  return jsonRes({ ok: true });
+}
+
+async function handleBoardList(request, env) {
+  const now = Date.now();
+  await cleanupOldPosts(env, now);
+  const rs = await env.DB.prepare(
+    `SELECT id, player_id as playerId, name, icon, text, created_at as createdAt
+     FROM board_posts WHERE created_at >= ? ORDER BY created_at DESC LIMIT 200`
+  ).bind(now - BOARD_WINDOW_MS).all();
+  return jsonRes({ ok: true, posts: rs.results || [], now, windowMs: BOARD_WINDOW_MS });
+}
+
+async function handleBoardSave(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const text = String((body && body.text) || '').trim().slice(0, BOARD_TEXT_MAX);
+  if (!text) return jsonRes({ ok: false, error: 'empty text' }, 400);
+  const name = String((body && body.name) || '名無し').trim().slice(0, 20) || '名無し';
+  const icon = String((body && body.icon) || '👤').trim().slice(0, 8) || '👤';
+  const sourcePostId = Number.isFinite(body && body.sourcePostId) ? body.sourcePostId : null;
+  const postedAt = Number.isFinite(body && body.postedAt) ? body.postedAt : Date.now();
+  const now = Date.now();
+
+  const countRow = await env.DB.prepare('SELECT COUNT(*) as c FROM board_saves WHERE owner_player_id=?').bind(playerId).first();
+  if (countRow && countRow.c >= BOARD_SAVE_LIMIT) {
+    return jsonRes({ ok: false, error: 'save_limit', limit: BOARD_SAVE_LIMIT }, 400);
+  }
+
+  const res = await env.DB.prepare(
+    `INSERT INTO board_saves (owner_player_id, source_post_id, name, icon, text, posted_at, saved_at)
+     VALUES (?,?,?,?,?,?,?)`
+  ).bind(playerId, sourcePostId, name, icon, text, postedAt, now).run();
+  return jsonRes({ ok: true, id: res.meta && res.meta.last_row_id });
+}
+
+async function handleBoardSavedList(request, env) {
+  const url = new URL(request.url);
+  const playerId = String(url.searchParams.get('playerId') || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const rs = await env.DB.prepare(
+    `SELECT id, source_post_id as sourcePostId, name, icon, text, posted_at as postedAt, saved_at as savedAt
+     FROM board_saves WHERE owner_player_id=? ORDER BY saved_at DESC LIMIT 300`
+  ).bind(playerId).all();
+  return jsonRes({ ok: true, saves: rs.results || [] });
+}
+
+async function handleBoardUnsave(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const saveId = parseInt((body && body.saveId), 10);
+  if (!Number.isFinite(saveId)) return jsonRes({ ok: false, error: 'invalid saveId' }, 400);
+  const res = await env.DB.prepare(
+    'DELETE FROM board_saves WHERE id=? AND owner_player_id=?'
+  ).bind(saveId, playerId).run();
+  const changed = (res.meta && res.meta.changes) || 0;
+  return jsonRes({ ok: changed > 0 });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -359,6 +516,30 @@ export default {
     }
     if (url.pathname === '/api/leaderboard' && request.method === 'GET') {
       try { return await handleLeaderboard(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/profile/update' && request.method === 'POST') {
+      try { return await handleProfileUpdate(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/board/post' && request.method === 'POST') {
+      try { return await handleBoardPost(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/board/list' && request.method === 'GET') {
+      try { return await handleBoardList(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/board/save' && request.method === 'POST') {
+      try { return await handleBoardSave(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/board/saved' && request.method === 'GET') {
+      try { return await handleBoardSavedList(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/board/unsave' && request.method === 'POST') {
+      try { return await handleBoardUnsave(request, env); }
       catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
     }
     return new Response('not found', { status: 404, headers: CORS });
