@@ -4101,33 +4101,38 @@ function scyl2(g,mat,rt,rb,h,x,y,z){
   const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,12),mat);
   m.rotation.x=Math.PI/2; m.position.set(x,y,z); g.add(m); return m;
 }
-/* ===== 武器「カッターナイフ」(knife.glb)=====
-   [[HyoiGakuen]](憑愛学園)で既に使っているのと同じCC0モデル(Quaternius製、
-   出典は「Dagger」、assets/CREDITS.md参照)を先生役の「武器の見た目」選択肢
-   (#wepsel、weaponPick)に追加する(2026-09-22)。man.glb(校長先生)と同じく
-   THREE.GLTFLoaderで別読み込みし、読み込みが間に合っていなければ簡易
-   プリミティブへフォールバックする(makeWeapon側で分岐、ゲームが壊れない) */
-let KNIFE_TEMPLATE=null, KNIFE_TEMPLATE_PROMISE=null;
-function preloadKnifeModel(){
-  if(KNIFE_TEMPLATE_PROMISE) return KNIFE_TEMPLATE_PROMISE;
-  KNIFE_TEMPLATE_PROMISE=new Promise(function(resolve){
+/* ===== 武器の既製glTFモデル(knife.glb / batbarbed.glb / batsaw.glb)=====
+   先生役の「武器の見た目」選択肢(#wepsel、weaponPick)に追加する既製モデル群。
+   man.glb(校長先生)と同じくTHREE.GLTFLoaderで別読み込みし、読み込みが
+   間に合っていなければ簡易プリミティブへフォールバックする
+   (makeWeapon側で分岐、ゲームが壊れない)。3種目以降の重複を避けるため
+   汎用のキャッシュ+読み込み関数にしてある(2026-09-23、knifeも同じ仕組みに統一) */
+const WEAPON_MODEL_CACHE={};
+function preloadWeaponModel(key,path){
+  if(WEAPON_MODEL_CACHE[key]) return WEAPON_MODEL_CACHE[key].promise;
+  const entry={template:null,promise:null};
+  entry.promise=new Promise(function(resolve){
     if(typeof THREE==='undefined'||!THREE.GLTFLoader){ resolve(null); return; }
     try{
-      new THREE.GLTFLoader().load('assets/models/knife.glb',function(gltf){
-        KNIFE_TEMPLATE=gltf; resolve(gltf);
+      new THREE.GLTFLoader().load(path,function(gltf){
+        entry.template=gltf; resolve(gltf);
       },undefined,function(){ resolve(null); });
     }catch(e){ resolve(null); }
   });
-  return KNIFE_TEMPLATE_PROMISE;
+  WEAPON_MODEL_CACHE[key]=entry;
+  return entry.promise;
 }
-preloadKnifeModel();
-/* knife.glbを手持ちサイズに正規化して複製したGroupを返す。モデルごとに
+preloadWeaponModel('knife','assets/models/knife.glb');
+preloadWeaponModel('batbarbed','assets/models/batbarbed.glb');
+preloadWeaponModel('batsaw','assets/models/batsaw.glb');
+/* キャッシュ済みモデルを手持ちサイズに正規化して複製したGroupを返す。モデルごとに
    向き・原点がバラバラなので「一番長い辺を基準に一様スケール→中心(xyz全部)
    を原点に揃える」方式(HyoiGakuenのnormalizeCentered()と同じ考え方)。
    まだ読み込みが終わっていなければnullを返す(呼び出し側でフォールバック) */
-function makeKnifeModel(targetLen){
-  if(!KNIFE_TEMPLATE) return null;
-  const inner=KNIFE_TEMPLATE.scene.clone(true);
+function makeWeaponModelFromCache(key,targetLen){
+  const entry=WEAPON_MODEL_CACHE[key];
+  if(!entry||!entry.template) return null;
+  const inner=entry.template.scene.clone(true);
   const box=new THREE.Box3().setFromObject(inner);
   const size=new THREE.Vector3(); box.getSize(size);
   const center=new THREE.Vector3(); box.getCenter(center);
@@ -4138,6 +4143,7 @@ function makeKnifeModel(targetLen){
   const wrap=new THREE.Group(); wrap.add(inner);
   return wrap;
 }
+function makeKnifeModel(targetLen){ return makeWeaponModelFromCache('knife',targetLen); }
 function makeWeapon(kind,S){
   const g=new THREE.Group();
   const wood=LM(0x8a6440), steel=LM(0xc6ccd2), dark=LM(0x24272b);
@@ -4364,6 +4370,33 @@ function makeWeapon(kind,S){
     else{
       bx(g,steel,0.14*S,0.05*S,0.5*S,0,0,0.75*S);
       bx(g,dark,0.15*S,0.15*S,0.45*S,0,0,0.22*S);
+    }
+  } else if(kind==='batbarbed'){
+    /* 釘バット(2026-09-23追加)。既製glTFモデル(batbarbed.glb、Quaternius製CC0、
+       assets/CREDITS.md参照)。読み込みが間に合っていなければ簡易プリミティブ
+       (既存の金属バットに釘の突起を足したもの)へフォールバックする */
+    const model=makeWeaponModelFromCache('batbarbed',2.6*S);
+    if(model){ model.position.set(0,0,1.5*S); g.add(model); }
+    else{
+      bx(g,wood,0.2*S,0.2*S,1.4*S,0,0,0.9*S);
+      bx(g,wood,0.34*S,0.34*S,1.5*S,0,0,2.3*S);
+      bx(g,dark,0.22*S,0.22*S,0.6*S,0,0,0.3*S);
+      for(let i=0;i<5;i++){
+        const nail=new THREE.Mesh(new THREE.ConeGeometry(0.05*S,0.3*S,6),steel);
+        nail.rotation.x=Math.PI/2; nail.position.set(0,0.2*S,1.7*S+i*0.32*S); g.add(nail);
+      }
+    }
+  } else if(kind==='batsaw'){
+    /* ノコギリバット(2026-09-23追加)。既製glTFモデル(batsaw.glb、Quaternius製CC0、
+       assets/CREDITS.md参照)。読み込みが間に合っていなければ簡易プリミティブ
+       (既存の金属バットにノコ刃を足したもの)へフォールバックする */
+    const model=makeWeaponModelFromCache('batsaw',2.6*S);
+    if(model){ model.position.set(0,0,1.5*S); g.add(model); }
+    else{
+      bx(g,wood,0.2*S,0.2*S,1.4*S,0,0,0.9*S);
+      bx(g,wood,0.34*S,0.34*S,1.5*S,0,0,2.3*S);
+      bx(g,dark,0.22*S,0.22*S,0.6*S,0,0,0.3*S);
+      bx(g,steel,0.05*S,0.3*S,1.4*S,0,0.28*S,1.8*S);
     }
   }
   return g;
@@ -6709,7 +6742,9 @@ const WEAPONS=[
  {k:'bonewand',n:'骨の杖'},
  {k:'drill',   n:'電動ドリル'},
  {k:'umbrella',n:'傘'},
- {k:'knife',   n:'カッターナイフ'}
+ {k:'knife',   n:'カッターナイフ'},
+ {k:'batbarbed',n:'釘バット'},
+ {k:'batsaw',  n:'ノコギリバット'}
 ];
 let weaponPick='';
 

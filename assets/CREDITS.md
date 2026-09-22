@@ -9,16 +9,23 @@ CC0のものは著作権表示が法的には不要ですが、制作者への�
 |---|---|---|---|---|
 | `models/man.glb` | 「校長先生」キャラクターの体のベース(別プロジェクト[[HyoiGakuen]]と同じファイルをそのまま流用) | Quaternius | [poly.pizza/m/HMnuH5geEG](https://poly.pizza/m/HMnuH5geEG) | CC0 |
 
-## 武器(カッターナイフ)
+## 武器(カッターナイフ・釘バット・ノコギリバット)
 
 | ファイル | 用途 | 制作者 | 配布元 | ライセンス |
 |---|---|---|---|---|
 | `models/knife.glb` | 「武器の見た目」選択肢の「カッターナイフ」(元は「Dagger」、別プロジェクト[[HyoiGakuen]]と同じファイルをそのまま流用) | Quaternius | [poly.pizza/m/kSMpR711Y2](https://poly.pizza/m/kSMpR711Y2) | CC0 |
+| `models/batbarbed.glb` | 「武器の見た目」選択肢の「釘バット」(元は「Wooden Bat Barbed」、2026-09-23新規取得) | Quaternius | [poly.pizza/m/HSM4KnggSz](https://poly.pizza/m/HSM4KnggSz) | CC0 |
+| `models/batsaw.glb` | 「武器の見た目」選択肢の「ノコギリバット」(元は「Wooden Bat Saw」、2026-09-23新規取得) | Quaternius | [poly.pizza/m/PIRZIV4aVN](https://poly.pizza/m/PIRZIV4aVN) | CC0 |
 
 - どの先生キャラクターでも「武器の見た目」パネル(`#wepsel`)から選んで切り替えられる
-  (校長先生専用ではなく既存の武器スキン選択の仕組みに1つ選択肢を追加しただけ)。
-  読み込みは`preloadKnifeModel()`でゲーム起動直後に非同期キック、`makeWeapon('knife',S)`が
-  読み込み完了前に呼ばれた場合は簡易プリミティブへ自動フォールバックする。
+  (校長先生専用ではなく既存の武器スキン選択の仕組みに選択肢を追加しただけ)。
+  読み込みは`preloadWeaponModel(key,path)`でゲーム起動直後に非同期キック、
+  `makeWeapon(kind,S)`が読み込み完了前に呼ばれた場合は簡易プリミティブへ自動
+  フォールバックする(2026-09-23、釘バット/ノコギリバット追加時にknife.glb専用だった
+  読み込みロジックを3種共通の汎用キャッシュ`WEAPON_MODEL_CACHE`に統一した)。
+- 釘バット/ノコギリバットのglbファイルは、poly.pizzaのモデルページのHTML内に
+  そのまま埋め込まれている`static.poly.pizza/*.glb`の直リンクを見つけて取得した
+  (ダウンロードボタンのクリック操作は不要だった)。
 
 - このゲームの他キャラは全て`person()`関数による手続き的な低ポリプリミティブ生成だが、
   「校長先生」だけは例外的にこの既製glTFモデルを見た目のベースに使っている
