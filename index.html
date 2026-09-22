@@ -235,6 +235,15 @@ canvas{display:block}
   cursor:pointer;user-select:none;touch-action:none;z-index:6}
 #emotebtn.on{display:flex}
 #emotebtn.press{background:#d48ac855;transform:scale(0.94)}
+/* 校長先生専用の一人称/三人称切替ボタン(依頼4、2026-09-22続報)。
+   #emotebtnと全く同じ見た目・サイズにして、layoutPcViewBtn()で
+   #emotebtnの右隣へ追従配置する */
+#pcviewbtn{position:fixed;display:none;align-items:center;justify-content:center;
+  width:38px;height:38px;border-radius:50%;background:#0b120ec2;
+  border:2px solid #7fc6ff;color:var(--chalk);font-size:18px;line-height:1;
+  cursor:pointer;user-select:none;touch-action:none;z-index:6}
+#pcviewbtn.on{display:flex}
+#pcviewbtn.press{background:#7fc6ff55;transform:scale(0.94)}
 #emotemenu{position:fixed;display:none;width:198px;max-height:54vh;overflow-y:auto;
   background:#070c09f2;border:1px solid #d48ac8;border-radius:6px;padding:6px;z-index:7}
 #emotemenu.on{display:block}
@@ -840,6 +849,8 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   </div>
   <div id="emotebtn" class="pe">💃</div>
   <div id="emotemenu" class="pe"></div>
+  <!-- 校長先生専用：一人称/三人称の視点切替ボタン(依頼4、2026-09-22続報) -->
+  <div id="pcviewbtn" class="pe">👁️</div>
   <div id="actring"><div class="ring"></div><div class="core">
     <div class="icon" id="ringicon"></div><div class="pct" id="ringpct">0%</div>
     <div class="lbl" id="ringlbl"></div></div></div>
@@ -2234,6 +2245,20 @@ windowSpots.forEach(function(w){
   sbox('fw',M.frameW,1.8,0.14,0.2,-0.9,3.78,0.5,ry,p.x,p.z);
   sbox('fw',M.frameW,0.14,2.0,0.2,-0.02,2.85,0.5,ry,p.x,p.z);
   sbox('mt',M.metal,0.16,0.36,0.16,0.12,2.6,0.55,ry,p.x,p.z);
+  /* 校長先生の固有能力「窓を叩き割って穴を開ける」用の見た目(2026-09-22続報)。
+     窓のガラス面(sboxはマテリアルごとに全窓を1枚のstaticメッシュへマージ
+     してしまうため個別に消せない)の直前にごく薄く重ねる単独メッシュとして
+     用意しておき、破壊時だけvisible=trueにする(w.broken=falseが初期状態)。
+     lx=-0.9,lz=0.5はガラス面(gl)と同じローカル座標、sbox()の
+     translate→rotateY→translateと同じ変換を手計算で再現している */
+  const _c=Math.cos(ry),_s=Math.sin(ry),_lx=-0.9,_lz=0.5;
+  const _wx=p.x+(_lx*_c+_lz*_s), _wz=p.z+(-_lx*_s+_lz*_c);
+  const holeMesh=new THREE.Mesh(new THREE.BoxGeometry(1.78,2.06,0.05),
+    new THREE.MeshBasicMaterial({color:0x0a0a0a}));
+  holeMesh.position.set(_wx+_s*0.02,2.85,_wz+_c*0.02);
+  holeMesh.rotation.y=ry; holeMesh.visible=false; holeMesh.renderOrder=6;
+  scene.add(holeMesh);
+  w.holeMesh=holeMesh; w.broken=false;
 });
 /* ---- 細部の作り込み ---- */
 (function detailPass(){
@@ -4165,6 +4190,19 @@ function makeWeapon(kind,S){
     bx(g,LM(0x24272b),0.09*S,0.09*S,2.6*S,0,0,1.3*S);
     scyl2(g,LM(0x3a4a6b),0.05*S,0.95*S,0.9*S,0,0,2.4*S);
     bx(g,LM(0x8a6440),0.12*S,0.4*S,0.12*S,0,-0.2*S,0.15*S);
+  } else if(kind==='cane'){
+    /* 杖(校長先生専用、2026-09-22続報)。参考画像のような老人が持つ
+       ステッキ。ネットで適したCC0/CC-BY既製3Dモデルが見つからなかった
+       ため、このゲームの全武器と同じプリミティブ組み合わせ方式
+       (umbrellaと同系統の作り)で自作した(詳細はナレッジ参照)。
+       一人称カメラは武器の原点付近(z≈0)にかなり近いため、円柱状の
+       パーツを近くに置くと近接クリップで異様に肥大して見える実バグを
+       スクリーンショット確認で発見(石突きがz=0.08にあったのが原因)、
+       全体をz方向に押し出しboxベースの細い断面に作り直して解消した */
+    bx(g,LM(0x6b4a2a),0.11*S,0.11*S,2.0*S,0,0,1.7*S);            /* 木製の軸 */
+    bx(g,LM(0x6b4a2a),0.1*S,0.5*S,0.1*S,0,0.2*S,2.6*S);          /* ハンドル：縦の根元 */
+    bx(g,LM(0x6b4a2a),0.1*S,0.1*S,0.4*S,0,0.42*S,2.45*S);        /* ハンドル：先端のフック */
+    bx(g,LM(0xb9a06a),0.13*S,0.13*S,0.16*S,0,0,0.72*S);          /* 石突き(先端の金具) */
   } else if(kind==='pipe'){
     bx(g,LM(0x9aa4aa),0.2*S,0.2*S,2.4*S,0,0,1.2*S);
     bx(g,LM(0x6a7278),0.28*S,0.28*S,0.3*S,0,0,2.4*S);
@@ -4476,6 +4514,24 @@ function attachPrincipalVisual(t){
     facePlane.position.set(headCenter.x,headCenter.y,headCenter.z+headRadius*1.03);
     facePlane.renderOrder=6;
     wrap.add(facePlane);
+    /* 杖(依頼7、2026-09-22続報)：一人称のsetFPWeapon('cane')(LOOK.principal.
+       weapon経由、hideBodyと無関係の別レイヤーなので既に効いている)とは別に、
+       三人称(依頼4で新設)でも手に持っているように見せるため、glTFモデルの
+       右手ボーン(Palm.R)へ同じmakeWeapon('cane',...)を子として追加する。
+       ボーンの子は通常のシーングラフ伝播でアニメーションに追従するため、
+       スキニング側を一切触らずに済む。innerは既にtargetH=3.05へ正規化済み
+       で、makeWeapon()のS基準もこのゲームの人物身長と同じ単位系なので、
+       追加のスケール補正は不要（S=1.14はprocedural側のopt.tall:trueと
+       同じ値に合わせた） */
+    try{
+      let palmR=null;
+      inner.traverse(function(o){ if(!palmR&&o.isBone&&o.name==='Palm.R') palmR=o; });
+      if(palmR){
+        const cane=makeWeapon('cane',1.14);
+        cane.rotation.set(0,Math.PI,0);
+        palmR.add(cane);
+      }
+    }catch(e){}
     t.pcVisual=wrap;
     t.mesh.add(wrap);
     /* animateWalk(u,...)は e.mesh.userData を受け取るだけなので、mixer更新も
@@ -6868,10 +6924,13 @@ const LOOK={
         hair:0xcfc7b4,skin:0xcfc7b4,eye:0xb8ae9a},
   /* 校長先生：procedural低ポリの体はhideBody:trueで非表示にし、代わりに
      既製glTFモデル(man.glb)+顔写真テクスチャを見た目に使う(2026-09-22)。
-     weaponは''のまま(hideBodyだと腕ごと隠れて見えないため持たせない)。
      4形態を切り替えるが、見た目は「1つでいい」というしゅんりさんの指定
-     どおり形態ごとの見た目差し替えはしていない */
-  principal:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'',
+     どおり形態ごとの見た目差し替えはしていない。
+     weapon:'cane'は一人称視点(setFPWeapon、hideBodyと無関係の別レイヤー)
+     で使われる。procedural側の腕はhideBodyで隠れて見えないため三人称の
+     手には乗らないが、attachPrincipalVisual()側でglTFモデルのPalm.Rボーンに
+     同じ杖を別途持たせている(2026-09-22続報、依頼7) */
+  principal:{body:'human',tall:true,hairStyle:'none',acc:'',weapon:'cane',
         accent:0x8a1f28,hair:0xd8d4cc,skin:0xd8c8c0,hideBody:true}
 };
 const SLOOK={
@@ -7100,8 +7159,11 @@ function buildTeacherObj(kind,spawnPoint,applyWeapon,skinOverride){
        pcBroadcastT>0で全校朝礼が発動中。pcZoneは立ち入り禁止区域
        {x,z,r,t}(nullで無効)。pcStatuesは銅像[{x,z,yaw,mesh}]の配列。
        pcSubCdは特殊アクション(校内放送/朝の校門指導/立ち入り禁止区域指定/臨席)
-       共通のクールダウン。pcVisualは見た目(glTF)のグループ参照 */
+       共通のクールダウン。pcVisualは見た目(glTF)のグループ参照。
+       pcWarpAimTは「視点を校長室に合わせて5秒保持」の進捗秒数、
+       pcThirdPersonはtrueで三人称カメラ(続報2026-09-22追加) */
     pcForm:0,pcBroadcastT:0,pcZone:null,pcStatues:[],pcSubCd:0,pcVisual:null,
+    pcWarpAimT:0,pcThirdPerson:false,
     /* エモート(踊り)。em=-1で再生していない状態(2026-09-15) */
     em:-1,emT:0};
   if(kind==='darknode'){
@@ -7586,9 +7648,11 @@ const RING_ICON={
   topple:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '+
     'stroke-linecap="round" stroke-linejoin="round"><circle cx="6.4" cy="4.6" r="1.8" fill="currentColor" stroke="none"/>'+
     '<path d="M6.4 6.7v5.2M6.4 8.3l3.8-1.3M6.4 11.9l-1.7 4.8M6.4 11.9l2.8 4.4"/>'+
-    '<rect x="12" y="2.6" width="7" height="12.6" rx="0.6" transform="rotate(11 15.5 8.9)"/></svg>'
+    '<rect x="12" y="2.6" width="7" height="12.6" rx="0.6" transform="rotate(11 15.5 8.9)"/></svg>',
+  /* 校長先生「視点+5秒保持で校長室へワープ」の進捗ゲージ(2026-09-22続報) */
+  pcwarp:'🏫'
 };
-const RING_LABEL={run:'RUN 走る',climb:'CLIMB 乗り越え',topple:'TOPPLE 倒す'};
+const RING_LABEL={run:'RUN 走る',climb:'CLIMB 乗り越え',topple:'TOPPLE 倒す',pcwarp:'校長室へ見つめる'};
 let ringMode=null;
 function updActionRing(mode,pct,color){
   if(!mode){ if(ringMode){ elActRing.classList.remove('on'); ringMode=null; } return; }
@@ -7609,6 +7673,9 @@ const elItemHud=document.getElementById('itemhud'),
 /* エモート(踊り)ボタン。layoutPad()から位置を決めるので同じ理由でここに置く */
 const elEmoteBtn=document.getElementById('emotebtn'),
       elEmoteMenu=document.getElementById('emotemenu');
+/* 校長先生専用の一人称/三人称切替ボタン。elEmoteBtnと同じ理由(TDZ対策)で
+   ここに置く(依頼4、2026-09-22続報) */
+const elPcViewBtn=document.getElementById('pcviewbtn');
 /* 一ノ瀬「ラストスパート」持続時間セレクタ(試合中HUD版)の要素参照も
    同じ理由でここに置く(2026-09-10追加) */
 const elSprintHud=document.getElementById('sprintHud');
@@ -7713,6 +7780,7 @@ function layoutEmoteBtn(){
     ml=Math.max(4,Math.min(ml,innerWidth-mw-4));
     elEmoteMenu.style.left=ml+'px';
     elEmoteMenu.style.top=mt+'px';
+    layoutPcViewBtn();   /* 校長先生専用ボタンも#emotebtnの位置確定後に追従させる(依頼4) */
   });
 }
 /* エモート選択メニューの中身。EMOTES に1つ足すだけで自動的に増える */
@@ -7767,6 +7835,40 @@ function setEmoteBtnOn(on){
   elEmoteBtn.classList.toggle('on',on);
   if(!on) elEmoteMenu.classList.remove('on');
   else layoutEmoteBtn();
+}
+/* 校長先生専用：一人称/三人称切替ボタン(依頼4、2026-09-22続報)。
+   #emotebtnの実測rectのすぐ右隣に置く(elEmoteBtnが表示されていない
+   間は何もしない) */
+function layoutPcViewBtn(){
+  requestAnimationFrame(function(){
+    if(!elPcViewBtn||!elEmoteBtn.classList.contains('on')) return;
+    const w=elPcViewBtn.offsetWidth||38,h=elPcViewBtn.offsetHeight||38;
+    const a=elEmoteBtn.getBoundingClientRect();
+    let left=a.width?a.right+8:8, top=Math.max(8,a.top);
+    left=Math.max(4,Math.min(left,innerWidth-w-4));
+    top=Math.max(4,Math.min(top,innerHeight-h-4));
+    elPcViewBtn.style.left=left+'px'; elPcViewBtn.style.top=top+'px';
+  });
+}
+function setPcViewBtnOn(on){
+  if(!elPcViewBtn||elPcViewBtn.classList.contains('on')===on) return;
+  elPcViewBtn.classList.toggle('on',on);
+  if(on) layoutPcViewBtn();
+}
+if(elPcViewBtn){
+  elPcViewBtn.addEventListener('pointerdown',function(e){
+    e.preventDefault(); e.stopPropagation();
+    elPcViewBtn.classList.add('press');
+    if(teacher&&teacher.kindKey==='principal'){
+      teacher.pcThirdPerson=!teacher.pcThirdPerson;
+      toast(teacher.pcThirdPerson?'三人称視点に切り替えた':'一人称視点に切り替えた');
+      beep(teacher.pcThirdPerson?420:620,0.12,'triangle',0.1);
+    }
+  });
+  ['pointerup','pointercancel'].forEach(function(n){
+    elPcViewBtn.addEventListener(n,function(e){
+      e.preventDefault(); e.stopPropagation(); elPcViewBtn.classList.remove('press'); });
+  });
 }
 /* ボタン配置（サイズ・左右反転に追従） */
 function layoutPad(){
@@ -10085,6 +10187,13 @@ function mnClearSeal(t){ t.mnSealKind=''; t.mnSealIdx=-1; t.mnSealT=0; }
    slow・slowMul/trapped/noise)を最大限流用し、新規ロジックは最小限にした。
    数値は「強すぎない」よう控えめな初期値にしてあるので、実プレイのフィード
    バックで調整する前提 */
+/* 依頼5(2026-09-22続報)：「校長先生は最強でいい」との強い要望で、当初の
+   70%短縮(現在値の30%)よりさらに踏み込み「ほぼ連発できる」水準まで短縮。
+   0秒にすると誤操作の連打で意図しない連続発動が起きうるため、最低限の
+   間隔として1秒だけ残す(全校朝礼/校長室送還/立ち入り禁止区域/校内放送の
+   4つの数値を、このPC_CD_FAST 1箇所を触るだけで統一的に管理できるように
+   まとめた) */
+const PC_CD_FAST=1.0;
 function pcRoomSpot(){
   if(chairs&&chairs.length){
     const c=chairs[chairs.length-1];
@@ -10095,22 +10204,66 @@ function pcRoomSpot(){
 function pcNearSafeChair(s){
   return chairs.some(function(c){ return !c.taken&&Math.hypot(c.x-s.x,c.z-s.z)<1.6; });
 }
+/* 依頼6(コーディネーター訂正で「脳筋ゴリラ」という呼称は撤回、選択パークでは
+   なく校長先生に最初から固定でついている固有能力として実装、2026-09-22続報)。
+   窓を長押しで叩き割って穴を開け、以後は乗り越えモーション無しで普通に
+   通れるようにする。4形態どれでも(altHold/altEdgeは形態に関係ない共通の
+   ボタンのため)常に有効 */
+const PC_WIN_BREAK_TIME=1.2;
+/* 依頼6：板を破壊するのにかかる時間を0.3秒(絶対値)にする固有能力。
+   breakPallet()の基準値2.2秒に対する倍率へ変換して他キャラの速度計算式
+   (honehoneman等)と同じ「dtに掛ける」方式に揃えた */
+const PC_BREAK_MUL=2.2/0.3;
+function pcWindowAheadIdx(t){
+  if(t.kindKey!=='principal') return -1;
+  const sx=Math.sin(t.yaw),sz=Math.cos(t.yaw);
+  let a=tileOf(t.x+sx*2.2,t.z+sz*2.2);
+  if(at(a[0],a[1])!=='W') a=tileOf(t.x+sx*3.2,t.z+sz*3.2);
+  if(at(a[0],a[1])!=='W') return -1;
+  for(let i=0;i<windowSpots.length;i++){
+    const w=windowSpots[i];
+    if(w.c===a[0]&&w.r===a[1]&&!w.broken) return i;
+  }
+  return -1;
+}
+function pcHoldBreakWindow(t,dt,idx,holding){
+  if(idx<0){ t.pcWinBreakT=0; t.pcWinBreakIdx=-1; return; }
+  if(t.pcWinBreakIdx!==idx){ t.pcWinBreakIdx=idx; t.pcWinBreakT=0; }
+  if(!holding){ t.pcWinBreakT=Math.max(0,(t.pcWinBreakT||0)-dt*0.8); return; }
+  t.pcWinBreakT=(t.pcWinBreakT||0)+dt;
+  if(Math.random()<0.3) beep(240,0.05,'square',0.05);
+  if(t.pcWinBreakT>=PC_WIN_BREAK_TIME){
+    const w=windowSpots[idx];
+    if(w&&!w.broken){
+      w.broken=true; grid[w.r][w.c]='.';
+      if(w.holeMesh) w.holeMesh.visible=true;
+      if(netMode==='host') netDirtyWindows.push(idx);
+      toast('窓を叩き割って穴を開けた！');
+      beep(120,0.4,'sawtooth',0.18); noise(t.x,t.z,14);
+    }
+    t.pcWinBreakT=0; t.pcWinBreakIdx=-1;
+  }
+}
 function pcBroadcastActive(){ return !!(teacher&&teacher.kindKey==='principal'&&teacher.pcBroadcastT>0); }
 /* 校長室送還：Q(ホールド)で「見つめて」溜めた末に発動。視線が通っている
    一番近い生徒を校長室へ強制送還し、math先生の床トラップと同じ
    trapped(連打脱出)状態にする */
 function pcSendToRoom(){
   const t=teacher;
-  t.abCd=10;
+  t.abCd=PC_CD_FAST;   /* 依頼5：クールタイムをほぼゼロに短縮(2026-09-22続報) */
   const tg=students.filter(function(s){ return s.state==='free'&&!s.hide&&
     Math.hypot(s.x-t.x,s.z-t.z)<16&&los(t.x,t.z,s.x,s.z); })
     .sort(function(a,b){ return Math.hypot(a.x-t.x,a.z-t.z)-Math.hypot(b.x-t.x,b.z-t.z); })[0];
   if(!tg){ toast('送還できる生徒が見当たらない'); return; }
   const p=pcRoomSpot();
   tg.x=p.x; tg.z=p.z; tg.path=[]; unstick(tg);
-  tg.trapped=true; tg.trapMash=0; tg.trapAI=2.6;
+  /* 依頼2：送還されてから15秒間は連打しても抜け出せない強制拘束
+     (trapLockTがtrapCheck側で連打受付をブロックする、2026-09-22続報)。
+     依頼3：pcRoomTrappedは「校長室に捕まっている」ことを示す専用フラグ
+     (math先生の床トラップ等、既存のtrapped全般と区別するため新設) */
+  tg.trapped=true; tg.trapMash=0; tg.trapAI=2.6; tg.trapLockT=15; tg.pcRoomTrapped=true;
   setAura(tg,'reveal',1.2);
-  toast(tg.name+'を校長室へ送還した！');
+  toast(tg.name+'を校長室へ送還した！(15秒間は動けない)');
   beep(140,0.4,'sawtooth',0.16); bigNoise(0.25,0.85);
   const m=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8),
     new THREE.MeshBasicMaterial({color:0x6a3ad8,transparent:true,opacity:0.55}));
@@ -10165,7 +10318,7 @@ function pcDesignateZone(){
   ring.rotation.x=-Math.PI/2; ring.position.set(t.x,0.15,t.z); ring.renderOrder=5;
   scene.add(ring);
   t.pcZone={x:t.x,z:t.z,r:r,t:20,mesh:ring};
-  t.pcSubCd=18;
+  t.pcSubCd=PC_CD_FAST;   /* 依頼5：クールタイムをほぼゼロに短縮(2026-09-22続報) */
   toast('この周辺を立ち入り禁止にした');
   beep(700,0.3,'square',0.1);
 }
@@ -10195,7 +10348,7 @@ function pcBroadcastPing(){
   students.forEach(function(s){
     if(s.state==='free'&&!s.hide){ setAura(s,'reveal',3.0); n++; }
   });
-  t.pcSubCd=16;
+  t.pcSubCd=PC_CD_FAST;   /* 依頼5：クールタイムをほぼゼロに短縮(2026-09-22続報) */
   toast(n?'校内放送で気配を探った':'校内放送（反応なし）');
   beep(760,0.3,'sine',0.12);
 }
@@ -10213,6 +10366,45 @@ function updPrincipal(dt){
      終わり次第この毎フレーム呼び出しの中で自然に反映される */
   if(!t.pcVisual) attachPrincipalVisual(t);
   t.pcSubCd=Math.max(0,(t.pcSubCd||0)-dt);
+  /* 依頼3(2026-09-22続報)：校長室に生徒が捕まっている間、他の生徒からその
+     生徒(+校長先生自身がそこにいれば校長先生も)がオーラでハイライトされる。
+     救助しやすくなる一方、先生がいる場合の危険も伝わるリスク・リワード演出。
+     setAuraは既存の他キャラ全てと同じくホスト側ローカルの視覚効果(この
+     ゲーム全体の既存アーキテクチャの制約、詳細はナレッジ参照) */
+  const pcRoomOccupants=students.filter(function(s){ return s.pcRoomTrapped&&s.state==='free'; });
+  if(pcRoomOccupants.length){
+    pcRoomOccupants.forEach(function(s){ setAura(s,'reveal',0.6); });
+    const rpv=pcRoomSpot();
+    if(Math.hypot(t.x-rpv.x,t.z-rpv.z)<6) setAura(t,'reveal',0.6);
+  }
+  /* 依頼1(2026-09-22続報)：視点(照準)を校長室の方向へ5秒間合わせ続けると、
+     校長先生自身がそこへ瞬時にワープできる(「校長室がどこにあるか分からない」
+     への対策)。朝の校門指導(pcGateJump、出口/椅子へ)とは別の新設ルートで、
+     pcFormに関係なく常時使える。ローカルでプレイしている本人(role==='teacher')
+     の入力でのみ動く(botは対象外) */
+  if(role==='teacher'&&t.stun<=0&&t.wipe<=0&&t.dive<=0){
+    const rp2=pcRoomSpot();
+    const ddx=rp2.x-t.x,ddz=rp2.z-t.z,ddist=Math.hypot(ddx,ddz);
+    let aimed=ddist<3;
+    if(!aimed){
+      const ang=Math.atan2(ddx,ddz);
+      const diff=Math.abs(((ang-t.yaw+Math.PI*3)%(Math.PI*2))-Math.PI);
+      aimed=diff<0.35;
+    }
+    if(aimed){
+      t.pcWarpAimT=Math.min(5,(t.pcWarpAimT||0)+dt);
+      updActionRing('pcwarp',t.pcWarpAimT/5,'#7fc6ff');
+      if(t.pcWarpAimT>=5){
+        t.pcWarpAimT=0; t.x=rp2.x; t.z=rp2.z; t.path=[]; unstick(t);
+        toast('視線を頼りに校長室へワープした');
+        beep(520,0.3,'sine',0.12); beep(260,0.3,'triangle',0.1);
+        const m3=new THREE.Mesh(new THREE.SphereGeometry(1.1,10,8),
+          new THREE.MeshBasicMaterial({color:0x35ff6a,transparent:true,opacity:0.55}));
+        m3.position.set(rp2.x,1.4,rp2.z); scene.add(m3);
+        fxs.push({m:m3,t:0,life:0.4,kind:'dust'});
+      }
+    } else if(t.pcWarpAimT>0){ t.pcWarpAimT=0; if(ringMode==='pcwarp') updActionRing(null); }
+  } else if(t.pcWarpAimT>0){ t.pcWarpAimT=0; if(ringMode==='pcwarp') updActionRing(null); }
   /* 全校朝礼(form0のメイン)：持続時間の減衰・3秒おきの金縛りパルス・
      進行中の課題のじわじわとした後退 */
   if(t.pcBroadcastT>0){
@@ -10739,15 +10931,22 @@ function swingLand(){
   const fr=(teacher.kindKey==='model')?(1-0.3*Math.min(1,teacher.frenzy||0)):1;
   const tk=(teacher.kindKey==='teke')?6.0:1;   /* テケテケは振り払いが極端に長い */
   const atkSpdDiv=(role==='teacher'?adminAtkSpeedMul:1);   /* 管理者モード：攻撃速度倍率 */
-  const cd=3.64*fr*tk/atkSpdDiv*traitCdMul(teacher)/(teacher.sewAtkMul||1);
+  /* 依頼8(2026-09-22続報訂正)：命中させても、校長先生自身の硬直(次に
+     動ける/攻撃できるまでの隙)は他の先生より30%長い(老人の代償、
+     生徒側のスタン時間には一切影響しない) */
+  const pcOldAge=(teacher.kindKey==='principal')?1.3:1;
+  const cd=3.64*fr*tk/atkSpdDiv*traitCdMul(teacher)/(teacher.sewAtkMul||1)*pcOldAge;
   teacher.wipe=cd;
   teacher.cool=cd;
   if(role==='teacher'){ teacher.lunge=0.16; vib(30); }
 }
 function swingMiss(){
   const ts=(teacher.kindKey==='teke')?3.0:1;
-  teacher.stun=0.98*ts;               /* 空振りの硬直（テケテケは3倍） */
-  teacher.miss=0.98*ts;
+  /* 依頼8(2026-09-22続報訂正)：空振りした時の校長先生自身の硬直は
+     他の先生より40%長い(命中時の30%よりさらに大きい代償) */
+  const pcOldAgeMiss=(teacher.kindKey==='principal')?1.4:1;
+  teacher.stun=0.98*ts*pcOldAgeMiss;               /* 空振りの硬直（テケテケは3倍） */
+  teacher.miss=0.98*ts*pcOldAgeMiss;
   beep(110,0.18,'sawtooth',0.1);
   if(role==='teacher'){ toast('空振り'); vib(18); }
 }
@@ -11588,7 +11787,7 @@ function updWarp(dt){
   }
 }
 function freeTrap(s){
-  s.trapped=false; s.trapMash=0; s.slow=2.0; s.slowMul=0.8;
+  s.trapped=false; s.trapMash=0; s.slow=2.0; s.slowMul=0.8; s.pcRoomTrapped=false;
   s.mesh.userData.trapMark.visible=false;
   beep(520,0.18,'triangle',0.1);
   if(s===me) toast('抜け出した（2秒 足が重い）');
@@ -11596,7 +11795,11 @@ function freeTrap(s){
 function trapCheck(dt){
   for(const s of students){
     if(!s.trapped) continue;
-    if(s.state!=='free'){ s.trapped=false; s.mesh.userData.trapMark.visible=false; continue; }
+    if(s.state!=='free'){ s.trapped=false; s.pcRoomTrapped=false; s.mesh.userData.trapMark.visible=false; continue; }
+    /* 依頼2(2026-09-22続報)：校長室に送還されてから15秒間は、連打しても
+       仲間に助けられても抜け出せない強制拘束(trapLockTは校長室送還だけが
+       セットするフィールドなので、既存の宿題トラップ(math先生)には無影響) */
+    if(s.trapLockT>0){ s.trapLockT=Math.max(0,s.trapLockT-dt); continue; }
     const isMe=(s===me&&role==='student');
     if(isMe){
       if(input.mash){ input.mash=false; s.trapMash++;
@@ -12870,7 +13073,8 @@ function tick(now){
      移動方向だけ一人称基準のまま=前後左右が反転する不具合になっていた） */
   const teacherFP=(role==='teacher')&&!(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
     !(teacher.kindKey==='wheel'&&teacher.wheelOn)&&
-    !(teacher.kindKey==='sakasa'&&teacher.saForm>0);
+    !(teacher.kindKey==='sakasa'&&teacher.saForm>0)&&
+    !(teacher.kindKey==='principal'&&teacher.pcThirdPerson);   /* 依頼4：校長先生の三人称切替(2026-09-22続報) */
   const viewYaw=teacherFP?(camYaw+Math.PI):camYaw;
   const vf=[Math.sin(viewYaw),Math.cos(viewYaw)];      /* 前 */
   const vr=[-Math.cos(viewYaw),Math.sin(viewYaw)];     /* 右 */
@@ -12888,8 +13092,13 @@ function tick(now){
     let sp=me.speed*Math.min(1,mag);
     if(me.slow>0&&me.painFree<=0) sp*=(me.slowMul||0.62);
     const canRun=running&&!me.exh&&me.stam>0;
+    /* 依頼8(2026-09-22続報)：校長先生は「おじいちゃん」設定のため、
+       ダッシュ速度は通常の先生より20%遅く、スタミナの減少速度は
+       5%速い(スタミナ切れしやすい)。最大量自体は変更しない */
+    const pcOldMoveMul=(role==='teacher'&&teacher.kindKey==='principal')?0.8:1;
+    const pcOldStamMul=(role==='teacher'&&teacher.kindKey==='principal')?1.05:1;
     if(canRun){
-      sp*=1.45; me.stam=Math.max(0,me.stam-dt*0.30*
+      sp*=1.45*pcOldMoveMul; me.stam=Math.max(0,me.stam-dt*0.30*pcOldStamMul*
         (me.perk==='stam'?0.75:(me.perk==='proto'?2.2:1)));
       if(me.stam<=0){ me.exh=true; toast('息が上がった'); beep(150,0.35,'sine',0.09); vib(60); }
       if(role!=='teacher'&&Math.random()<0.12&&!inWater(me.x,me.z)&&
@@ -13079,7 +13288,7 @@ function tick(now){
         abHot=(t.abCd<=0&&t.pcBroadcastT<=0); abDim=!abHot;
         hp=(t.pcBroadcastT>0)?(t.pcBroadcastT/8):0;
         if(input.abEdge&&t.abCd<=0&&t.pcBroadcastT<=0){
-          t.pcBroadcastT=8; t.abCd=20;
+          t.pcBroadcastT=8; t.abCd=PC_CD_FAST;   /* 依頼5：クールタイムをほぼゼロに短縮(2026-09-22続報) */
           toast('全校朝礼を始めた…');
           beep(90,0.6,'sawtooth',0.16); bigNoise(0.3,0.9);
         }
@@ -13128,11 +13337,19 @@ function tick(now){
       /* 写真部顧問：現像モード/決定的瞬間+20%、アドオンでさらに調整可。
          「ほねほねマン」パーク：板を破壊する速度+50%(キャラ種類問わず、2026-09-22追加) */
       const honeBreakMul=hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1;
-      const bdt=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1)*honeBreakMul;
+      const pcBreakMul=(t.kindKey==='principal')?PC_BREAK_MUL:1;   /* 依頼6：校長先生は板破壊0.3秒(2026-09-22続報) */
+      const bdt=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1)*honeBreakMul*pcBreakMul;
       if(input.act){ hp=dp.breakT/2.2; if(breakPallet(dp,bdt)) hp=0; }
       else if(!input.altHold) dp.breakT=Math.max(0,dp.breakT-dt*0.8);
     } else { label='定規を振る'; hot=t.cool<=0; }
     if(dp){ altLabel='蹴破る'; altHot=true; } else { altLabel='乗り越え'; altHot=true; }
+    /* 依頼6：窓を長押しで叩き割って穴を開ける(常時有効な固有能力)。板が
+       前に無い時だけ判定する(dp優先は既存のtryVault分岐と揃える) */
+    const pcWinIdx=(!dp)?pcWindowAheadIdx(t):-1;
+    if(pcWinIdx>=0){
+      altLabel='窓を破壊 '+Math.round(((t.pcWinBreakT||0)/PC_WIN_BREAK_TIME)*100)+'%'; altHot=true;
+      hp=Math.max(hp,(t.pcWinBreakT||0)/PC_WIN_BREAK_TIME);
+    }
     /* 殴る・運ぶ・蹴るなど、Eで他にやることが何も無い時だけ能力2の代役にする
        （画面上のボタンにも「R / E」と出ているため）。攻撃対象がいる時は必ず殴る */
     const downedNear=students.filter(function(s){ return s.state==='downed'&&
@@ -13148,8 +13365,12 @@ function tick(now){
     if(dp&&(input.altEdge||input.altHold)&&!input.act){
       hp=Math.max(hp,dp.breakT/2.2);
       const bdt2=dt*(pdActiveBoost()?1.2:1)*(t.kindKey==='photo'?pdAddonVal('breakSpeedMul'):1)*
-        (hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1);
+        (hasTrait(t,'honehoneman')?perkScale(t,'honehoneman',1.5):1)*
+        ((t.kindKey==='principal')?PC_BREAK_MUL:1);
       if(breakPallet(dp,bdt2)) hp=0;
+    } else if(pcWinIdx>=0){
+      pcHoldBreakWindow(t,dt,pcWinIdx,input.altHold&&!input.act);
+      if(input.altEdge&&!input.altHold) tryVault(teacher);   /* 単発タップは従来通り乗り越え */
     } else if(input.altEdge) tryVault(teacher);
     if(!dp&&!input.act) { pallets.forEach(function(p){ if(p.state==='down') p.breakT=Math.max(0,p.breakT-dt*0.8); }); }
   } else {
@@ -13265,6 +13486,7 @@ function tick(now){
 
   elChatBtn.style.display=(role==='student')?'flex':'none';
   setEmoteBtnOn(started&&!over&&!!me);   /* エモート(💃)ボタン(2026-09-15) */
+  setPcViewBtnOn(started&&!over&&role==='teacher'&&!!teacher&&teacher.kindKey==='principal');   /* 依頼4：視点切替ボタン(2026-09-22続報) */
   /* ラストスパート持続時間の試合中HUD。一ノ瀬(perk:foot)本人にのみ表示する
      個人設定(2026-09-10追加、他プレイヤーの画面には出ない・影響しない) */
   elSprintHud.classList.toggle('on',role==='student'&&!!me&&me.perk==='foot');
@@ -14180,7 +14402,8 @@ function tick(now){
      !(teacher.kindKey==='darknode'&&teacher.dnForm>0)&&
      !(teacher.kindKey==='wheel'&&teacher.wheelOn)&&
      !(teacher.kindKey==='sakasa'&&teacher.saForm>0)&&
-     !(teacher.kindKey==='mane'&&teacher.mnForm===1)){
+     !(teacher.kindKey==='mane'&&teacher.mnForm===1)&&
+     !(teacher.kindKey==='principal'&&teacher.pcThirdPerson)){   /* 依頼4(2026-09-22続報) */
     teacher.mesh.visible=false; ruler.visible=true;
     const shake=(teacher.stun>0?Math.sin(elapsed*38)*0.09:0)
                +(teacher.wipe>0?Math.sin(elapsed*9)*0.02:0);
@@ -14319,6 +14542,7 @@ let netInputs={};             // host: slot -> 直近の入力パケット
 let netEvents=[];             // host: 次のスナップショットで流すイベント
 let netDirtyPallets=[];       // host: 直近に状態が変わった板 [idx,state]
 let netDirtyBoxes=[];         // host: 直近に中身が取られたアイテムボックスのidx
+let netDirtyWindows=[];       // host: 校長先生の固有能力で叩き割った窓のidx(2026-09-22続報)
 let netSendT=0;               // host: スナップショット送信タイマー
 let netMashCount=0;           // client: 前回送信からの連打回数
 let netBoneTapCount=0;        // client: 前回送信からの骨ボタン連打回数
@@ -15167,7 +15391,7 @@ function netHostAttachConnHandlers(){
 function netOpenHost(){
   if(typeof Peer==='undefined'){ netSetStatus('通信ライブラリを読み込めなかった'); return; }
   if(netPeer) netTeardown();
-  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netRoomCode='';
+  netMode='host'; netConns=[]; netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netDirtyWindows=[]; netRoomCode='';
   netSetStatus('部屋を作っています…',true);
   netLockRoleToggle(true);
   /* 部屋コードとpeer IDを分離する（今までは「houkago-inokori-」+部屋コードを
@@ -15944,6 +16168,7 @@ function netHostBroadcastSnapshot(dt){
   };
   if(netDirtyPallets.length){ snap.pal=netDirtyPallets; netDirtyPallets=[]; }
   if(netDirtyBoxes.length){ snap.box=netDirtyBoxes; netDirtyBoxes=[]; }
+  if(netDirtyWindows.length){ snap.win=netDirtyWindows; netDirtyWindows=[]; }
   /* 青鬼先生の仲間(oniAllies)は今まで参加者側に一切配信されておらず、
      オンライン対戦だと注射を打たれた生徒がそのまま消えるだけで青鬼が
      見えない不具合があった(2026-09-21修正)。位置・向きだけ軽量に配る */
@@ -15969,6 +16194,14 @@ function netApplyPalletDirty(idx,state){
 function netApplyBoxDirty(idx){
   const b=itemBoxes[idx]; if(!b) return;
   b.taken=true; b.g.visible=false;
+}
+/* 校長先生の固有能力(窓を叩き割って穴を開ける)を参加者側にも反映する
+   (2026-09-22続報)。pallet/boxと同じ「dirtyな添字を配って参加者側は
+   grid書き換え+見た目トグルだけ行う」方式 */
+function netApplyWindowBreak(idx){
+  const w=windowSpots[idx]; if(!w||w.broken) return;
+  w.broken=true; grid[w.r][w.c]='.';
+  if(w.holeMesh) w.holeMesh.visible=true;
 }
 /* 参加者(クライアント)側で見せるだけの青鬼の仲間モデル一覧。当たり判定は
    ホスト側のoniAlliesが権威で持つので、こちらは位置・向きの見た目だけ
@@ -16092,6 +16325,7 @@ function netInterpolate(dt){
   });
   if(snap.pal) snap.pal.forEach(function(pr){ netApplyPalletDirty(pr[0],pr[1]); });
   if(snap.box) snap.box.forEach(function(i){ netApplyBoxDirty(i); });
+  if(snap.win) snap.win.forEach(function(i){ netApplyWindowBreak(i); });
   gateOpen=snap.gateOpen; endTimer=snap.endTimer;
   blackoutT=snap.blackout||0; labShareT=snap.labShare||0;
   rumors=(snap.rumors||[]).map(function(r){ return {x:r[0],z:r[1],left:r[2]}; });
@@ -17768,7 +18002,7 @@ function startMatch(){
       const idx=netStudentIndexForSlot(c.slot);
       if(students[idx]) students[idx].netSlot=c.slot;
     });
-    netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netSendT=0;
+    netInputs={}; netEvents=[]; netDirtyPallets=[]; netDirtyBoxes=[]; netDirtyWindows=[]; netSendT=0;
     const taskDesks=tasks.map(function(d){ return {c:d.c,r:d.r}; });
     const itemBoxRoll=itemBoxes.map(function(b){ return b.item; });
     const skinsForWire=buildNetMatchSkins(true);   /* スキン機能：tex抜きの軽量版だけ配信 */
@@ -17872,6 +18106,12 @@ function softReset(keepNet){
     grid[p.r][p.c]='.'; grid[p.pr][p.pc]='.';
     p.mesh.material=M.pallet; p.mesh.rotation.set(0,p.ang,0);
     p.mesh.position.set(p.x,1.75,p.z);
+  });
+  /* 校長先生の固有能力で叩き割られた窓も、新しい試合開始時には元に戻す
+     (pallets同様、windowSpotsも試合をまたいで永続する配列のため、2026-09-22続報) */
+  windowSpots.forEach(function(w){
+    if(w.broken){ w.broken=false; grid[w.r][w.c]='W'; }
+    if(w.holeMesh) w.holeMesh.visible=false;
   });
   traps.forEach(function(t){ scene.remove(t.mesh); }); traps.length=0;
   drops.forEach(function(d){ scene.remove(d.m); }); drops.length=0;
