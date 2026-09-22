@@ -434,6 +434,17 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   font-size:9.5px;line-height:1.5;text-align:right;min-width:58px}
 .chip b{display:block;font-size:12.5px;letter-spacing:.04em;font-weight:700}
 .chip.gold{border-color:#e8c54766;color:var(--yellow)}
+#boardLinkChip{cursor:pointer;min-width:0}
+#boardLinkChip:active{background:#1a2a1fdd}
+/* 掲示板連携(6桁コード)のコード表示オーバーレイ。#netwaitと同じ見た目のパターンを流用 */
+#linkCodeOverlay{position:fixed;inset:0;z-index:26;background:#0b120ef2;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px}
+#linkCodeOverlay.on{display:flex}
+#linkCodeOverlay h2{font-size:16px;letter-spacing:.3em;color:var(--yellow)}
+#linkCodeOverlay p{font-size:11.5px;opacity:.7;line-height:1.9;max-width:280px}
+#linkCodeOverlay .code{font-size:40px;letter-spacing:.25em;color:var(--yellow)}
+#linkCodeOverlay button{padding:11px 26px;border:1px solid var(--chalk);color:var(--chalk);background:transparent;
+  font-family:inherit;font-size:12px;letter-spacing:.2em}
 #rail{position:absolute;left:10px;top:50%;transform:translateY(-50%);z-index:3;
   display:flex;flex-direction:column;gap:8px;max-height:86vh;overflow-y:auto;touch-action:pan-y}
 .rbtn{width:46px;height:46px;flex:none;border:1px solid #ffffff2e;border-radius:4px;
@@ -898,6 +909,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <div class="chip">ID<b id="hudId">------</b></div>
       <div class="chip">スコア<b id="hudScore">0</b></div>
       <div class="chip gold">コイン<b id="hudCoin">0</b></div>
+      <div class="chip" id="boardLinkChip" title="掲示板と連携する">🔗<b>連携</b></div>
     </div>
   </div>
 
@@ -1082,7 +1094,7 @@ body.mlands #chatbtn{left:auto;bottom:auto}
       <a id="openBoardBtn" class="tog" href="https://tanakatakeshi811-spec.github.io/houkago-inokori-web/board.html"
         target="_blank" rel="noopener"
         style="display:block;text-align:center;width:100%;box-sizing:border-box;margin-top:10px;text-decoration:none;color:inherit">掲示板を開く</a>
-      <p class="hint" style="text-align:left">公式サイトの掲示板を新しいタブで開きます。このIDのまま自動で連携され、投稿できるようになります。</p>
+      <p class="hint" style="text-align:left">投稿するには連携が必要です。タイトル画面右上の「🔗連携」を押すと6桁のコードが出るので、掲示板側の「連携する」でそのコードを入力してください（別の端末・別のブラウザからでもOK）。</p>
       <p class="lbl">みんなで遊ぶ</p>
       <div id="netOffline">
         <div class="seg small" id="netActionsRow" style="margin-bottom:9px">
@@ -1162,6 +1174,14 @@ body.mlands #chatbtn{left:auto;bottom:auto}
   <p id="netWaitMsg">ホストの部屋に接続しました。<br>ホストが「はじめる」を押すのを待っています…</p>
   <div id="netWaitPeers" style="width:220px"></div>
   <button id="netWaitLeave">退室する</button>
+</div>
+
+<div id="linkCodeOverlay">
+  <h2>掲示板と連携</h2>
+  <div class="code" id="linkCodeShow">------</div>
+  <p>このコードを、公式サイトの掲示板ページの「連携する」から入力してください。<br>有効期限は10分です。別の端末・別のブラウザからでも連携できます。</p>
+  <button id="linkCodeCopyBtn">コードをコピー</button>
+  <button id="linkCodeCloseBtn">閉じる</button>
 </div>
 
 <div id="qpLobby">
@@ -15918,6 +15938,42 @@ document.getElementById('netCodeCopy').addEventListener('pointerdown',function(e
   /* toast()の#msgはタイトル画面(z-index高)の下に隠れて見えないため、
      ここでは#tinfo配下にありタイトル画面でも確実に見えるnetSetStatus()を使う */
   copyText(url,function(){ netSetStatus('招待リンクをコピーした'); beep(700,0.08,'sine',0.06); });
+});
+
+/* ---- 掲示板と連携(6桁コード方式、2026-09-22追加) ----
+   タイトル画面の「🔗連携」を押すとサーバーに自分のPIDを渡して使い捨ての
+   6桁コードを発行してもらい、大きく画面表示する。公式サイトの掲示板側で
+   そのコードを入力すると連携が完了する(別端末・別ブラウザでも連携可能)。 */
+document.getElementById('boardLinkChip').addEventListener('click',function(){
+  const chip=this;
+  if(chip.dataset.busy) return;
+  chip.dataset.busy='1';
+  fetch(cloudHttpUrl('/api/link/create'),{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({playerId:String(PID)})
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      delete chip.dataset.busy;
+      if(data&&data.ok&&data.code){
+        document.getElementById('linkCodeShow').textContent=data.code;
+        document.getElementById('linkCodeOverlay').classList.add('on');
+      } else {
+        netSetStatus('コードの発行に失敗した。時間を置いて試してください');
+      }
+    })
+    .catch(function(){
+      delete chip.dataset.busy;
+      netSetStatus('通信エラーでコードを発行できませんでした');
+    });
+});
+document.getElementById('linkCodeCloseBtn').addEventListener('click',function(){
+  document.getElementById('linkCodeOverlay').classList.remove('on');
+});
+document.getElementById('linkCodeCopyBtn').addEventListener('click',function(){
+  const code=document.getElementById('linkCodeShow').textContent;
+  if(!code||code==='------') return;
+  copyText(code,function(){ netSetStatus('コードをコピーした'); beep(700,0.08,'sine',0.06); });
 });
 
 /* ===== 開始・終了 ===== */

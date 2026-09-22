@@ -17,6 +17,8 @@
      /api/board/save       … 投稿を自分専用に保存(POST、元の投稿が消えても残るコピー)
      /api/board/saved      … 自分が保存した投稿一覧の取得(GET)
      /api/board/unsave     … 保存した投稿の削除(POST、本人のものだけ)
+     /api/link/create      … 掲示板連携用の6桁コード発行(POST、ゲーム本体のタイトル画面から)
+     /api/link/redeem      … 6桁コードをplayer_idに交換(POST、掲示板側での連携完了、1回で失効)
      /health, /          … 生存確認
 
    ランキングについて: クライアント(ブラウザ)が試合結果を自己申告する方式なので
@@ -495,6 +497,69 @@ async function handleBoardUnsave(request, env) {
   return jsonRes({ ok: changed > 0 });
 }
 
+/* ---- 掲示板の連携(6桁コード方式) ----
+   2026-09-22: 従来の「ゲーム本体と公式サイトが同一オリジンなのでlocalStorage
+   (hi_pid_v1)をそのまま読む」自動連携は、同じブラウザでしか成立しないという
+   制約があった。しゅんりさんの要望で「ゲームのタイトル画面でコードを発行→
+   掲示板側でそのコードを入力」という、別端末・別ブラウザでも連携できる方式に
+   変更する。コードは10分間だけ有効なワンタイムトークンで、使ったら即失効。 */
+const LINK_CODE_TTL_MS = 10 * 60 * 1000; // 10分
+const LINK_CODE_MAX_TRIES = 8;
+
+async function cleanupExpiredLinkCodes(env, now) {
+  try { await env.DB.prepare('DELETE FROM link_codes WHERE expires_at < ?').bind(now).run(); }
+  catch (e) { /* 掃除の失敗で発行・照合自体は止めない */ }
+}
+
+function genLinkCode() {
+  return String(Math.floor(100000 + Math.random() * 900000)); // 100000〜999999の6桁
+}
+
+async function handleLinkCreate(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const playerId = String((body && body.playerId) || '').trim().slice(0, 32);
+  if (!isValidPid(playerId)) return jsonRes({ ok: false, error: 'invalid playerId' }, 400);
+  const now = Date.now();
+  await cleanupExpiredLinkCodes(env, now);
+
+  let code = null;
+  for (let i = 0; i < LINK_CODE_MAX_TRIES; i++) {
+    const candidate = genLinkCode();
+    const exists = await env.DB.prepare(
+      'SELECT code FROM link_codes WHERE code=? AND used_at IS NULL AND expires_at > ?'
+    ).bind(candidate, now).first();
+    if (!exists) { code = candidate; break; }
+  }
+  if (!code) return jsonRes({ ok: false, error: 'could not generate code' }, 500);
+
+  const expiresAt = now + LINK_CODE_TTL_MS;
+  await env.DB.prepare(
+    'INSERT INTO link_codes (code, player_id, created_at, expires_at) VALUES (?,?,?,?) ON CONFLICT(code) DO UPDATE SET player_id=excluded.player_id, created_at=excluded.created_at, expires_at=excluded.expires_at, used_at=NULL'
+  ).bind(code, playerId, now, expiresAt).run();
+
+  return jsonRes({ ok: true, code, expiresAt });
+}
+
+async function handleLinkRedeem(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return jsonRes({ ok: false, error: 'invalid json' }, 400); }
+  const code = String((body && body.code) || '').trim().slice(0, 6);
+  if (!/^[0-9]{6}$/.test(code)) return jsonRes({ ok: false, error: 'invalid code' }, 400);
+  const now = Date.now();
+
+  const row = await env.DB.prepare(
+    'SELECT player_id as playerId, expires_at as expiresAt, used_at as usedAt FROM link_codes WHERE code=?'
+  ).bind(code).first();
+  if (!row || row.usedAt || row.expiresAt < now) {
+    return jsonRes({ ok: false, error: 'invalid_or_expired' }, 400);
+  }
+  await env.DB.prepare('UPDATE link_codes SET used_at=? WHERE code=?').bind(now, code).run();
+  await cleanupExpiredLinkCodes(env, now);
+
+  return jsonRes({ ok: true, playerId: row.playerId });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -540,6 +605,14 @@ export default {
     }
     if (url.pathname === '/api/board/unsave' && request.method === 'POST') {
       try { return await handleBoardUnsave(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/link/create' && request.method === 'POST') {
+      try { return await handleLinkCreate(request, env); }
+      catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
+    }
+    if (url.pathname === '/api/link/redeem' && request.method === 'POST') {
+      try { return await handleLinkRedeem(request, env); }
       catch (e) { return jsonRes({ ok: false, error: 'server error' }, 500); }
     }
     return new Response('not found', { status: 404, headers: CORS });

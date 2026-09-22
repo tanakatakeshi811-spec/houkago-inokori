@@ -58,3 +58,18 @@ CREATE TABLE IF NOT EXISTS board_saves (
   saved_at        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_board_saves_owner ON board_saves(owner_player_id, saved_at DESC);
+
+-- 2026-09-22 掲示板の連携方式を「6桁コード」方式に変更したため追加
+-- link_codes: ゲーム本体のタイトル画面で発行するワンタイムの6桁コード。
+-- 別端末・別ブラウザでも公式サイトの掲示板にこのコードを入力するだけで
+-- そのplayer_idと連携できる(旧方式=同一オリジンのlocalStorage共有だと
+-- 同じブラウザでしか連携できなかった問題への対応)。有効期限10分・
+-- 1回使ったらused_atを立てて再利用不可にする。
+CREATE TABLE IF NOT EXISTS link_codes (
+  code        TEXT PRIMARY KEY,
+  player_id   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  used_at     INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_link_codes_expires ON link_codes(expires_at);
