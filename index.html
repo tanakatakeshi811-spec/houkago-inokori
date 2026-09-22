@@ -4318,12 +4318,75 @@ function makeCrowModel(){
    方式にしてある。読み込みが失敗/間に合わなくても、procedural低ポリの見た目
    (顔は非表示のまま)にフォールバックするだけでゲームは壊れない */
 let PRINCIPAL_TEMPLATE=null, PRINCIPAL_TEMPLATE_PROMISE=null, PRINCIPAL_FACE_TEX=null;
+/* man.glbのBaseHumanメッシュは単一のSkinnedMesh(650頂点)だが、プリミティブごとに
+   マテリアル(Shirt/Skin/Pants/Eyes/Socks/Hair)が分かれている。Hair・Eyesは頭部専用
+   なので丸ごと非表示にできるが、Skinは顔・首・手を1枚のメッシュで兼ねているため、
+   「Headボーンが最優先ウェイトの頂点」を三角形単位で間引く方式で顔だけを除去する
+   (2026-09-22、二重輪郭バグ修正)。手や首のスキンはそのまま残る */
+let PRINCIPAL_HEAD_BOX=null; /* 除去した頭部の範囲(man.glbのbind-poseローカル空間)。
+  attachPrincipalVisual側で毎回同じscale/offsetを掛けて置き換え用の頭カプセルを置く */
+function findMeshesByMaterialName(root,name){
+  const out=[];
+  root.traverse(function(o){ if((o.isSkinnedMesh||o.isMesh)&&o.material&&o.material.name===name) out.push(o); });
+  return out;
+}
+function removeHeadTrianglesFromSkinMesh(skinMesh,headBoneIdx){
+  const geo=skinMesh.geometry, pos=geo.attributes.position;
+  const si=geo.attributes.skinIndex, sw=geo.attributes.skinWeight;
+  if(!pos||!si||!sw||!geo.index) return null;
+  const n=pos.count, isHead=new Uint8Array(n), box=new THREE.Box3(), v=new THREE.Vector3();
+  for(let i=0;i<n;i++){
+    const idx=[si.getX(i),si.getY(i),si.getZ(i),si.getW(i)];
+    const w=[sw.getX(i),sw.getY(i),sw.getZ(i),sw.getW(i)];
+    let best=-1,bestW=-1;
+    for(let k=0;k<4;k++){ if(w[k]>bestW){bestW=w[k]; best=idx[k];} }
+    if(best===headBoneIdx){ isHead[i]=1; v.set(pos.getX(i),pos.getY(i),pos.getZ(i)); box.expandByPoint(v); }
+  }
+  if(box.isEmpty()) return null;
+  const padV=new THREE.Vector3(); box.getSize(padV);
+  box.expandByVector(padV.multiplyScalar(0.06)); /* 境界の取りこぼし対策の余白 */
+  const index=geo.index, newIdx=[], pa=new THREE.Vector3(),pb=new THREE.Vector3(),pc=new THREE.Vector3();
+  for(let f=0;f<index.count;f+=3){
+    const a=index.getX(f), b=index.getX(f+1), c=index.getX(f+2);
+    const headCount=isHead[a]+isHead[b]+isHead[c];
+    let removeByBox=false;
+    if(headCount>0){
+      pa.set(pos.getX(a),pos.getY(a),pos.getZ(a)); pb.set(pos.getX(b),pos.getY(b),pos.getZ(b)); pc.set(pos.getX(c),pos.getY(c),pos.getZ(c));
+      if(box.containsPoint(pa)&&box.containsPoint(pb)&&box.containsPoint(pc)) removeByBox=true;
+    }
+    if(headCount>=2||removeByBox) continue; /* ボーンウェイト多数決+バウンディングボックスの二重判定で除去 */
+    newIdx.push(a,b,c);
+  }
+  geo.setIndex(newIdx); geo.index.needsUpdate=true;
+  geo.computeBoundingBox(); geo.computeBoundingSphere();
+  return box;
+}
+function prepPrincipalHeadRemoval(root){
+  root.updateMatrixWorld(true);
+  let skinned=null;
+  root.traverse(function(o){ if(!skinned&&o.isSkinnedMesh) skinned=o; });
+  if(!skinned) return;
+  const headBoneIdx=skinned.skeleton.bones.findIndex(function(b){return b.name==='Head';});
+  if(headBoneIdx<0) return;
+  findMeshesByMaterialName(root,'Hair').forEach(function(o){ o.visible=false; });
+  findMeshesByMaterialName(root,'Eyes').forEach(function(o){ o.visible=false; });
+  let localBox=null, skinMeshObj=null;
+  findMeshesByMaterialName(root,'Skin').forEach(function(o){
+    const b=removeHeadTrianglesFromSkinMesh(o,headBoneIdx);
+    if(b){ localBox=b; skinMeshObj=o; }
+  });
+  /* geometry.attributes.positionはSkinnedMesh自身のbind-poseローカル空間(ノード自体の
+     scale100・回転はまだ乗っていない)なので、skinMeshObj.matrixWorld(root正規化前)を
+     掛けてroot直下の空間に揃える */
+  if(localBox&&skinMeshObj) PRINCIPAL_HEAD_BOX=localBox.clone().applyMatrix4(skinMeshObj.matrixWorld);
+}
 function preloadPrincipalModel(){
   if(PRINCIPAL_TEMPLATE_PROMISE) return PRINCIPAL_TEMPLATE_PROMISE;
   PRINCIPAL_TEMPLATE_PROMISE=new Promise(function(resolve){
     if(typeof THREE==='undefined'||!THREE.GLTFLoader||!THREE.SkeletonUtils){ resolve(null); return; }
     try{
       new THREE.GLTFLoader().load('assets/models/man.glb',function(gltf){
+        try{ prepPrincipalHeadRemoval(gltf.scene); }catch(e){}
         PRINCIPAL_TEMPLATE=gltf; resolve(gltf);
       },undefined,function(){ resolve(null); });
     }catch(e){ resolve(null); }
@@ -4352,8 +4415,9 @@ function attachPrincipalVisual(t){
     const center=new THREE.Vector3(); box.getCenter(center);
     const targetH=3.05;
     const scale=size.y>0?targetH/size.y:1;
+    const offset=new THREE.Vector3(-center.x*scale,-box.min.y*scale,-center.z*scale);
     inner.scale.setScalar(scale);
-    inner.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
+    inner.position.copy(offset);
     const wrap=new THREE.Group(); wrap.add(inner);
     /* HyoiGakuenのTINT_MAPと同じ素材名(Shirt/Pants/Socks/Hair/Skin/Eyes)を
        校長先生らしい濃紺スーツ配色に塗り替える(2026-09-22、参考画像2枚目に
@@ -4381,17 +4445,35 @@ function attachPrincipalVisual(t){
     if(walkClip) actions.walk=mixer.clipAction(walkClip);
     if(actions.idle) actions.idle.play();
     wrap.userData={mixer:mixer,actions:actions,current:actions.idle||null};
-    /* 顔写真(グリーンバック写真をOpenCVで透過処理したもの)を、頭の正面に
-       貼るだけの平面。既存のスキン機能(#p_skinのcustomTex、体の前面に貼る
-       仕組み)と同じ「平面テクスチャを前面に貼る」考え方をそのまま流用した */
+    /* 頭の置き換えカプセル：man.glb自身の頭部メッシュ(顔・髪)はprepPrincipalHeadRemoval()
+       で三角形ごと除去済みなので、代わりに置く土台(白髪色の低ポリ球)をPRINCIPAL_HEAD_BOX
+       (除去した頭部頂点のbind-pose範囲)から算出して置く。除去前は真横〜斜めから見ると
+       glTF本来の顔ジオメトリと顔写真の輪郭が二重に見えてしまっていたが、単純な球にする
+       ことでどの角度から見ても不自然な輪郭が出ない(2026-09-22) */
+    let headCenter=new THREE.Vector3(0,targetH*0.845,0), headRadius=0.24;
+    if(PRINCIPAL_HEAD_BOX){
+      const wb=new THREE.Box3(
+        PRINCIPAL_HEAD_BOX.min.clone().multiplyScalar(scale).add(offset),
+        PRINCIPAL_HEAD_BOX.max.clone().multiplyScalar(scale).add(offset));
+      const wSize=new THREE.Vector3(); wb.getSize(wSize);
+      headCenter=new THREE.Vector3(); wb.getCenter(headCenter);
+      headRadius=Math.max(wSize.x,wSize.y,wSize.z)*0.5*1.08;
+      const headCap=new THREE.Mesh(new THREE.SphereGeometry(headRadius,20,16),
+        new THREE.MeshPhongMaterial({color:PC_TINT.Hair,shininess:8}));
+      headCap.position.copy(headCenter);
+      headCap.castShadow=true; headCap.receiveShadow=true;
+      wrap.add(headCap);
+    }
+    /* 顔写真(グリーンバック写真をOpenCVで透過処理したもの)を、頭カプセルの正面
+       (球の外側にわずかに浮かせる)に貼るだけの平面。既存のスキン機能(#p_skinの
+       customTex、体の前面に貼る仕組み)と同じ「平面テクスチャを前面に貼る」考え方
+       をそのまま流用した */
     const faceMat=new THREE.MeshBasicMaterial({map:PRINCIPAL_FACE_TEX,transparent:true});
     const aspect=(PRINCIPAL_FACE_TEX&&PRINCIPAL_FACE_TEX.image)?
       (PRINCIPAL_FACE_TEX.image.width/PRINCIPAL_FACE_TEX.image.height):1.4;
     const faceH=0.58, faceW=faceH*aspect;
     const facePlane=new THREE.Mesh(new THREE.PlaneGeometry(faceW,faceH),faceMat);
-    /* 写真の下端には元々スーツの肩口も少し写っているので、首の継ぎ目
-       (glTFモデルの頭と胴の境目)に少しかぶせるように置くと自然に繋がる */
-    facePlane.position.set(0,targetH*0.845,0.175);
+    facePlane.position.set(headCenter.x,headCenter.y,headCenter.z+headRadius*1.03);
     facePlane.renderOrder=6;
     wrap.add(facePlane);
     t.pcVisual=wrap;
@@ -4546,7 +4628,10 @@ function person(opt){
   } else if(body==='flat'){
     torso.scale.z=0.4;
     bx(g,white,0.95*S,1.1*S,0.06*S,0,chest,0.14*S);
-  } else if(opt.tall&&body==='human'){
+  } else if(opt.tall&&body==='human'&&!opt.hideBody){
+    /* 背が高い人間キャラ用のネクタイ状の胸飾り。校長先生はhideBody:trueで
+       procedural本体ごと非表示にしているのに、この飾りだけはhideBody判定漏れで
+       残ってしまいman.glbの胴体の前に浮いた板として見えていた(2026-09-22修正) */
     bx(g,LM(0x1a1d22),0.5*S,0.9*S,0.1*S,0,chest,0.27*S);
   } else if(!opt.tall&&!opt.male){
     /* スキン機能：opt.skirtShape==='block'なら四角いブロック状の代替形状に
