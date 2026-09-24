@@ -815,13 +815,13 @@ const CHARACTERS = [
   "side": "student",
   "name": "一ノ瀬 疾風",
   "short": "疾風",
-  "tagline": "乗り越え30%速",
+  "tagline": "乗り越え30%速／板を即倒す",
   "color": "#d9552f",
   "hair": "#1f1a16",
   "abilities": [
    {
     "label": "軽快なフットワーク",
-    "text": "乗り越え30%速",
+    "text": "乗り越え30%速／板を即倒す",
     "kind": "passive"
    },
    {
@@ -859,20 +859,19 @@ const CHARACTERS = [
   "side": "student",
   "name": "結城 まどか",
   "short": "まどか",
-  "tagline": "味方の治療が大幅に速い",
+  "tagline": "味方の治療が大幅に速い／鎮痛剤で減速を無効化",
   "color": "#dcd8cc",
   "hair": "#8a5a3c",
   "abilities": [
    {
     "label": "応急手当",
-    "text": "味方の治療が大幅に速い",
+    "text": "味方の治療が大幅に速い／鎮痛剤で減速を無効化",
     "kind": "passive"
    },
    {
     "label": "救急キット",
     "text": "自分を1回だけ回復できる",
     "kind": "active",
-    "cd": 0,
     "uses": 1
    }
   ]
@@ -903,7 +902,7 @@ const CHARACTERS = [
  {
   "id": "stu_8_蓮",
   "side": "student",
-  "name": "紫ノ宮 蓮",
+  "name": "硝子宮 蓮",
   "short": "蓮",
   "tagline": "課題をやっている間に劇薬がたまる（最大3）",
   "color": "#6b4a8c",
@@ -928,7 +927,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "神条 凛",
   "short": "凛",
-  "tagline": "ダウンまでの粘りが強く",
+  "tagline": "ダウンまでの粘りが強く、押し返しに成功すると加速",
   "color": "#24406b",
   "hair": "#161a20",
   "abilities": [
@@ -950,13 +949,13 @@ const CHARACTERS = [
   "side": "student",
   "name": "プロトタイプ29",
   "short": "P-29",
-  "tagline": "課題が500%速い",
+  "tagline": "課題が500%速い／スタミナ消費が激しくあまり走れない",
   "color": "#8a8f7a",
   "hair": "#1c1a18",
   "abilities": [
    {
     "label": "試作体",
-    "text": "課題が500%速い",
+    "text": "課題が500%速い／スタミナ消費が激しくあまり走れない",
     "kind": "passive"
    },
    {
@@ -995,7 +994,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "遠野 縁",
   "short": "縁",
-  "tagline": "先生に見られている間",
+  "tagline": "先生に見られている間、その先生の輪郭が自分にだけ見える",
   "color": "#6b8a4a",
   "hair": "#3a2a1e",
   "abilities": [
@@ -1031,7 +1030,6 @@ const CHARACTERS = [
     "label": "フルスイング",
     "text": "目の前の先生をバットで殴って1.8秒よろけさせる。課題を2枚仕上げると撃ち直せる",
     "kind": "active",
-    "cd": 0,
     "uses": 1
    }
   ]
@@ -1063,20 +1061,19 @@ const CHARACTERS = [
   "side": "student",
   "name": "久遠寺 灯（霊能力者）",
   "short": "灯",
-  "tagline": "先生を見つめていると溜まる（7秒",
+  "tagline": "先生を見つめていると溜まる（7秒／使うたび+3秒、最大15秒）",
   "color": "#4a3a6b",
   "hair": "#1a1622",
   "abilities": [
    {
     "label": "魂ゲージ",
-    "text": "先生を見つめていると溜まる（7秒",
+    "text": "先生を見つめていると溜まる（7秒／使うたび+3秒、最大15秒）",
     "kind": "passive"
    },
    {
     "label": "憑依",
     "text": "10m以内の先生に憑依して5秒間 操作を奪う。戻ると2秒間 足が40%速くなる",
-    "kind": "active",
-    "cd": 0
+    "kind": "active"
    }
   ]
  },
@@ -1129,7 +1126,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "南雲 陽向",
   "short": "陽向",
-  "tagline": "自分のスタミナ回復が速く",
+  "tagline": "自分のスタミナ回復が速く、味方の治療も少し速い",
   "color": "#d8a04a",
   "hair": "#2a1e14",
   "abilities": [
@@ -1174,7 +1171,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "綾小路 麗華",
   "short": "麗華",
-  "tagline": "自分が追われている間",
+  "tagline": "自分が追われている間、他の生徒の作業と治療が25%速くなる",
   "color": "#8c3f6b",
   "hair": "#d8c48a",
   "abilities": [
@@ -1329,7 +1326,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "静",
   "short": "静",
-  "tagline": "完全に静止していると",
+  "tagline": "完全に静止していると、気配と足音がほとんど無くなる",
   "color": "#24344a",
   "hair": "#1c1a18",
   "abilities": [
@@ -1345,7 +1342,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "転校生",
   "short": "転校生",
-  "tagline": "怪談を知らないので",
+  "tagline": "怪談を知らないので、先生の気配が伝わる範囲が縮む",
   "color": "#4f6f9b",
   "hair": "#3a2e24",
   "abilities": [
@@ -1361,7 +1358,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "柔道部",
   "short": "柔道部",
-  "tagline": "先生に担がれている間",
+  "tagline": "先生に担がれている間、その先生の移動速度を少し落とす",
   "color": "#f4f2ea",
   "hair": "#1a1612",
   "abilities": [
@@ -1395,8 +1392,7 @@ const CHARACTERS = [
    {
     "label": "狸寝入り",
     "text": "じっとして気配を殺す（1.5秒静止）と発動でき、気絶したふりをする。先生に担がれた瞬間、もう一度タイミングよく発動キーを押すと躱して自由になれる（失敗すると本当に担がれる）。成功時はしばらく先生に気づかれにくくなり、近くの仲間の作業も少し捗る",
-    "kind": "active",
-    "cd": 0
+    "kind": "active"
    }
   ]
  },
@@ -1427,7 +1423,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "久我 颯",
   "short": "颯",
-  "tagline": "乗り越えが25%速く",
+  "tagline": "乗り越えが25%速く、乗り越えた直後2.5秒だけ足が速くなる",
   "color": "#1d2029",
   "hair": "#14100e",
   "abilities": [
@@ -1449,7 +1445,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "宵野 うた",
   "short": "うた",
-  "tagline": "6m以内に仲間がいる間",
+  "tagline": "6m以内に仲間がいる間、お互いの課題と手当てが18%捗る",
   "color": "#2f3a56",
   "hair": "#3a2a20",
   "abilities": [
@@ -1471,7 +1467,7 @@ const CHARACTERS = [
   "side": "student",
   "name": "黛 ひなぎく",
   "short": "ひな",
-  "tagline": "自分が先生に追われている間",
+  "tagline": "自分が先生に追われている間、仲間全員の足が6%速くなる",
   "color": "#3d2a4e",
   "hair": "#c9a33f",
   "abilities": [
@@ -1485,6 +1481,48 @@ const CHARACTERS = [
     "text": "4m以内の仲間とハイタッチ。お互いの固有スキルのクールダウンが5秒縮み、3秒間 足が20%速くなる",
     "kind": "active",
     "cd": 18
+   }
+  ]
+ },
+ {
+  "id": "stu_35_太郎",
+  "side": "student",
+  "name": "田中太郎",
+  "short": "太郎",
+  "tagline": "他の生徒と共同で課題を進めていると、スキルチェックの発動間隔が縮む(自分にも押し損ないの危険が増える)",
+  "color": "#7a5a34",
+  "hair": "#2a2018",
+  "abilities": [
+   {
+    "label": "虚言",
+    "text": "他の生徒と共同で課題を進めていると、スキルチェックの発動間隔が縮む(自分にも押し損ないの危険が増える)",
+    "kind": "passive"
+   },
+   {
+    "label": "泥団子",
+    "text": "E｜スタミナを消費して泥団子を出す(以後は押すたびに玉転がし⇔玉乗りを切替、クールタイム無し)。R｜押し出して先生にぶつける",
+    "kind": "active"
+   }
+  ]
+ },
+ {
+  "id": "stu_36_歯車",
+  "side": "student",
+  "name": "九十九 歯車",
+  "short": "歯車",
+  "tagline": "ロボットの姿の間、課題+170%・乗り越え+20%速い",
+  "color": "#4a5560",
+  "hair": "#2a2018",
+  "abilities": [
+   {
+    "label": "ロボット工作",
+    "text": "ロボットの姿の間、課題+170%・乗り越え+20%速い",
+    "kind": "passive"
+   },
+   {
+    "label": "ロボット変身",
+    "text": "いつでも人間⇔ロボットを切替。ロボットは一発被弾で壊れて人間に戻り、30秒後に再び出せる",
+    "kind": "active"
    }
   ]
  }

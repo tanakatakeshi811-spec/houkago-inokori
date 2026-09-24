@@ -6760,7 +6760,7 @@ const STU=[
     ロボットは一発被弾で即壊れて人間に戻り(damage()のシールド系分岐と同じ
     型)、以後30秒はロボットを再召喚できない(s.roboCdで管理) */
  {name:'九十九 歯車',short:'歯車',uniform:0x4a5560,hair:0x2a2018,perk:'robo',
-  ptxt:'ロボット工作｜ロボットの姿の間、課題+40%・乗り越え+20%速い',
+  ptxt:'ロボット工作｜ロボットの姿の間、課題+170%・乗り越え+20%速い',
   skill:'robo',sname:'ロボット変身',cd:0,
   stxt:'いつでも人間⇔ロボットを切替。ロボットは一発被弾で壊れて人間に戻り、30秒後に再び出せる'}
 ];
@@ -9755,8 +9755,9 @@ function workTask(s,d,dt){
     (chorusOn(s)?1.18:1)*(((s.harmT||0)>0)?1.35:1)*
     /* カンニングペーパー(cheatsheet)：発動中は課題の進行速度が11倍(+1000%) */
     ((s.cheatT||0)>0?11:1)*
-    /* 科学部員：ロボットの姿の間は課題(解読)が40%速い(2026-09-25) */
-    (s.perk==='robo'&&s.roboMode?1.4:1)*
+    /* 科学部員：ロボットの姿の間は課題(解読)が170%速い(2026-09-25、
+       しゅんりさんの追加要望で40%→170%に引き上げ) */
+    (s.perk==='robo'&&s.roboMode?2.7:1)*
     (spotlightOn(s)?1.25:1)*traitTaskMul(s));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
   /* 共同作業感知(discordance)：2人以上が同じ机で一緒に作業していると位置がわかる */
@@ -9812,7 +9813,12 @@ function studentAct(s,dt,manual){
   const a=nearAlly(s);
   if(a){
     s.rescueT+=dt*(s.perk==='heal'?1.3:(s.perk==='aed'?1.15:1));
-    if(s.rescueT>2.4){ freeStudent(a); s.rescueT=0; beep(700,0.2,'sine',0.09);
+    /* 2026-09-25：救助(椅子/ダウン共通)の所要時間を2.4秒→0.7秒に短縮
+       (しゅんりさんの要望、全生徒統一のバランス調整)。あわせて助けられた
+       生徒は20秒間「我慢」状態になり、次の1発を無効化できる(20秒経過
+       するか1発受けると自然消滅、damage()のシールド系分岐と同じ型) */
+    if(s.rescueT>0.7){ freeStudent(a); s.rescueT=0; beep(700,0.2,'sine',0.09);
+      a.rescueShieldT=20;
       if(hasTrait(s,'wemakeit')) s.healBoostT=8.0*perkLevelMul(s,'wemakeit');
       if(manual) toast(a.name+'を助けた'); }
     return 'rescue';
@@ -9938,6 +9944,13 @@ function damage(s,amt,heavy,attacker){
     s.tomeShield=false;
     toast(s.name+'の護符が身代わりになった！');
     beep(900,0.2,'sine',0.12); vib([25,30,25]);
+    return false;
+  }
+  /* 救助直後の「我慢」状態：20秒以内なら次の1発を無効化する(2026-09-25) */
+  if(s.rescueShieldT>0){
+    s.rescueShieldT=0;
+    toast(s.name+'は我慢して耐えた！');
+    beep(500,0.22,'triangle',0.12); vib([25,35,25]);
     return false;
   }
   /* 科学部員：ロボットの姿は一発被弾で即壊れて人間に戻る(ダメージは一切
@@ -14286,6 +14299,7 @@ function tick(now){
     if(s.harmT>0) s.harmT=Math.max(0,s.harmT-dt);
     if(s.tnCd>0) s.tnCd=Math.max(0,s.tnCd-dt);
     if(s.roboCd>0) s.roboCd=Math.max(0,s.roboCd-dt);   /* 科学部員のロボット再生成待ち(2026-09-25) */
+    if(s.rescueShieldT>0) s.rescueShieldT=Math.max(0,s.rescueShieldT-dt);   /* 救助後の「我慢」20秒(2026-09-25) */
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     /* ハンディファン(fan)の反動推進：移動中に使うと自分の速度+50%
@@ -16737,7 +16751,9 @@ function netHostBroadcastSnapshot(dt){
            方針を踏襲) */
         mudMode:s.mudMode||0, mudVol:Math.round((s.mudVol||0)*100)/100,
         /* 科学部員：人間/ロボットの見た目切替と再生成待ちを同期(2026-09-25) */
-        roboMode:!!s.roboMode, roboCd:Math.round((s.roboCd||0)*10)/10 } };
+        roboMode:!!s.roboMode, roboCd:Math.round((s.roboCd||0)*10)/10,
+        /* 救助後の「我慢」シールド残り時間(2026-09-25) */
+        rescueShieldT:Math.round((s.rescueShieldT||0)*10)/10 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
