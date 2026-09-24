@@ -5058,6 +5058,35 @@ function person(opt){
     const w2=makeWeapon(opt.weapon2,S);
     w2.position.set(0,-0.95*S,0.2*S); (armL.userData.lower||armL).add(w2);
   }
+  /* 科学部員「ロボット変身」用の装甲パーツ(2026-09-25追加)。既存の人間の
+     骨格・アニメーションには一切手を入れず、頭・肩・胸・前腕・すねに
+     可視/不可視だけ切り替える追加パーツを載せる(opt.robo指定時のみ生成、
+     他の全キャラの見た目には影響しない) */
+  if(opt.robo){
+    const rc=LM(0x6a7078), rc2=LM(opt.accent||0x4ad9e8);
+    const roboParts=[];
+    roboParts.push(bx(head,rc,0.7*S,0.16*S,0.09*S,0,0.02*S,0.4*S));
+    roboParts.push(bx(head,rc2,0.56*S,0.05*S,0.1*S,0,0.02*S,0.45*S));
+    roboParts.push(bx(head,rc,0.05*S,0.32*S,0.05*S,0,0.55*S,0));
+    { const tip=new THREE.Mesh(new THREE.SphereGeometry(0.06*S,8,8),rc2);
+      tip.position.set(0,0.74*S,0); head.add(tip); roboParts.push(tip); }
+    [-1,1].forEach(function(sx){ roboParts.push(bx(head,rc,0.12*S,0.22*S,0.16*S,sx*0.4*S,0,0)); });
+    roboParts.push(bx(g,rc,0.5*S,0.42*S,0.1*S,0,chest+0.05*S,0.27*S));
+    roboParts.push(bx(g,rc2,0.16*S,0.16*S,0.11*S,0,chest+0.05*S,0.33*S));
+    [-1,1].forEach(function(sx){ roboParts.push(bx(g,rc,0.32*S,0.24*S,0.32*S,sx*0.5*S,chest+0.5*S,0)); });
+    [armL,armR].forEach(function(A0){
+      const A=A0.userData.lower||A0;
+      const gt=new THREE.Mesh(new THREE.BoxGeometry(0.3*S,0.32*S,0.32*S),rc);
+      gt.position.y=-0.75*S; A.add(gt); roboParts.push(gt);
+    });
+    [legL,legR].forEach(function(L0){
+      const L=L0.userData.lower||L0;
+      const sg=new THREE.Mesh(new THREE.BoxGeometry(0.36*S,0.4*S,0.4*S),rc);
+      sg.position.set(0,-0.7*S,0.05*S); L.add(sg); roboParts.push(sg);
+    });
+    roboParts.forEach(function(p){ p.visible=false; });
+    g.userData_robo=roboParts;
+  }
   /* 足元に絡んだ宿題 */
   const tm=new THREE.Mesh(new THREE.PlaneGeometry(1.5*S,1.9*S),M.paper);
   tm.rotation.x=-Math.PI/2; tm.position.set(0,0.12,0.25*S); tm.visible=false; g.add(tm);
@@ -5152,7 +5181,7 @@ function person(opt){
   if(legL.userData.joints){ dj.kneeL=legL.userData.joints[0]; dj.ankleL=legL.userData.joints[1]; }
   if(legR.userData.joints){ dj.kneeR=legR.userData.joints[0]; dj.ankleR=legR.userData.joints[1]; }
   g.userData={paper:pap,legL:legL,legR:legR,armL:armL,armR:armR,head:head,phase:0,
-    skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,
+    skirt:g.userData_skirt||null,cloth:g.userData_cloth||null,robo:g.userData_robo||null,
     aura:aura,auraMat:auraMat,heart:heart,hMat:hMat,hglow:hglow,hgMat:hgMat,trapMark:tm,
     torso:torso,blob:blob,paperMat:paperMat,
     /* 見た目カスタマイズの「モデルタイプ：ダンスモデル」選択(2026-09-15追加)。
@@ -6609,7 +6638,7 @@ const STU=[
   ptxt:'足音が小さい｜物音の届く範囲-45%',
   skill:'flash',sname:'フラッシュ撮影',cd:14,uses:2,
   stxt:'正面の先生をフラッシュで2.4秒スタン（2回まで）'},
- {name:'紫ノ宮 蓮',short:'蓮',uniform:0x6b4a8c,hair:0x2a2230,perk:'chem',
+ {name:'硝子宮 蓮',short:'蓮',uniform:0x6b4a8c,hair:0x2a2230,perk:'chem',
   ptxt:'薬品調合｜課題をやっている間に劇薬がたまる（最大3）',
   skill:'chem',sname:'化学トラップ',cd:2,uses:1,
   stxt:'足元に煙幕＋滑る薬品を設置。踏んだ先生は3秒 視界を失い転倒する'},
@@ -6723,7 +6752,17 @@ const STU=[
  {name:'田中太郎',short:'太郎',uniform:0x7a5a34,hair:0x2a2018,perk:'mud',
   ptxt:'虚言｜他の生徒と共同で課題を進めていると、スキルチェックの発動間隔が縮む(自分にも押し損ないの危険が増える)',
   skill:'mudball',sname:'泥団子',cd:0,
-  stxt:'E｜スタミナを消費して泥団子を出す(以後は押すたびに玉転がし⇔玉乗りを切替、クールタイム無し)。R｜押し出して先生にぶつける'}
+  stxt:'E｜スタミナを消費して泥団子を出す(以後は押すたびに玉転がし⇔玉乗りを切替、クールタイム無し)。R｜押し出して先生にぶつける'},
+ /* 科学部員(2026-09-25追加)。硝子宮蓮と同じ科学部所属だが専門は化学ではなく
+    ロボット工作。人間⇔ロボットをクールタイム無しでいつでも切替できる。
+    ロボット形態の移動・当たり判定・課題進行の基礎値は生徒本体と完全に同じ
+    (見た目の切替のみ)で、課題(解読)+40%・乗り越え+20%のボーナスだけ乗る。
+    ロボットは一発被弾で即壊れて人間に戻り(damage()のシールド系分岐と同じ
+    型)、以後30秒はロボットを再召喚できない(s.roboCdで管理) */
+ {name:'九十九 歯車',short:'歯車',uniform:0x4a5560,hair:0x2a2018,perk:'robo',
+  ptxt:'ロボット工作｜ロボットの姿の間、課題+40%・乗り越え+20%速い',
+  skill:'robo',sname:'ロボット変身',cd:0,
+  stxt:'いつでも人間⇔ロボットを切替。ロボットは一発被弾で壊れて人間に戻り、30秒後に再び出せる'}
 ];
 const WEAPONS=[
  {k:'',        n:'キャラ標準'},
@@ -7342,6 +7381,7 @@ function spawnAll(){
        未設定なら従来通りの既定の見た目のまま */
     let sOpt=Object.assign({uniform:C.uniform,hair:C.hair,accent:0xe4e0d4,tall:false,propKey:C.perk},
       SLOOK[C.perk]||{});
+    if(C.perk==='robo') sOpt.robo=true;
     const sk=netMatchSkins&&netMatchSkins[i];
     if(sk) sOpt=applySkinToOpt(sOpt,sk,sk===mySkin);
     return {kind:'student',name:C.short,full:C.name,ci:ci,
@@ -8255,6 +8295,7 @@ function tryVault(e){
   if(e.perk==='slug') dur*=0.7;
   if(e.perk==='dash2') dur*=0.85;
   if(e.perk==='bstep') dur*=0.75;   /* 久我 颯「ステップワーク」(2026-09-15) */
+  if(e.perk==='robo'&&e.roboMode) dur*=0.8;   /* 科学部員：ロボット中は乗り越えが20%速い(2026-09-25) */
   /* 写真部顧問：暗室モードは乗り越えがやや遅い(元ネタ比1.7/1.42)、
      現像モード/決定的瞬間は逆に速い(-20%程度) */
   if(isT&&e.kindKey==='photo'){
@@ -9328,6 +9369,24 @@ function useStudentSkill(s,netDurOverride){
       if(s===me) toast('泥団子から降りた');
       beep(300,0.13,'triangle',0.09);
     }
+  } else if(s.skill==='robo'){
+    /* 科学部員「ロボット変身」：クールタイム無しでいつでも人間⇔ロボットを
+       切替できる。壊れて再生成待ち(s.roboCd>0)の間だけロボットに変身
+       できない(2026-09-25)。見た目の切替は毎フレームの描画ループ側で
+       s.roboModeを見て自動的に反映される(u.roboの可視/不可視) */
+    if(!s.roboMode){
+      if((s.roboCd||0)>0){
+        if(s===me) toast('ロボットが再生成中（残り'+Math.ceil(s.roboCd)+'秒）');
+        return;
+      }
+      s.roboMode=true;
+      if(s===me) toast('ロボットに変身！');
+      beep(220,0.2,'square',0.12);
+    } else {
+      s.roboMode=false;
+      if(s===me) toast('人間の姿に戻った');
+      beep(440,0.15,'triangle',0.1);
+    }
   }
 }
 /* ドローン */
@@ -9696,6 +9755,8 @@ function workTask(s,d,dt){
     (chorusOn(s)?1.18:1)*(((s.harmT||0)>0)?1.35:1)*
     /* カンニングペーパー(cheatsheet)：発動中は課題の進行速度が11倍(+1000%) */
     ((s.cheatT||0)>0?11:1)*
+    /* 科学部員：ロボットの姿の間は課題(解読)が40%速い(2026-09-25) */
+    (s.perk==='robo'&&s.roboMode?1.4:1)*
     (spotlightOn(s)?1.25:1)*traitTaskMul(s));
   if(d.sheet) d.sheet.position.y=1.62+Math.sin(elapsed*14)*0.04;
   /* 共同作業感知(discordance)：2人以上が同じ机で一緒に作業していると位置がわかる */
@@ -9877,6 +9938,14 @@ function damage(s,amt,heavy,attacker){
     s.tomeShield=false;
     toast(s.name+'の護符が身代わりになった！');
     beep(900,0.2,'sine',0.12); vib([25,30,25]);
+    return false;
+  }
+  /* 科学部員：ロボットの姿は一発被弾で即壊れて人間に戻る(ダメージは一切
+     蓄積しない)。以後30秒はロボットを再召喚できない(2026-09-25) */
+  if(s.perk==='robo'&&s.roboMode){
+    s.roboMode=false; s.roboCd=30;
+    toast(s.name+'のロボットが壊れた！（30秒後に再生成）');
+    beep(140,0.3,'sawtooth',0.14); vib([50,40,50]);
     return false;
   }
   if(s.parry>0){
@@ -14216,6 +14285,7 @@ function tick(now){
     if(s.stepT>0) s.stepT=Math.max(0,s.stepT-dt);
     if(s.harmT>0) s.harmT=Math.max(0,s.harmT-dt);
     if(s.tnCd>0) s.tnCd=Math.max(0,s.tnCd-dt);
+    if(s.roboCd>0) s.roboCd=Math.max(0,s.roboCd-dt);   /* 科学部員のロボット再生成待ち(2026-09-25) */
     const soloLeft=hasTrait(teacher,'rancor')&&students.filter(function(x){
       return x.state!=='out'&&x.state!=='escaped'; }).length===1;
     /* ハンディファン(fan)の反動推進：移動中に使うと自分の速度+50%
@@ -14748,6 +14818,13 @@ function tick(now){
     }
     e.mesh.position.set(e.x,0,e.z); e.mesh.rotation.y=e.yaw;
     e.mesh.rotation.z=0;
+    /* 科学部員：ロボットの姿かどうかをu.roboの可視/不可視だけで毎フレーム
+       反映する。ホスト/オフライン/オンライン参加者のどれでもe.roboModeさえ
+       正しければ同じ見た目になる(2026-09-25) */
+    if(u.robo){
+      const roboOn=!!e.roboMode;
+      for(let ri=0;ri<u.robo.length;ri++) if(u.robo[ri].visible!==roboOn) u.robo[ri].visible=roboOn;
+    }
     /* エモート中はここで姿勢を作りきる（歩行や各種モーションは飛ばす、2026-09-15） */
     if(updEmoteAnim(e,dt,moved,true)) continue;
     if(e.knockT>0){
@@ -16658,7 +16735,9 @@ function netHostBroadcastSnapshot(dt){
            同期する。痕跡・破裂エリアは演出のみのスコープ外(2026-09-23、
            既存のmrDecoys等と同じ「戦闘に影響しない演出はスコープを絞る」
            方針を踏襲) */
-        mudMode:s.mudMode||0, mudVol:Math.round((s.mudVol||0)*100)/100 } };
+        mudMode:s.mudMode||0, mudVol:Math.round((s.mudVol||0)*100)/100,
+        /* 科学部員：人間/ロボットの見た目切替と再生成待ちを同期(2026-09-25) */
+        roboMode:!!s.roboMode, roboCd:Math.round((s.roboCd||0)*10)/10 } };
     }),
     tasks: tasks.map(function(t){ return t.prog; }),
     tst: netLastToast, tid: netToastId,
