@@ -4,6 +4,12 @@
 
 **▶ 遊ぶ: https://tanakatakeshi811-spec.github.io/houkago-inokori/**
 
+## バージョン選択
+
+トップ(`index.html`)は選択画面。新・放課後の居残り(`new/`)を大きく出し、
+旧・放課後の居残り(`classic/`)は 通常 / 2vs8 / 怪異退治 / オンライン対戦 を直接選べる
+(`classic/?mode=classic|classic2|event|online`)。招待URL `?r=コード` は旧版のオンライン画面へ転送される。
+
 ## どんなゲーム?
 
 放課後の校舎に閉じ込められた生徒4人 vs 先生1人。
